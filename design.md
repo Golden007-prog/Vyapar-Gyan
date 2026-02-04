@@ -28,8 +28,6 @@ The architecture employs a **Supervisor-Worker** pattern where:
 ## Architecture Diagram
 
 <img width="944" height="1046" alt="Screenshot 2026-02-05 031735" src="https://github.com/user-attachments/assets/a06afec0-8f0b-4008-b89b-d255a8d5f987" />
-<img width="944" height="1046" alt="Screenshot 2026-02-05 031735" src="https://github.com/user-attachments/assets/a06afec0-8f0b-4008-b89b-d255a8d5f987" />
-
 
 ## Agent State Machine (LangGraph)
 
