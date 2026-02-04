@@ -214,25 +214,25 @@ negotiation_sessions: {
 
 ## Implementation Phases
 
-### Phase 1: Core Agent Framework (Months 1-2)
+### Phase 1: Core Agent Framework (Day 1-2)
 - Implement LangGraph orchestration layer
 - Build basic Analyst Agent with Instagram API integration
 - Develop Negotiator Agent with text-based WhatsApp interface
 - Create tenant onboarding and product catalog management
 
-### Phase 2: Voice Integration (Months 3-4)
+### Phase 2: Voice Integration (Day 3-4)
 - Integrate Deepgram STT and ElevenLabs TTS
 - Implement real-time voice negotiation pipeline
 - Add Hindi/English code-switching capabilities
 - Optimize for <500ms response latency
 
-### Phase 3: Advanced Intelligence (Months 5-6)
+### Phase 3: Advanced Intelligence (Day 5-6)
 - Enhance trend detection with multi-platform analysis
 - Implement dynamic personality switching
 - Add computer vision for inventory verification
 - Deploy advanced pricing algorithms
 
-### Phase 4: Scale & Optimize (Months 7-8)
+### Phase 4: Scale & Optimize (Day 7-8)
 - Multi-tenant architecture with database sharding
 - Performance optimization and load testing
 - Advanced analytics and reporting dashboard
