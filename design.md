@@ -27,60 +27,9 @@ The architecture employs a **Supervisor-Worker** pattern where:
 
 ## Architecture Diagram
 
-```mermaid
-graph TB
-    subgraph "External Data Sources"
-        SM[Social Media APIs<br/>Instagram, YouTube, Twitter]
-        Customer[Customer Voice Interface<br/>WhatsApp/Voice Kiosk]
-    end
-    
-    subgraph "LangGraph Orchestrator (Supervisor)"
-        Supervisor[Supervisor Agent<br/>GPT-4o Master Node]
-        SharedState[(Shared State Store<br/>PostgreSQL + Redis)]
-        StateManager[State Manager<br/>LangGraph StateGraph]
-    end
-    
-    subgraph "Analyst Agent - TrendSetu (Worker 1)"
-        VideoProcessor[Video Analysis<br/>Gemini 1.5 Pro Vision]
-        TrendEngine[Trend Velocity Engine<br/>Hype Score Calculator]
-        VectorStore[(Vector Database<br/>Qdrant)]
-    end
-    
-    subgraph "Negotiator Agent - SubhLabh (Worker 2)"
-        VoiceGateway[Voice Gateway<br/>Deepgram + ElevenLabs]
-        SentimentAnalyzer[Sentiment Analysis<br/>Real-time Emotion Detection]
-        StrategyEngine[Negotiation Strategy<br/>Llama 3 Edge Node]
-    end
-    
-    subgraph "Data Layer"
-        PostgresDB[(PostgreSQL<br/>Transactional Data)]
-        RedisCache[(Redis Cache<br/>Session State)]
-    end
-    
-    %% Data Flow - Analyst Path (Asynchronous)
-    SM --> VideoProcessor
-    VideoProcessor --> TrendEngine
-    TrendEngine --> VectorStore
-    TrendEngine --> Supervisor
-    Supervisor --> SharedState
-    
-    %% Data Flow - Negotiator Path (Real-time)
-    Customer <--> VoiceGateway
-    VoiceGateway --> SentimentAnalyzer
-    SentimentAnalyzer --> StrategyEngine
-    StrategyEngine <--> Supervisor
-    SharedState --> StrategyEngine
-    
-    %% State Management
-    StateManager --> SharedState
-    SharedState --> PostgresDB
-    SharedState --> RedisCache
-    
-    %% Critical Updates
-    Supervisor -.->|"Update: Saree Demand +400%"| SharedState
-    SharedState -.->|"Action: Raise Floor Price 15%"| StrategyEngine
-    StrategyEngine -.->|"Response: Price is firm"| VoiceGateway
-```
+<img width="944" height="1046" alt="Screenshot 2026-02-05 031735" src="https://github.com/user-attachments/assets/a06afec0-8f0b-4008-b89b-d255a8d5f987" />
+<img width="944" height="1046" alt="Screenshot 2026-02-05 031735" src="https://github.com/user-attachments/assets/a06afec0-8f0b-4008-b89b-d255a8d5f987" />
+
 
 ## Agent State Machine (LangGraph)
 
