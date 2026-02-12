@@ -2,65 +2,112 @@
 
 ## Executive Summary
 
-VyaparGyan (व्यापार ज्ञान) is a Hierarchical Multi-Agent System (HMAS) that serves as the "Brain" for Indian retailers, bridging the critical gap between market intelligence and autonomous sales execution. The platform orchestrates two specialized AI agents: TrendSetu (Analyst Agent) continuously monitors social media to predict demand velocity, while SubhLabh (Negotiator Agent) conducts real-time voice-based negotiations with customers. The central Orchestrator dynamically adjusts pricing strategies and negotiation personalities based on trend intelligence, transforming traditional retail from blind sourcing and static pricing to predictive sourcing and autonomous selling.
+VyaparGyan is an AI copilot for Bharat retailers that predicts demand, adjusts pricing, and negotiates with customers automatically.
+
+The platform combines two powerful capabilities: (1) An Analyst Agent that watches social media to predict what will sell, and (2) a Negotiator Agent that talks to customers via voice to close deals. The central Orchestrator connects these agents, ensuring that pricing strategy reflects real-time market demand.
+
+**The Problem We Solve**: Small retailers lose money in two ways—they buy the wrong inventory (dead stock) and sell at the wrong prices (lost margins). VyaparGyan fixes both by bringing market intelligence directly into sales execution.
+
+**The Result**: Retailers increase profit margins by 15-20% on trending items while reducing dead stock by 30%, all without hiring additional staff.
+
+## Demo Flow
+
+Here's VyaparGyan in action:
+
+1. **Retailer uploads product image**: Shopkeeper photographs a shelf of sarees, uses voice to catalog: "10 Green Banarasi Sarees, cost ₹500 each"
+2. **AI detects trend**: System scans Instagram Reels and YouTube Shorts, detects "Green Sarees" with 400% engagement spike
+3. **System adjusts strategy**: Floor price automatically raised from ₹850 to ₹1050, negotiation mode set to "AGGRESSIVE"
+4. **Customer negotiates via WhatsApp voice**: Customer sends voice note asking about green sarees
+5. **AI responds with context**: "This Green Banarasi is ₹1200. It's trending in Mumbai right now"
+6. **Dynamic negotiation**: Customer offers ₹900, AI holds firm at ₹1050 citing market demand
+7. **Deal closes**: Customer agrees, pays via UPI link generated in chat
+8. **Profit increases**: Retailer earns ₹550 profit instead of ₹350 (57% margin increase)
+
+## Why This Matters
+
+Small retailers in India are the backbone of the economy, but they compete with one hand tied behind their backs:
+
+**The Challenge**: Big e-commerce companies use data science teams and dynamic pricing algorithms. Small retailers rely on gut feeling and static price tags.
+
+**The Opportunity**: VyaparGyan democratizes AI for retail. A boutique owner in Jaipur gets the same market intelligence and pricing optimization as a large chain—all through a simple mobile app and WhatsApp interface.
+
+**Real-World Impact**:
+- **For Retailers**: 15-20% margin uplift, 30% less dead stock, 24/7 autonomous sales
+- **For Customers**: Natural voice-based shopping, fair negotiated prices, seamless UPI checkout
+- **For India**: Empowering 60+ million small retailers with AI technology
+
+This isn't just a chatbot—it's an AI operating system for retail that levels the playing field.
 
 ## User Personas
 
 ### Primary Persona: The Shopkeeper (The Commander)
-- **Profile**: Small to medium retail business owners in India
-- **Pain Points**: Inventory decisions based on intuition, manual price negotiations, inability to capitalize on viral trends
-- **Goals**: Maximize profit margins, reduce dead stock, automate customer interactions while maintaining control
-- **Technical Comfort**: Basic smartphone usage, prefers voice-based interfaces over complex dashboards
+- **Profile**: Small to medium retail business owners across India—boutique owners, textile merchants, electronics shops
+- **Pain Points**: 
+  - Buying inventory based on intuition, missing viral trends
+  - Manual price negotiations taking up valuable time
+  - Unable to track what's trending in real-time
+  - Losing margins by discounting too quickly
+- **Goals**: Maximize profit margins, reduce dead stock, automate customer interactions while staying in control
+- **Technical Comfort**: Comfortable with smartphones and WhatsApp, prefers voice over typing
 
 ### Secondary Persona: The Customer (The User)  
-- **Profile**: Indian consumers seeking personalized shopping experiences with negotiation flexibility
-- **Pain Points**: Static pricing, impersonal shopping experiences, complex checkout processes
-- **Goals**: Fair pricing through negotiation, quick product discovery, seamless payment
-- **Technical Comfort**: WhatsApp proficiency, voice note communication preference
+- **Profile**: Indian consumers who value personalized service and negotiation flexibility
+- **Pain Points**: 
+  - Static e-commerce pricing with no room to negotiate
+  - Impersonal shopping experiences
+  - Complex checkout processes requiring multiple apps
+- **Goals**: Get fair prices through natural conversation, quick product discovery, seamless payment
+- **Technical Comfort**: WhatsApp power users, comfortable with voice notes and UPI payments
 
 ## Functional Requirements
 
-### The Analyst Agent (TrendSetu)
+### The Analyst Agent (TrendSetu) - The Market Watcher
+
+This agent is your 24/7 market research team, constantly scanning social media to find what's about to blow up.
 
 #### Core Capabilities
-- **Video Content Processing**: Ingest social media video feeds from Instagram Reels, YouTube Shorts, and regional platforms
-- **Frame-to-Text Analysis**: Extract visual elements, text overlays, and contextual information from video frames using Gemini 1.5 Pro Vision
-- **Trend Velocity Calculation**: Generate hype scores (0.0-1.0) based on engagement metrics, hashtag frequency, and content virality patterns
-- **Product Category Mapping**: Automatically categorize trending items into retail-relevant categories (Fashion, Electronics, Home Goods)
+- **Video Content Processing**: Continuously ingests video feeds from Instagram Reels, YouTube Shorts, and regional platforms
+- **Frame-to-Text Analysis**: Uses Gemini 1.5 Pro Vision to extract visual elements, text overlays, and product information from video frames
+- **Trend Velocity Calculation**: Generates "hype scores" (0.0-1.0) based on engagement metrics, hashtag frequency, and viral growth patterns
+- **Product Category Mapping**: Automatically matches trending items to your inventory categories (Fashion, Electronics, Home Goods, etc.)
 
 #### Technical Requirements
-- **Processing Schedule**: Batch processing every 4 hours with emergency real-time triggers for viral content
+- **Processing Schedule**: Batch processing every 4 hours + emergency real-time triggers for viral content
 - **Data Sources**: Instagram Graph API, YouTube Data API, Twitter API v2
 - **Output Format**: Structured trend reports with confidence scores and recommended price adjustments
-- **Storage**: Vector embeddings in Qdrant for semantic trend matching
+- **Storage**: Vector embeddings in Qdrant for semantic trend matching (e.g., "Velvet Lehenga" matches "Velvet Suit")
 
-### The Negotiator Agent (SubhLabh)
+### The Negotiator Agent (SubhLabh) - The Smart Salesperson
 
-#### Core Capabilities
-- **Voice Interface**: Real-time Speech-to-Text (Deepgram Nova-2) and Text-to-Speech (ElevenLabs) with Hindi/English code-switching
-- **Dynamic Personality Switching**: Adjust negotiation style based on trend data (Aggressive, Balanced, Clearance modes)
-- **Context-Aware Responses**: Reference trend data in negotiations ("This style is trending in Mumbai right now")
-- **Inventory Integration**: Real-time stock checking and reservation during negotiations
-
-#### Technical Requirements
-- **Latency Target**: <500ms for voice response (STT -> LLM -> TTS pipeline)
-- **Conversation Memory**: Maintain context across multi-turn negotiations using conversation state
-- **Fallback Mechanisms**: Text-based negotiation via WhatsApp when voice fails
-- **Payment Integration**: Generate UPI payment links upon deal closure
-
-### The Orchestrator (Core Brain)
+This agent handles customer conversations like an experienced salesperson who knows exactly when to hold firm and when to offer deals.
 
 #### Core Capabilities
-- **State Management**: Maintain shared context between Analyst and Negotiator agents using LangGraph state machines
-- **Dynamic Pricing Engine**: Calculate floor prices and ask prices based on trend velocity and inventory levels
-- **Strategy Assignment**: Determine negotiation personality and constraints for each product category
-- **Cross-Agent Communication**: Facilitate data flow between asynchronous trend analysis and real-time negotiations
+- **Voice Interface**: Real-time Speech-to-Text (Deepgram Nova-2) and Text-to-Speech (ElevenLabs) with seamless Hindi/English code-switching
+- **Dynamic Personality Switching**: Adjusts negotiation style based on trend data—aggressive on hot items, generous on clearance
+- **Context-Aware Responses**: References trend data naturally: "Ma'am, I can't lower the price—this style is trending in Mumbai right now"
+- **Inventory Integration**: Real-time stock checking and reservation during negotiations to prevent overselling
 
 #### Technical Requirements
-- **Decision Logic**: Rule-based engine with configurable business logic
-- **State Persistence**: PostgreSQL for transactional data, Redis for session state
-- **API Gateway**: RESTful APIs for tenant configuration and monitoring
-- **Monitoring**: Real-time agent health monitoring and performance metrics
+- **Latency Target**: <500ms for complete voice response (STT → LLM inference → TTS pipeline)
+- **Conversation Memory**: Maintains context across multi-turn negotiations using conversation state
+- **Fallback Mechanisms**: Seamless switch to text-based negotiation via WhatsApp when voice quality is poor
+- **Payment Integration**: Generates UPI payment links instantly upon deal closure
+
+### The Orchestrator (Core Brain) - The Strategic Commander
+
+This is the "brain" that connects everything—taking insights from the Analyst and instructing the Negotiator on how to behave.
+
+#### Core Capabilities
+- **State Management**: Maintains shared context between Analyst and Negotiator agents using LangGraph state machines
+- **Dynamic Pricing Engine**: Calculates floor prices and starting prices based on trend velocity, inventory levels, and shopkeeper constraints
+- **Strategy Assignment**: Determines negotiation personality for each product (Aggressive, Balanced, Clearance, No-Discount modes)
+- **Cross-Agent Communication**: Facilitates data flow between slow batch processing (trends) and fast real-time interactions (negotiations)
+
+#### Technical Requirements
+- **Decision Logic**: Rule-based engine with configurable business logic (e.g., "IF trend_score > 0.8 AND stock < 10 THEN mode = AGGRESSIVE")
+- **State Persistence**: PostgreSQL for transactional data, Redis for session state and caching
+- **API Gateway**: RESTful APIs for tenant configuration and real-time monitoring
+- **Monitoring**: Real-time agent health monitoring with alerts for anomalies (e.g., "AI selling below cost")
 
 ## User Stories
 
@@ -239,3 +286,27 @@ negotiation_sessions: {
 - Beta testing with select retail partners
 
 This requirements document serves as the foundation for implementing VyaparGyan's multi-agent retail intelligence platform, ensuring all stakeholders understand the technical complexity and business value of the autonomous retail ecosystem.
+
+
+## Future Vision
+
+VyaparGyan is designed to evolve from a pricing copilot into a complete AI operating system for retail:
+
+### ONDC Integration
+Connect to India's Open Network for Digital Commerce, enabling retailers to manage pricing strategy across multiple platforms from one central AI brain. Sell on Amazon, Flipkart, and your own store—VyaparGyan optimizes pricing everywhere.
+
+### Voice Commerce Expansion
+Beyond WhatsApp: phone calls, smart speakers, in-store voice kiosks. Customers can negotiate naturally in any channel, and the AI maintains context across all touchpoints.
+
+### Multilingual Support
+Current: Hindi/English code-switching  
+Next: Tamil, Telugu, Bengali, Marathi, Gujarati, and more  
+Goal: Every retailer in India gets AI assistance in their native language
+
+### Complete Retail Intelligence Platform
+- **Predictive Sourcing**: AI recommends what inventory to buy before trends peak
+- **Automated Reordering**: Dynamic inventory management based on trend velocity
+- **Customer Intelligence**: Build profiles, predict preferences, personalize offers
+- **Financial Integration**: Automated accounting, tax filing, working capital optimization
+
+**The Vision**: Transform India's 60+ million small retailers into data-driven, AI-powered businesses that compete on intelligence, not just capital. VyaparGyan becomes the "brain" that every retailer needs to thrive in the digital economy.
