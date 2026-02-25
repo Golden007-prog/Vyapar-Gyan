@@ -6,7 +6,9 @@ VyaparGyan is an AI copilot for Bharat retailers that predicts demand, adjusts p
 
 The system watches social media to detect viral trends (like "Green Sarees trending on Instagram"), then automatically raises prices on matching inventory. When customers negotiate via WhatsApp voice, the AI knows exactly how firm or flexible to be based on real-time market demand. It's like having a market analyst and expert salesperson working 24/7 for every small retailer in India.
 
-**The Technical Innovation**: We built a Hierarchical Multi-Agent System where two AI agents—an Analyst (watching trends) and a Negotiator (talking to customers)—coordinate through a central Orchestrator. The hard problem we solved is syncing slow batch processing (trend analysis every 4 hours) with fast real-time interactions (voice responses in <500ms).
+**The Technical Innovation**: We built a Hierarchical Multi-Agent System where two AI agents—an Analyst (watching trends) and a Negotiator (talking to customers)—coordinate through a central Orchestrator powered by Amazon Bedrock. The hard problem we solved is syncing slow batch processing (trend analysis every 4 hours) with fast real-time interactions (voice responses in <2s).
+
+**Zero-Cost Serverless Architecture**: Built entirely on AWS Lambda, API Gateway, and EventBridge with Gemini Tier 1 API, VyaparGyan runs at zero cost during idle periods. This event-driven, serverless design means retailers only pay when transactions occur—making enterprise-grade AI accessible to even the smallest shops in Bharat. The entire prototype operates well within the $100 AWS Hackathon credit limit.
 
 ## Demo Flow
 
@@ -46,27 +48,32 @@ Small retailers in India face two critical problems:
 
 VyaparGyan uses a **Supervisor-Worker** architecture where a central "brain" coordinates specialized agents:
 
-- **Supervisor (Orchestrator)**: The central coordination node that manages shared state and makes strategic decisions
-- **Worker 1 (Analyst Agent - TrendSetu)**: Runs asynchronously in the background, processing social media data in batches
-- **Worker 2 (Negotiator Agent - SubhLabh)**: Runs in real-time, handling customer voice interactions with millisecond latency
+- **Supervisor (Orchestrator)**: The central coordination node powered by Amazon Bedrock (Claude 3.5 Sonnet or Llama 3) that manages shared state and makes strategic decisions
+- **Worker 1 (Analyst Agent - TrendSetu)**: Runs asynchronously via AWS Lambda cron triggers (EventBridge), processing YouTube Shorts data in batches
+- **Worker 2 (Negotiator Agent - SubhLabh)**: Runs in real-time via AWS Lambda webhooks, handling customer WhatsApp interactions with sub-2-second latency
 
-**Why This Pattern?** The Analyst and Negotiator never talk directly to each other. Instead, they communicate through the Supervisor via a shared state database. This separation allows us to run slow batch processing (trend analysis) and fast real-time processing (voice) independently, then sync them through cached state.
+**Why This Pattern?** The Analyst and Negotiator never talk directly to each other. Instead, they communicate through the Supervisor via a shared state database (Supabase PostgreSQL). This separation allows us to run slow batch processing (trend analysis) and fast real-time processing (voice) independently, then sync them through cached state.
 
-### Hybrid Cloud Architecture
+### Serverless Event-Driven Architecture
 
-We use a two-tier deployment strategy to balance intelligence with speed:
+We use a completely serverless AWS architecture to achieve zero-cost idle periods:
 
-**Master Node (Cloud):**
-- GPT-4o on high-compute cloud instances
-- Handles complex reasoning: trend analysis, strategy formulation, difficult negotiations
+**AWS Lambda Functions:**
+- **Trend Analyzer Lambda**: Triggered by EventBridge cron (every 4 hours), fetches YouTube Shorts data, analyzes with Gemini Vision
+- **Negotiator Lambda**: Triggered by API Gateway webhooks from Meta WhatsApp Cloud API, handles customer conversations
+- **Orchestrator Lambda**: Manages state transitions and pricing decisions using Amazon Bedrock
+
+**Amazon Bedrock (Core Reasoning):**
+- Claude 3.5 Sonnet or Llama 3 for complex reasoning and orchestration
+- Handles: trend analysis interpretation, strategy formulation, negotiation decision-making
 - Processes: "Should we raise prices on this category? By how much?"
 
-**Edge Node (Low-latency):**
-- Llama 3 on edge servers close to users
-- Handles routine interactions: standard negotiations, sentiment analysis, quick responses
-- Processes: "Customer offered ₹900, floor is ₹850, respond with counter-offer"
+**Gemini Tier 1 API (Multimodal Processing):**
+- Gemini 1.5 Pro Vision for YouTube thumbnail analysis and trend detection
+- Gemini 1.5 Pro/Flash for native multimodal voice transcription (no separate STT service needed)
+- Handles: "Transcribe this WhatsApp voice note" and "Analyze this trending video thumbnail"
 
-**Result**: We get GPT-4o's intelligence where we need it, and <500ms response times where speed matters.
+**Result**: We get enterprise-grade AI intelligence with pay-per-use pricing. Small retailers pay nothing when idle, and only pennies per transaction when active.
 
 ## Architecture Diagram
 

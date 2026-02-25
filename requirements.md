@@ -10,6 +10,8 @@ The platform combines two powerful capabilities: (1) An Analyst Agent that watch
 
 **The Result**: Retailers increase profit margins by 15-20% on trending items while reducing dead stock by 30%, all without hiring additional staff.
 
+**Zero-Cost Architecture**: Built entirely on serverless AWS infrastructure (Lambda, API Gateway, Bedrock) with Gemini Tier 1 API, VyaparGyan runs at zero cost during idle periods. Retailers only pay when transactions occur—making enterprise-grade AI accessible to even the smallest shops in Bharat. The entire prototype operates well within the $100 AWS Hackathon credit limit.
+
 ## Demo Flow
 
 Here's VyaparGyan in action:
@@ -66,31 +68,31 @@ This isn't just a chatbot—it's an AI operating system for retail that levels t
 This agent is your 24/7 market research team, constantly scanning social media to find what's about to blow up.
 
 #### Core Capabilities
-- **Video Content Processing**: Continuously ingests video feeds from Instagram Reels, YouTube Shorts, and regional platforms
-- **Frame-to-Text Analysis**: Uses Gemini 1.5 Pro Vision to extract visual elements, text overlays, and product information from video frames
-- **Trend Velocity Calculation**: Generates "hype scores" (0.0-1.0) based on engagement metrics, hashtag frequency, and viral growth patterns
+- **Video Content Processing**: Continuously monitors YouTube Shorts via the official YouTube Data API v3 to identify trending content
+- **Frame-to-Text Analysis**: Uses Gemini 1.5 Pro Vision to analyze video thumbnails and extract visual elements, product categories, and trend signals
+- **Trend Velocity Calculation**: Generates "hype scores" (0.0-1.0) based on engagement metrics, view velocity, and viral growth patterns from YouTube analytics
 - **Product Category Mapping**: Automatically matches trending items to your inventory categories (Fashion, Electronics, Home Goods, etc.)
 
 #### Technical Requirements
-- **Processing Schedule**: Batch processing every 4 hours + emergency real-time triggers for viral content
-- **Data Sources**: Instagram Graph API, YouTube Data API, Twitter API v2
+- **Processing Schedule**: AWS Lambda cron trigger (EventBridge) every 4 hours + emergency real-time triggers for viral content
+- **Data Sources**: YouTube Data API v3 (official API, no scraping—hackathon-safe for live demos)
 - **Output Format**: Structured trend reports with confidence scores and recommended price adjustments
-- **Storage**: Vector embeddings in Qdrant for semantic trend matching (e.g., "Velvet Lehenga" matches "Velvet Suit")
+- **Storage**: Supabase PostgreSQL (free tier) for trend data with vector embeddings for semantic matching (e.g., "Velvet Lehenga" matches "Velvet Suit")
 
 ### The Negotiator Agent (SubhLabh) - The Smart Salesperson
 
 This agent handles customer conversations like an experienced salesperson who knows exactly when to hold firm and when to offer deals.
 
 #### Core Capabilities
-- **Voice Interface**: Real-time Speech-to-Text (Deepgram Nova-2) and Text-to-Speech (ElevenLabs) with seamless Hindi/English code-switching
+- **Voice Interface**: Receives audio messages via Meta WhatsApp Cloud API, transcribes using Gemini 1.5 Pro/Flash native multimodal capabilities (no separate STT service needed)
 - **Dynamic Personality Switching**: Adjusts negotiation style based on trend data—aggressive on hot items, generous on clearance
 - **Context-Aware Responses**: References trend data naturally: "Ma'am, I can't lower the price—this style is trending in Mumbai right now"
 - **Inventory Integration**: Real-time stock checking and reservation during negotiations to prevent overselling
 
 #### Technical Requirements
-- **Latency Target**: <500ms for complete voice response (STT → LLM inference → TTS pipeline)
-- **Conversation Memory**: Maintains context across multi-turn negotiations using conversation state
-- **Fallback Mechanisms**: Seamless switch to text-based negotiation via WhatsApp when voice quality is poor
+- **Latency Target**: <2s for complete voice response (WhatsApp webhook → Lambda → Gemini transcription → Bedrock reasoning → response)
+- **Conversation Memory**: Maintains context across multi-turn negotiations using conversation state stored in Supabase
+- **Fallback Mechanisms**: Seamless handling of both voice notes and text messages via WhatsApp
 - **Payment Integration**: Generates UPI payment links instantly upon deal closure
 
 ### The Orchestrator (Core Brain) - The Strategic Commander
@@ -98,16 +100,16 @@ This agent handles customer conversations like an experienced salesperson who kn
 This is the "brain" that connects everything—taking insights from the Analyst and instructing the Negotiator on how to behave.
 
 #### Core Capabilities
-- **State Management**: Maintains shared context between Analyst and Negotiator agents using LangGraph state machines
+- **State Management**: Maintains shared context between Analyst and Negotiator agents using LangGraph state machines powered by Amazon Bedrock
 - **Dynamic Pricing Engine**: Calculates floor prices and starting prices based on trend velocity, inventory levels, and shopkeeper constraints
 - **Strategy Assignment**: Determines negotiation personality for each product (Aggressive, Balanced, Clearance, No-Discount modes)
 - **Cross-Agent Communication**: Facilitates data flow between slow batch processing (trends) and fast real-time interactions (negotiations)
 
 #### Technical Requirements
-- **Decision Logic**: Rule-based engine with configurable business logic (e.g., "IF trend_score > 0.8 AND stock < 10 THEN mode = AGGRESSIVE")
-- **State Persistence**: PostgreSQL for transactional data, Redis for session state and caching
-- **API Gateway**: RESTful APIs for tenant configuration and real-time monitoring
-- **Monitoring**: Real-time agent health monitoring with alerts for anomalies (e.g., "AI selling below cost")
+- **Decision Logic**: Rule-based engine powered by Amazon Bedrock (Claude 3.5 Sonnet or Llama 3) with configurable business logic (e.g., "IF trend_score > 0.8 AND stock < 10 THEN mode = AGGRESSIVE")
+- **State Persistence**: Supabase PostgreSQL (free tier) for transactional data, with in-memory caching for session state
+- **API Gateway**: AWS API Gateway for webhook endpoints and tenant configuration
+- **Monitoring**: AWS CloudWatch for real-time agent health monitoring with alerts for anomalies (e.g., "AI selling below cost")
 
 ## User Stories
 
@@ -147,27 +149,27 @@ This is the "brain" that connects everything—taking insights from the Analyst 
 ## Non-Functional Requirements
 
 ### Performance Requirements
-- **Voice Latency**: End-to-end voice response <500ms (STT + LLM inference + TTS)
-- **Trend Processing**: Complete social media analysis cycle within 4-hour batch window
-- **Concurrent Users**: Support 1000+ simultaneous voice negotiations per tenant
-- **API Response Time**: REST API responses <200ms for 95th percentile
+- **Voice Latency**: End-to-end voice response <2s (WhatsApp webhook → Lambda → Gemini transcription → Bedrock reasoning → response)
+- **Trend Processing**: Complete YouTube Shorts analysis cycle within 4-hour batch window using Lambda cron triggers
+- **Concurrent Users**: Support 100+ simultaneous negotiations per tenant using serverless Lambda auto-scaling
+- **API Response Time**: API Gateway responses <500ms for 95th percentile
 
 ### Scalability Requirements
-- **Horizontal Scaling**: Microservices architecture supporting independent agent scaling
-- **Database Sharding**: Tenant-based data partitioning for multi-tenancy
-- **Async Processing**: Queue-based architecture for trend analysis workloads
-- **CDN Integration**: Global content delivery for voice and image assets
+- **Serverless Auto-scaling**: AWS Lambda automatically scales from 0 to 1000+ concurrent executions based on demand
+- **Database Scaling**: Supabase PostgreSQL free tier (500MB) for prototype, with upgrade path to paid tiers
+- **Zero-Cost Idle**: No charges when system is idle—perfect for small retailers with intermittent traffic
+- **Event-Driven Architecture**: All components triggered by events (WhatsApp messages, cron schedules), ensuring pay-per-use pricing
 
 ### Reliability Requirements
-- **System Uptime**: 99.9% availability during business hours (9 AM - 9 PM IST)
-- **Data Consistency**: ACID compliance for financial transactions and inventory updates
-- **Fault Tolerance**: Graceful degradation when individual agents fail
-- **Backup Strategy**: Real-time replication with <1 hour RPO
+- **System Uptime**: 99.9% availability leveraging AWS Lambda's built-in redundancy across multiple availability zones
+- **Data Consistency**: ACID compliance for financial transactions via Supabase PostgreSQL
+- **Fault Tolerance**: Graceful degradation when individual agents fail, with automatic Lambda retries
+- **Backup Strategy**: Supabase automated daily backups with point-in-time recovery
 
 ### Security Requirements
-- **Data Encryption**: End-to-end encryption for voice conversations and payment data
-- **Authentication**: Multi-factor authentication for tenant admin access
-- **PCI Compliance**: Secure payment processing with tokenization
+- **Data Encryption**: End-to-end encryption for WhatsApp conversations (Meta's native encryption) and payment data
+- **Authentication**: AWS IAM for service-to-service authentication, JWT tokens for tenant access
+- **PCI Compliance**: Secure payment processing with tokenization via UPI payment gateways
 - **Privacy**: GDPR-compliant data handling with customer consent management
 ## Success Metrics
 
@@ -192,18 +194,19 @@ This is the "brain" that connects everything—taking insights from the Analyst 
 ## Technical Architecture Overview
 
 ### Technology Stack
-- **Orchestration Framework**: LangGraph for multi-agent state management
-- **Large Language Models**: GPT-4o for complex reasoning, Llama 3 for edge inference
-- **Computer Vision**: Gemini 1.5 Pro Vision for video content analysis
-- **Voice Processing**: Deepgram Nova-2 (STT), ElevenLabs (TTS)
-- **Databases**: PostgreSQL (transactional), Qdrant (vector search), Redis (session state)
-- **Infrastructure**: Kubernetes for container orchestration, AWS/GCP for cloud services
+- **Orchestration Framework**: LangGraph for multi-agent state management, powered by Amazon Bedrock
+- **Large Language Models**: Amazon Bedrock (Claude 3.5 Sonnet or Llama 3) for complex reasoning and orchestration
+- **Computer Vision**: Gemini 1.5 Pro Vision for video thumbnail analysis and trend detection
+- **Voice Processing**: Gemini 1.5 Pro/Flash for native multimodal Speech-to-Text transcription
+- **Databases**: Supabase PostgreSQL (free tier) for transactional data and trend storage
+- **Infrastructure**: AWS Lambda (serverless compute), AWS API Gateway (webhooks), AWS EventBridge (cron triggers), AWS CloudWatch (monitoring)
+- **Messaging**: Meta WhatsApp Cloud API for customer communication
 
 ### Integration Requirements
-- **Social Media APIs**: Instagram Graph API, YouTube Data API, Twitter API v2
+- **Social Media APIs**: YouTube Data API v3 (official API for trending Shorts)
 - **Payment Gateways**: UPI integration via Razorpay/PayU
-- **Communication Channels**: WhatsApp Business API, WebRTC for voice calls
-- **Monitoring**: Prometheus/Grafana for metrics, ELK stack for logging
+- **Communication Channels**: Meta WhatsApp Cloud API for voice notes and text messages
+- **Monitoring**: AWS CloudWatch for metrics, logs, and alerts
 
 ## Data Architecture
 
@@ -262,28 +265,30 @@ negotiation_sessions: {
 ## Implementation Phases
 
 ### Phase 1: Core Agent Framework (Day 1-2)
-- Implement LangGraph orchestration layer
-- Build basic Analyst Agent with Instagram API integration
-- Develop Negotiator Agent with text-based WhatsApp interface
-- Create tenant onboarding and product catalog management
+- Implement LangGraph orchestration layer powered by Amazon Bedrock
+- Build basic Analyst Agent with YouTube Data API v3 integration
+- Develop Negotiator Agent with text-based WhatsApp interface via Meta Cloud API
+- Create tenant onboarding and product catalog management using Supabase
 
 ### Phase 2: Voice Integration (Day 3-4)
-- Integrate Deepgram STT and ElevenLabs TTS
-- Implement real-time voice negotiation pipeline
-- Add Hindi/English code-switching capabilities
-- Optimize for <500ms response latency
+- Integrate Gemini 1.5 Pro/Flash for native multimodal voice transcription
+- Implement real-time voice negotiation pipeline via WhatsApp voice notes
+- Add Hindi/English code-switching capabilities through Gemini's multilingual support
+- Optimize for <2s response latency using Lambda performance tuning
 
 ### Phase 3: Advanced Intelligence (Day 5-6)
-- Enhance trend detection with multi-platform analysis
-- Implement dynamic personality switching
-- Add computer vision for inventory verification
-- Deploy advanced pricing algorithms
+- Enhance trend detection with YouTube Shorts analytics and engagement metrics
+- Implement dynamic personality switching in Amazon Bedrock reasoning
+- Add computer vision for inventory verification using Gemini Vision
+- Deploy advanced pricing algorithms with A/B testing
 
 ### Phase 4: Scale & Optimize (Day 7-8)
-- Multi-tenant architecture with database sharding
-- Performance optimization and load testing
-- Advanced analytics and reporting dashboard
+- Multi-tenant architecture with Supabase row-level security
+- Performance optimization and load testing on AWS Lambda
+- Advanced analytics dashboard using AWS QuickSight
 - Beta testing with select retail partners
+
+**Cost Efficiency**: The entire prototype runs on AWS Free Tier + $100 hackathon credits, with Gemini Tier 1 API providing generous free quotas. Production costs scale linearly with usage—retailers only pay when customers interact with the system.
 
 This requirements document serves as the foundation for implementing VyaparGyan's multi-agent retail intelligence platform, ensuring all stakeholders understand the technical complexity and business value of the autonomous retail ecosystem.
 
