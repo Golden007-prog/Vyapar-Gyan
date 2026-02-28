@@ -20,7 +20,7 @@ export async function getInventory(args: unknown, env: Env) {
         TableName: env.DDB_TABLE_NAME,
         Key: {
           PK: `PRODUCT#${productId}`,
-          SK: `PRODUCT#${productId}`,
+          SK: `PRODUCT`,
         },
       })
     );
@@ -38,10 +38,12 @@ export async function getInventory(args: unknown, env: Env) {
           ":pk": `PRODUCT#${productId}`,
           ":sk": "INVENTORY_LOG#",
         },
-        Limit: 10,
+        Limit: 50,
         ScanIndexForward: false, // Most recent first
       })
     );
+    
+    const truncated = (logsResult.Items?.length || 0) >= 50;
     
     return successResponse({
       productId,
@@ -55,6 +57,7 @@ export async function getInventory(args: unknown, env: Env) {
         reason: log.reason,
         reference: log.reference,
       })) || [],
+      truncated,
     });
   } catch (error) {
     if (error instanceof z.ZodError) {

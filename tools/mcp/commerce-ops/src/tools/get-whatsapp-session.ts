@@ -18,6 +18,7 @@ export async function getWhatsappSession(args: unknown, env: Env) {
     const dynamo = getDynamoClient(env.AWS_REGION);
     
     let session = null;
+    let sessionPK = "";
     
     if (sessionId) {
       // Direct lookup by session ID
@@ -26,13 +27,14 @@ export async function getWhatsappSession(args: unknown, env: Env) {
           TableName: env.DDB_TABLE_NAME,
           Key: {
             PK: `WHATSAPP_SESSION#${sessionId}`,
-            SK: `WHATSAPP_SESSION#${sessionId}`,
+            SK: `SESSION`,
           },
         })
       );
       session = result.Item;
+      sessionPK = `WHATSAPP_SESSION#${sessionId}`;
     } else if (phone) {
-      // Query by phone using GSI (assuming GSI1PK = PHONE#phone, GSI1SK = SESSION#timestamp)
+      // Query by phone using GSI1
       const result = await dynamo.send(
         new QueryCommand({
           TableName: env.DDB_TABLE_NAME,
@@ -46,6 +48,7 @@ export async function getWhatsappSession(args: unknown, env: Env) {
         })
       );
       session = result.Items?.[0];
+      sessionPK = session?.PK || "";
     }
     
     if (!session) {
@@ -58,13 +61,15 @@ export async function getWhatsappSession(args: unknown, env: Env) {
         TableName: env.DDB_TABLE_NAME,
         KeyConditionExpression: "PK = :pk AND begins_with(SK, :sk)",
         ExpressionAttributeValues: {
-          ":pk": session.PK,
+          ":pk": sessionPK,
           ":sk": "MESSAGE#",
         },
-        Limit: 20,
+        Limit: 50,
         ScanIndexForward: false,
       })
     );
+    
+    const truncated = (messagesResult.Items?.length || 0) >= 50;
     
     return successResponse({
       session: {
@@ -82,6 +87,7 @@ export async function getWhatsappSession(args: unknown, env: Env) {
         content: msg.content,
         timestamp: msg.timestamp || msg.createdAt,
       })) || [],
+      truncated,
     });
   } catch (error) {
     if (error instanceof z.ZodError) {

@@ -19,7 +19,7 @@ export async function getOrder(args: unknown, env: Env) {
         TableName: env.DDB_TABLE_NAME,
         Key: {
           PK: `ORDER#${orderId}`,
-          SK: `ORDER#${orderId}`,
+          SK: `ORDER`,
         },
       })
     );

@@ -16,7 +16,7 @@ export async function listSellerOrders(args: unknown, env: Env) {
     const { sellerId, status, limit } = listSellerOrdersSchema.parse(args);
     const dynamo = getDynamoClient(env.AWS_REGION);
     
-    // Query using GSI2 (assuming GSI2PK = SELLER#sellerId, GSI2SK = ORDER#timestamp or STATUS#status#timestamp)
+    // Query using GSI2 (assuming GSI2PK = SELLER#sellerId)
     const queryParams: any = {
       TableName: env.DDB_TABLE_NAME,
       IndexName: "GSI2",
@@ -47,11 +47,14 @@ export async function listSellerOrders(args: unknown, env: Env) {
       updatedAt: item.updatedAt,
     })) || [];
     
+    const hasMore = !!result.LastEvaluatedKey;
+    
     return successResponse({
       sellerId,
       status: status || "all",
       orders,
       count: orders.length,
+      hasMore,
     });
   } catch (error) {
     if (error instanceof z.ZodError) {

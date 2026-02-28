@@ -2,29 +2,23 @@
   "mcpServers": {
     "fetch": {
       "command": "uvx",
-      "args": [
-        "mcp-server-fetch"
-      ],
+      "args": ["mcp-server-fetch"],
       "env": {},
       "disabled": true,
       "autoApprove": []
     },
     "aws-iac": {
       "command": "uvx",
-      "args": [
-        "awslabs.aws-iac-mcp-server@latest"
-      ],
+      "args": ["awslabs.aws-iac-mcp-server@latest"],
       "env": {
         "FASTMCP_LOG_LEVEL": "ERROR"
       },
-      "disabled": false,
+      "disabled": true,
       "autoApprove": []
     },
     "commerce-ops-mcp": {
       "command": "node",
-      "args": [
-        "./tools/mcp/commerce-ops/dist/index.js"
-      ],
+      "args": ["./tools/mcp/commerce-ops/dist/index.js"],
       "env": {
         "AWS_REGION": "ap-south-1",
         "AWS_PROFILE": "kiro-mcp",
@@ -32,7 +26,7 @@
         "DDB_TABLE_NAME": "CommerceCore-dev",
         "LOG_GROUP_PREFIX": "/aws/commerce"
       },
-      "disabled": true,
+      "disabled": false,
       "autoApprove": [
         "get_order",
         "get_order_timeline",
@@ -44,9 +38,7 @@
     },
     "commerce-catalog-mcp": {
       "command": "node",
-      "args": [
-        "./tools/mcp/commerce-catalog/dist/index.js"
-      ],
+      "args": ["./tools/mcp/commerce-catalog/dist/index.js"],
       "env": {
         "AWS_REGION": "ap-south-1",
         "AWS_PROFILE": "kiro-mcp",
@@ -54,7 +46,7 @@
         "DDB_TABLE_NAME": "CommerceCore-dev",
         "S3_MEDIA_BUCKET": "commerce-media-dev"
       },
-      "disabled": true,
+      "disabled": false,
       "autoApprove": [
         "get_product",
         "list_products_by_seller",
@@ -66,16 +58,14 @@
     },
     "commerce-admin-mcp": {
       "command": "node",
-      "args": [
-        "./tools/mcp/commerce-admin/dist/index.js"
-      ],
+      "args": ["./tools/mcp/commerce-admin/dist/index.js"],
       "env": {
         "AWS_REGION": "ap-south-1",
         "AWS_PROFILE": "kiro-mcp",
         "APP_ENV": "dev",
         "DDB_TABLE_NAME": "CommerceCore-dev"
       },
-      "disabled": true,
+      "disabled": false,
       "autoApprove": [
         "list_pending_seller_approvals",
         "get_seller_profile",

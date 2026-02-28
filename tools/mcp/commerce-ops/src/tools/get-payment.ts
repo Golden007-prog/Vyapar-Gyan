@@ -23,6 +23,7 @@ export async function getPayment(args: unknown, env: Env) {
           ":pk": `ORDER#${orderId}`,
           ":sk": "PAYMENT#",
         },
+        Limit: 50,
       })
     );
     
@@ -43,10 +44,13 @@ export async function getPayment(args: unknown, env: Env) {
       updatedAt: item.updatedAt,
     }));
     
+    const truncated = result.Items.length >= 50;
+    
     return successResponse({
       orderId,
       payments,
       count: payments.length,
+      truncated,
     });
   } catch (error) {
     if (error instanceof z.ZodError) {
