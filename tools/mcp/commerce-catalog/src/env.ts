@@ -1,22 +1,38 @@
+/**
+ * Environment validation and configuration.
+ * Uses Zod for runtime type checking of environment variables.
+ */
+
 import { z } from "zod";
 
-const envSchema = z.object({
-  AWS_REGION: z.string().default("ap-south-1"),
-  AWS_PROFILE: z.string().optional(),
-  APP_ENV: z.string().default("dev"),
-  DDB_TABLE_NAME: z.string().default("CommerceCore-dev"),
-  S3_MEDIA_BUCKET: z.string().optional(),
+/**
+ * Environment schema with strict validation.
+ */
+export const envSchema = z.object({
+  AWS_REGION: z.literal("ap-south-1"),
+  DYNAMODB_TABLE_NAME: z.literal("CommerceCore-dev"),
+  AWS_PROFILE: z.literal("kiro-mcp"),
+  S3_MEDIA_BUCKET: z.string().min(1).optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;
 
+/**
+ * Loads and validates environment variables.
+ * Throws descriptive error if validation fails.
+ */
 export function loadEnv(): Env {
-  const result = envSchema.safeParse(process.env);
-  
-  if (!result.success) {
-    console.error("Environment validation failed:", result.error.format());
-    throw new Error("Invalid environment configuration");
+  try {
+    return envSchema.parse(process.env);
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      const issues = error.issues.map(
+        (issue) => `  - ${issue.path.join(".")}: ${issue.message}`
+      );
+      throw new Error(
+        `Environment validation failed:\n${issues.join("\n")}`
+      );
+    }
+    throw error;
   }
-  
-  return result.data;
 }

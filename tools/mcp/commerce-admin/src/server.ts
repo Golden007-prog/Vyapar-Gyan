@@ -1,5 +1,9 @@
+/**
+ * MCP server initialization and tool registration.
+ * Handles ListToolsRequest and CallToolRequest for admin operations.
+ */
+
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
@@ -17,7 +21,7 @@ const env = loadEnv();
 const server = new Server(
   {
     name: "commerce-admin-mcp",
-    version: "1.0.0",
+    version: "0.1.0",
   },
   {
     capabilities: {
@@ -31,7 +35,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
     tools: [
       {
         name: "list_pending_seller_approvals",
-        description: "List sellers pending approval",
+        description: "List pending seller approval requests awaiting verification",
         inputSchema: {
           type: "object",
           properties: {
@@ -44,7 +48,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: "get_seller_profile",
-        description: "Fetch seller profile with verification status",
+        description: "Fetch detailed seller profile information including verification documents",
         inputSchema: {
           type: "object",
           properties: {
@@ -58,7 +62,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: "list_open_disputes",
-        description: "List open disputes",
+        description: "List open disputes requiring admin attention",
         inputSchema: {
           type: "object",
           properties: {
@@ -71,34 +75,34 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: "get_dispute",
-        description: "Fetch dispute details with order context",
+        description: "Fetch detailed dispute information including resolution history",
         inputSchema: {
           type: "object",
           properties: {
             orderId: {
               type: "string",
-              description: "Order ID to fetch dispute for",
+              description: "The order ID to fetch disputes for",
             },
             disputeId: {
               type: "string",
-              description: "Dispute ID to fetch directly",
+              description: "The dispute ID to fetch directly",
             },
           },
         },
       },
       {
         name: "get_audit_timeline",
-        description: "Fetch audit timeline for a resource",
+        description: "Fetch audit timeline for a specific resource to track changes",
         inputSchema: {
           type: "object",
           properties: {
             resourceType: {
               type: "string",
-              description: "Resource type (e.g., ORDER, SELLER, PRODUCT)",
+              description: "The resource type (e.g., SELLER, ORDER, PRODUCT)",
             },
             resourceId: {
               type: "string",
-              description: "Resource ID",
+              description: "The resource ID to fetch audit history for",
             },
           },
           required: ["resourceType", "resourceId"],
@@ -106,7 +110,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: "list_recent_payments",
-        description: "List recent payments with optional status filter",
+        description: "List recent payment transactions with optional status filtering",
         inputSchema: {
           type: "object",
           properties: {
@@ -127,8 +131,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
+  const startTime = Date.now();
 
   try {
+    console.error(`[commerce-admin-mcp] Tool invocation: ${name}`);
+    
     let result;
     
     switch (name) {
@@ -154,6 +161,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         throw new Error(`Unknown tool: ${name}`);
     }
 
+    const duration = Date.now() - startTime;
+    console.error(`[commerce-admin-mcp] Tool ${name} completed successfully in ${duration}ms`);
+
     return {
       content: [
         {
@@ -163,6 +173,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       ],
     };
   } catch (error) {
+    const duration = Date.now() - startTime;
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    console.error(`[commerce-admin-mcp] Tool ${name} failed after ${duration}ms: ${errorMessage}`);
+    
     return {
       content: [
         {
@@ -171,7 +185,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             success: false,
             error: {
               code: "TOOL_ERROR",
-              message: error instanceof Error ? error.message : "Unknown error",
+              message: errorMessage,
             },
           }, null, 2),
         },

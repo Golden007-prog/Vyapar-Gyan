@@ -1,5 +1,9 @@
+/**
+ * MCP server initialization and tool registration.
+ * Handles ListToolsRequest and CallToolRequest.
+ */
+
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
@@ -17,7 +21,7 @@ const env = loadEnv();
 const server = new Server(
   {
     name: "commerce-catalog-mcp",
-    version: "1.0.0",
+    version: "0.1.0",
   },
   {
     capabilities: {
@@ -105,7 +109,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             threshold: {
               type: "number",
-              description: "Stock threshold (default 10)",
+              description: "Stock threshold (default 5)",
             },
             limit: {
               type: "number",
@@ -123,7 +127,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           properties: {
             productId: {
               type: "string",
-              description: "The product ID",
+              description: "The product ID to fetch media for",
             },
           },
           required: ["productId"],
@@ -135,8 +139,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
+  const startTime = Date.now();
 
   try {
+    console.error(`[commerce-catalog-mcp] Tool invocation: ${name}`);
+    
     let result;
     
     switch (name) {
@@ -162,6 +169,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         throw new Error(`Unknown tool: ${name}`);
     }
 
+    const duration = Date.now() - startTime;
+    console.error(`[commerce-catalog-mcp] Tool ${name} completed successfully in ${duration}ms`);
+
     return {
       content: [
         {
@@ -171,6 +181,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       ],
     };
   } catch (error) {
+    const duration = Date.now() - startTime;
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    console.error(`[commerce-catalog-mcp] Tool ${name} failed after ${duration}ms: ${errorMessage}`);
+    
     return {
       content: [
         {
@@ -179,7 +193,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             success: false,
             error: {
               code: "TOOL_ERROR",
-              message: error instanceof Error ? error.message : "Unknown error",
+              message: errorMessage,
             },
           }, null, 2),
         },

@@ -1,8 +1,13 @@
+/**
+ * Tool: get_seller_profile
+ * Retrieves detailed seller profile information for admin review.
+ */
+
 import { z } from "zod";
 import { GetCommand } from "@aws-sdk/lib-dynamodb";
-import { getDynamoClient } from "../../../shared/aws-clients.js";
-import { successResponse, errorResponse } from "../../../shared/response-formatter.js";
-import { handleAWSError, logError } from "../../../shared/error-handler.js";
+import { getDynamoClient } from "../shared/aws-clients.js";
+import { successResponse, errorResponse } from "../shared/response-formatter.js";
+import { handleAWSError, logError } from "../shared/error-handler.js";
 import type { Env } from "../env.js";
 
 export const getSellerProfileSchema = z.object({
@@ -11,42 +16,44 @@ export const getSellerProfileSchema = z.object({
 
 export async function getSellerProfile(args: unknown, env: Env) {
   try {
+    // 1. Validate input parameters
     const { sellerId } = getSellerProfileSchema.parse(args);
+    
+    // 2. Get AWS client
     const dynamo = getDynamoClient(env.AWS_REGION);
     
+    // 3. Execute AWS operation with correct PK/SK pattern
     const result = await dynamo.send(
       new GetCommand({
-        TableName: env.DDB_TABLE_NAME,
+        TableName: env.DYNAMODB_TABLE_NAME,
         Key: {
           PK: `SELLER#${sellerId}`,
-          SK: `SELLER#${sellerId}`,
+          SK: `PROFILE`,
         },
       })
     );
     
+    // 4. Handle not found case
     if (!result.Item) {
       return errorResponse("NOT_FOUND", `Seller ${sellerId} not found`);
     }
     
+    // 5. Transform and return success response with all required fields
     return successResponse({
-      sellerId: result.Item.sellerId || sellerId,
-      businessName: result.Item.businessName,
-      email: result.Item.email,
-      phone: result.Item.phone,
-      status: result.Item.status,
-      verificationStatus: result.Item.verificationStatus,
-      documents: result.Item.documents || [],
-      address: result.Item.address || {},
-      bankDetails: result.Item.bankDetails ? {
-        accountHolderName: result.Item.bankDetails.accountHolderName,
-        ifsc: result.Item.bankDetails.ifsc,
-        verified: result.Item.bankDetails.verified || false,
-      } : null,
-      metadata: result.Item.metadata || {},
-      createdAt: result.Item.createdAt,
-      updatedAt: result.Item.updatedAt,
+      seller_id: result.Item.seller_id || sellerId,
+      business_name: result.Item.business_name,
+      business_type: result.Item.business_type,
+      owner_name: result.Item.owner_name,
+      contact_phone: result.Item.contact_phone,
+      contact_email: result.Item.contact_email,
+      verification_status: result.Item.verification_status,
+      document_keys: result.Item.document_keys || [],
+      created_at: result.Item.created_at,
+      updated_at: result.Item.updated_at,
+      approved_at: result.Item.approved_at,
     });
   } catch (error) {
+    // 6. Handle errors with appropriate error codes
     if (error instanceof z.ZodError) {
       return errorResponse("VALIDATION_ERROR", "Invalid input", error.errors);
     }

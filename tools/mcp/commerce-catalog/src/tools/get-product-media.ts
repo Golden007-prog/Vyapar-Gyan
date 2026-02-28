@@ -1,9 +1,14 @@
+/**
+ * Tool: get_product_media
+ * Retrieves product media metadata by product ID.
+ */
+
 import { z } from "zod";
-import { GetCommand } from "@aws-sdk/lib-dynamodb";
+import { QueryCommand } from "@aws-sdk/lib-dynamodb";
 import { getDynamoClient } from "../shared/aws-clients.js";
 import { successResponse, errorResponse } from "../shared/response-formatter.js";
 import { handleAWSError, logError } from "../shared/error-handler.js";
-import type { Env } from "../env.js";
+import { Env } from "../env.js";
 
 export const getProductMediaSchema = z.object({
   productId: z.string().min(1, "productId is required"),
@@ -11,38 +16,46 @@ export const getProductMediaSchema = z.object({
 
 export async function getProductMedia(args: unknown, env: Env) {
   try {
+    // 1. Validate input parameters
     const { productId } = getProductMediaSchema.parse(args);
+    
+    // 2. Get AWS client
     const dynamo = getDynamoClient(env.AWS_REGION);
     
+    // 3. Execute AWS operation - Query for product media items
     const result = await dynamo.send(
-      new GetCommand({
-        TableName: env.DDB_TABLE_NAME,
-        Key: {
-          PK: `PRODUCT#${productId}`,
-          SK: `PRODUCT#${productId}`,
+      new QueryCommand({
+        TableName: env.DYNAMODB_TABLE_NAME,
+        KeyConditionExpression: "PK = :pk AND begins_with(SK, :sk)",
+        ExpressionAttributeValues: {
+          ":pk": `PRODUCT#${productId}`,
+          ":sk": "MEDIA#",
         },
       })
     );
     
-    if (!result.Item) {
-      return errorResponse("NOT_FOUND", `Product ${productId} not found`);
-    }
+    // 4. Transform results to media metadata array
+    const media = result.Items?.map((item) => ({
+      mediaId: item.mediaId,
+      mediaType: item.mediaType,
+      s3Key: item.s3Key,
+      sortOrder: item.sortOrder,
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt,
+    })) || [];
     
-    const images = result.Item.images || [];
-    const mediaMetadata = images.map((img: any) => ({
-      url: img.url || img,
-      s3Key: img.s3Key,
-      type: img.type || "image",
-      order: img.order || 0,
-      metadata: img.metadata || {},
-    }));
+    // 5. Sort results by sort_order ascending
+    media.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
     
+    // 6. Return success response
     return successResponse({
       productId,
-      media: mediaMetadata,
-      count: mediaMetadata.length,
+      media,
+      count: media.length,
+      message: media.length === 0 ? "No media found for this product" : undefined,
     });
   } catch (error) {
+    // 7. Handle errors with appropriate error codes
     if (error instanceof z.ZodError) {
       return errorResponse("VALIDATION_ERROR", "Invalid input", error.errors);
     }

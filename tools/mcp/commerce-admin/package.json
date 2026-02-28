@@ -1,14 +1,20 @@
 {
   "name": "commerce-admin-mcp",
-  "version": "1.0.0",
-  "description": "MCP server for admin moderation, review, and lookup",
+  "version": "0.1.0",
+  "description": "MCP server for commerce administrative data access",
   "type": "module",
   "main": "dist/index.js",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
     "start": "node dist/index.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^0.5.0",
@@ -18,6 +24,10 @@
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
-    "typescript": "^5.3.3"
+    "typescript": "^5.3.3",
+    "vitest": "^1.0.0",
+    "fast-check": "^3.15.0",
+    "aws-sdk-client-mock": "^3.0.0",
+    "@vitest/coverage-v8": "^1.0.0"
   }
 }

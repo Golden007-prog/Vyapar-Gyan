@@ -42,8 +42,7 @@
       "env": {
         "AWS_REGION": "ap-south-1",
         "AWS_PROFILE": "kiro-mcp",
-        "APP_ENV": "dev",
-        "DDB_TABLE_NAME": "CommerceCore-dev",
+        "DYNAMODB_TABLE_NAME": "CommerceCore-dev",
         "S3_MEDIA_BUCKET": "commerce-media-dev"
       },
       "disabled": false,
@@ -62,8 +61,8 @@
       "env": {
         "AWS_REGION": "ap-south-1",
         "AWS_PROFILE": "kiro-mcp",
-        "APP_ENV": "dev",
-        "DDB_TABLE_NAME": "CommerceCore-dev"
+        "DYNAMODB_TABLE_NAME": "CommerceCore-dev",
+        "S3_DOC_BUCKET": "commerce-docs-dev"
       },
       "disabled": false,
       "autoApprove": [

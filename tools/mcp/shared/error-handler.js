@@ -1,9 +1,4 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.MCPError = void 0;
-exports.handleAWSError = handleAWSError;
-exports.logError = logError;
-class MCPError extends Error {
+export class MCPError extends Error {
     code;
     details;
     constructor(message, code = "INTERNAL_ERROR", details) {
@@ -13,8 +8,7 @@ class MCPError extends Error {
         this.name = "MCPError";
     }
 }
-exports.MCPError = MCPError;
-function handleAWSError(error) {
+export function handleAWSError(error) {
     if (error instanceof Error) {
         const awsError = error;
         if (awsError.name === "ResourceNotFoundException") {
@@ -30,7 +24,7 @@ function handleAWSError(error) {
     }
     return new MCPError("Unknown error occurred", "UNKNOWN_ERROR", { error });
 }
-function logError(context, error) {
+export function logError(context, error) {
     console.error(`[${context}]`, error instanceof Error ? error.message : error);
 }
 //# sourceMappingURL=error-handler.js.map

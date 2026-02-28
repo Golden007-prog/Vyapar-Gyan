@@ -1,9 +1,14 @@
+/**
+ * Tool: get_category
+ * Retrieves category details by category ID.
+ */
+
 import { z } from "zod";
 import { GetCommand } from "@aws-sdk/lib-dynamodb";
 import { getDynamoClient } from "../shared/aws-clients.js";
 import { successResponse, errorResponse } from "../shared/response-formatter.js";
 import { handleAWSError, logError } from "../shared/error-handler.js";
-import type { Env } from "../env.js";
+import { Env } from "../env.js";
 
 export const getCategorySchema = z.object({
   categoryId: z.string().min(1, "categoryId is required"),
@@ -11,35 +16,40 @@ export const getCategorySchema = z.object({
 
 export async function getCategory(args: unknown, env: Env) {
   try {
+    // 1. Validate input parameters
     const { categoryId } = getCategorySchema.parse(args);
+    
+    // 2. Get AWS client
     const dynamo = getDynamoClient(env.AWS_REGION);
     
+    // 3. Execute AWS operation
     const result = await dynamo.send(
       new GetCommand({
-        TableName: env.DDB_TABLE_NAME,
+        TableName: env.DYNAMODB_TABLE_NAME,
         Key: {
           PK: `CATEGORY#${categoryId}`,
-          SK: `CATEGORY#${categoryId}`,
+          SK: `CATEGORY`,
         },
       })
     );
     
+    // 4. Handle not found case
     if (!result.Item) {
       return errorResponse("NOT_FOUND", `Category ${categoryId} not found`);
     }
     
+    // 5. Transform and return success response
     return successResponse({
       categoryId: result.Item.categoryId || categoryId,
       name: result.Item.name,
-      description: result.Item.description,
-      parentCategoryId: result.Item.parentCategoryId,
-      level: result.Item.level || 0,
+      slug: result.Item.slug,
+      parentCategoryId: result.Item.parentCategoryId || null,
       status: result.Item.status,
-      metadata: result.Item.metadata || {},
       createdAt: result.Item.createdAt,
       updatedAt: result.Item.updatedAt,
     });
   } catch (error) {
+    // 6. Handle errors with appropriate error codes
     if (error instanceof z.ZodError) {
       return errorResponse("VALIDATION_ERROR", "Invalid input", error.errors);
     }
