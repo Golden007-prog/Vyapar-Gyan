@@ -2,316 +2,573 @@
 
 ## Executive Summary
 
-VyaparGyan is an AI copilot for Bharat retailers that predicts demand, adjusts pricing, and negotiates with customers automatically.
+VyaparGyan is an AI-powered commerce platform for local Indian retailers that helps them manage their business, serve customers via WhatsApp, and make smarter pricing decisions using AI assistance.
 
-The platform combines two powerful capabilities: (1) An Analyst Agent that watches social media to predict what will sell, and (2) a Negotiator Agent that talks to customers via voice to close deals. The central Orchestrator connects these agents, ensuring that pricing strategy reflects real-time market demand.
+The platform serves three user types: Admins who oversee the marketplace, Sellers who manage products and fulfill orders, and Customers who browse and purchase primarily through WhatsApp. VyaparGyan combines traditional commerce workflows with optional AI capabilities for catalog management, customer support, and pricing intelligence.
 
-**The Problem We Solve**: Small retailers lose money in two ways—they buy the wrong inventory (dead stock) and sell at the wrong prices (lost margins). VyaparGyan fixes both by bringing market intelligence directly into sales execution.
+**The Problem**: Small retailers in Bharat struggle with inventory management, customer engagement, and competitive pricing. They lack the tools and data that large e-commerce platforms use to optimize operations. Manual processes limit their ability to scale, and they miss opportunities to capitalize on market trends.
 
-**The Result**: Retailers increase profit margins by 15-20% on trending items while reducing dead stock by 30%, all without hiring additional staff.
+**The Solution**: VyaparGyan provides a complete commerce platform that runs on cost-effective AWS serverless infrastructure. Sellers use a web dashboard to manage products and orders. Customers interact naturally via WhatsApp for browsing, ordering, and payment. AI assists with product cataloging, multilingual support, and optional pricing recommendations based on market trends.
 
-**Zero-Cost Architecture**: Built entirely on serverless AWS infrastructure (Lambda, API Gateway, Bedrock) with Gemini Tier 1 API, VyaparGyan runs at zero cost during idle periods. Retailers only pay when transactions occur—making enterprise-grade AI accessible to even the smallest shops in Bharat. The entire prototype operates well within the $100 AWS Hackathon credit limit.
+**Why This Matters**: India has 60+ million small retailers who form the backbone of the economy. VyaparGyan democratizes access to modern commerce technology, enabling local shops to compete effectively in the digital economy without requiring large capital investments or technical expertise.
 
-## Demo Flow
+## Product Vision
 
-Here's VyaparGyan in action:
+VyaparGyan is a production-grade, event-driven commerce platform that:
 
-1. **Retailer uploads product image**: Shopkeeper photographs a shelf of sarees, uses voice to catalog: "10 Green Banarasi Sarees, cost ₹500 each"
-2. **AI detects trend**: System scans Instagram Reels and YouTube Shorts, detects "Green Sarees" with 400% engagement spike
-3. **System adjusts strategy**: Floor price automatically raised from ₹850 to ₹1050, negotiation mode set to "AGGRESSIVE"
-4. **Customer negotiates via WhatsApp voice**: Customer sends voice note asking about green sarees
-5. **AI responds with context**: "This Green Banarasi is ₹1200. It's trending in Mumbai right now"
-6. **Dynamic negotiation**: Customer offers ₹900, AI holds firm at ₹1050 citing market demand
-7. **Deal closes**: Customer agrees, pays via UPI link generated in chat
-8. **Profit increases**: Retailer earns ₹550 profit instead of ₹350 (57% margin increase)
+- Enables seller onboarding with document verification and admin approval
+- Supports complete product and inventory management with image uploads
+- Provides WhatsApp-based customer commerce workflows for browsing and ordering
+- Facilitates order creation, payment link generation, and order tracking
+- Offers admin controls for seller moderation, category management, and analytics
+- Optionally leverages AI for catalog assistance, multilingual support, and pricing intelligence
 
-## Why This Matters
+This is not just a chatbot or demo. It is a complete commerce system with:
+- Seller operations and management tools
+- Customer-facing commerce workflows
+- WhatsApp integration as the primary customer channel
+- Admin control plane for oversight and moderation
+- AI-assisted features that improve efficiency and decision-making
 
-Small retailers in India are the backbone of the economy, but they compete with one hand tied behind their backs:
+The platform runs on AWS serverless architecture, ensuring cost-efficiency and scalability for businesses of all sizes.
 
-**The Challenge**: Big e-commerce companies use data science teams and dynamic pricing algorithms. Small retailers rely on gut feeling and static price tags.
+## User Roles
 
-**The Opportunity**: VyaparGyan democratizes AI for retail. A boutique owner in Jaipur gets the same market intelligence and pricing optimization as a large chain—all through a simple mobile app and WhatsApp interface.
+### Admin
 
-**Real-World Impact**:
-- **For Retailers**: 15-20% margin uplift, 30% less dead stock, 24/7 autonomous sales
-- **For Customers**: Natural voice-based shopping, fair negotiated prices, seamless UPI checkout
-- **For India**: Empowering 60+ million small retailers with AI technology
+**Goals**:
+- Maintain marketplace quality and trust
+- Moderate seller applications and activities
+- Manage product categories and taxonomy
+- Monitor platform health and performance
+- Resolve disputes and handle escalations
+- Gain insights through analytics and reporting
 
-This isn't just a chatbot—it's an AI operating system for retail that levels the playing field.
+**Pain Points**:
+- Manual review of seller documents is time-consuming
+- Difficult to detect fraudulent or low-quality sellers
+- Limited visibility into order and payment issues
+- Hard to track platform metrics across sellers
+- Dispute resolution requires context from multiple sources
 
-## User Personas
+**Key Actions**:
+- Approve or reject seller applications
+- Suspend or unsuspend seller accounts
+- Create and manage product categories
+- View and manage disputes
+- Access order and payment dashboards
+- Monitor system health and audit logs
+- Configure platform settings and policies
 
-### Primary Persona: The Shopkeeper (The Commander)
-- **Profile**: Small to medium retail business owners across India—boutique owners, textile merchants, electronics shops
-- **Pain Points**: 
-  - Buying inventory based on intuition, missing viral trends
-  - Manual price negotiations taking up valuable time
-  - Unable to track what's trending in real-time
-  - Losing margins by discounting too quickly
-- **Goals**: Maximize profit margins, reduce dead stock, automate customer interactions while staying in control
-- **Technical Comfort**: Comfortable with smartphones and WhatsApp, prefers voice over typing
+### Seller
 
-### Secondary Persona: The Customer (The User)  
-- **Profile**: Indian consumers who value personalized service and negotiation flexibility
-- **Pain Points**: 
-  - Static e-commerce pricing with no room to negotiate
-  - Impersonal shopping experiences
-  - Complex checkout processes requiring multiple apps
-- **Goals**: Get fair prices through natural conversation, quick product discovery, seamless payment
-- **Technical Comfort**: WhatsApp power users, comfortable with voice notes and UPI payments
+**Goals**:
+- Get approved quickly to start selling
+- Easily manage product catalog and inventory
+- Receive and fulfill customer orders efficiently
+- Track revenue and business performance
+- Maintain good standing with customers and platform
+- Reduce manual work through automation
 
-## Functional Requirements
+**Pain Points**:
+- Complex onboarding processes delay time to market
+- Manual product entry is tedious and error-prone
+- Difficult to keep inventory accurate across channels
+- Miss orders due to delayed notifications
+- Hard to understand what products sell well
+- Pricing decisions based on guesswork rather than data
 
-### The Analyst Agent (TrendSetu) - The Market Watcher
+**Key Actions**:
+- Sign up and submit verification documents
+- Create, edit, and delete products
+- Upload product images
+- Manage stock levels and pricing
+- Receive order notifications via WhatsApp
+- Accept or reject orders
+- View order history and revenue dashboard
+- Update business profile and settings
 
-This agent is your 24/7 market research team, constantly scanning social media to find what's about to blow up.
+### Customer
 
-#### Core Capabilities
-- **Video Content Processing**: Continuously monitors YouTube Shorts via the official YouTube Data API v3 to identify trending content
-- **Frame-to-Text Analysis**: Uses Gemini 1.5 Pro Vision to analyze video thumbnails and extract visual elements, product categories, and trend signals
-- **Trend Velocity Calculation**: Generates "hype scores" (0.0-1.0) based on engagement metrics, view velocity, and viral growth patterns from YouTube analytics
-- **Product Category Mapping**: Automatically matches trending items to your inventory categories (Fashion, Electronics, Home Goods, etc.)
+**Goals**:
+- Discover products easily without app downloads
+- Get quick responses to product inquiries
+- Complete purchases with minimal friction
+- Pay securely using familiar methods
+- Track order status and delivery
+- Communicate naturally in preferred language
 
-#### Technical Requirements
-- **Processing Schedule**: AWS Lambda cron trigger (EventBridge) every 4 hours + emergency real-time triggers for viral content
-- **Data Sources**: YouTube Data API v3 (official API, no scraping—hackathon-safe for live demos)
-- **Output Format**: Structured trend reports with confidence scores and recommended price adjustments
-- **Storage**: Supabase PostgreSQL (free tier) for trend data with vector embeddings for semantic matching (e.g., "Velvet Lehenga" matches "Velvet Suit")
+**Pain Points**:
+- E-commerce apps require downloads and registration
+- Static product listings lack personalization
+- Checkout processes are complex and time-consuming
+- Limited payment options or unfamiliar interfaces
+- Difficult to get quick answers about products
+- Language barriers with English-only interfaces
 
-### The Negotiator Agent (SubhLabh) - The Smart Salesperson
+**Key Actions**:
+- Browse products via WhatsApp
+- Ask questions about products and availability
+- Receive product recommendations
+- Place orders through conversation
+- Receive and pay via payment links
+- Track order status
+- Communicate in Hindi, English, or mixed language
 
-This agent handles customer conversations like an experienced salesperson who knows exactly when to hold firm and when to offer deals.
+## Core Functional Requirements
 
-#### Core Capabilities
-- **Voice Interface**: Receives audio messages via Meta WhatsApp Cloud API, transcribes using Gemini 1.5 Pro/Flash native multimodal capabilities (no separate STT service needed)
-- **Dynamic Personality Switching**: Adjusts negotiation style based on trend data—aggressive on hot items, generous on clearance
-- **Context-Aware Responses**: References trend data naturally: "Ma'am, I can't lower the price—this style is trending in Mumbai right now"
-- **Inventory Integration**: Real-time stock checking and reservation during negotiations to prevent overselling
+### Admin Capabilities
 
-#### Technical Requirements
-- **Latency Target**: <2s for complete voice response (WhatsApp webhook → Lambda → Gemini transcription → Bedrock reasoning → response)
-- **Conversation Memory**: Maintains context across multi-turn negotiations using conversation state stored in Supabase
-- **Fallback Mechanisms**: Seamless handling of both voice notes and text messages via WhatsApp
-- **Payment Integration**: Generates UPI payment links instantly upon deal closure
+#### Seller Management
+- Review seller applications with uploaded documents
+- Approve or reject applications with reason codes
+- Suspend seller accounts for policy violations
+- Unsuspend accounts after review
+- View seller profiles, products, and order history
+- Search and filter sellers by status, category, or metrics
 
-### The Orchestrator (Core Brain) - The Strategic Commander
+#### Category Management
+- Create product categories and subcategories
+- Edit category names and descriptions
+- Reorder categories for display priority
+- Archive unused categories
+- Associate categories with seller types
 
-This is the "brain" that connects everything—taking insights from the Analyst and instructing the Negotiator on how to behave.
+#### Dispute Management
+- View disputes raised by customers or sellers
+- Assign disputes to admin users
+- Communicate with involved parties
+- Mark disputes as resolved with outcomes
+- Track dispute resolution metrics
 
-#### Core Capabilities
-- **State Management**: Maintains shared context between Analyst and Negotiator agents using LangGraph state machines powered by Amazon Bedrock
-- **Dynamic Pricing Engine**: Calculates floor prices and starting prices based on trend velocity, inventory levels, and shopkeeper constraints
-- **Strategy Assignment**: Determines negotiation personality for each product (Aggressive, Balanced, Clearance, No-Discount modes)
-- **Cross-Agent Communication**: Facilitates data flow between slow batch processing (trends) and fast real-time interactions (negotiations)
+#### Analytics Dashboard
+- View platform-wide order volume and GMV
+- Monitor seller performance metrics
+- Track payment success rates
+- Analyze customer engagement patterns
+- Export reports for offline analysis
+- Set up alerts for anomalies
 
-#### Technical Requirements
-- **Decision Logic**: Rule-based engine powered by Amazon Bedrock (Claude 3.5 Sonnet or Llama 3) with configurable business logic (e.g., "IF trend_score > 0.8 AND stock < 10 THEN mode = AGGRESSIVE")
-- **State Persistence**: Supabase PostgreSQL (free tier) for transactional data, with in-memory caching for session state
-- **API Gateway**: AWS API Gateway for webhook endpoints and tenant configuration
-- **Monitoring**: AWS CloudWatch for real-time agent health monitoring with alerts for anomalies (e.g., "AI selling below cost")
+#### Audit and Compliance
+- View audit logs for all admin actions
+- Track seller document verification history
+- Monitor payment transaction records
+- Review system access logs
+- Generate compliance reports
 
-## User Stories
+### Seller Capabilities
 
-### Story 1: Viral Trend Capitalization
-**As a** shopkeeper selling fashion items,  
-**I want** the system to automatically detect when my inventory items match viral social media trends,  
-**So that** I can increase prices dynamically and maximize profit margins without manual market research.
+#### Onboarding
+- Register with phone number and business details
+- Upload required documents (business license, ID, tax registration)
+- Submit application for admin review
+- Receive approval or rejection notifications
+- Complete profile setup after approval
 
-**Acceptance Criteria:**
-- Analyst Agent detects "Green Banarasi Sarees" trending on Instagram with hype score >0.8
-- Orchestrator updates floor price for matching inventory items by 15-25%
-- Shopkeeper receives mobile notification with trend evidence and price adjustment
-- Negotiator Agent refuses discounts below new floor price during customer interactions
+#### Product Management
+- Create products with name, description, category, price
+- Upload multiple product images
+- Set stock quantities and SKUs
+- Edit product details and pricing
+- Mark products as active or inactive
+- Delete products (soft delete with order history preservation)
+- Bulk import products via CSV (future)
 
-### Story 2: Autonomous Voice Negotiation
-**As a** customer interested in purchasing a saree,  
-**I want** to negotiate prices naturally through voice conversation,  
-**So that** I can get fair pricing without visiting the physical store or dealing with static e-commerce prices.
+#### Inventory Management
+- Update stock quantities manually
+- Receive low stock alerts
+- View stock movement history
+- Reserve stock during order processing
+- Handle stock adjustments for returns or damage
 
-**Acceptance Criteria:**
-- Customer initiates conversation via WhatsApp voice note or QR code scan
-- Negotiator Agent responds within 500ms with product images and initial pricing
-- Agent adjusts negotiation strategy based on real-time trend data and inventory levels
-- Conversation concludes with agreed price and UPI payment link generation
+#### Order Management
+- Receive real-time order notifications via WhatsApp
+- View order details including customer info and items
+- Accept orders to begin fulfillment
+- Reject orders with reason (out of stock, pricing error)
+- Update order status (processing, shipped, delivered)
+- Handle order cancellations and refunds
 
-### Story 3: Intelligent Inventory Strategy
-**As a** shopkeeper with slow-moving inventory,  
-**I want** the system to automatically switch to clearance mode for non-trending items,  
-**So that** I can reduce dead stock while maintaining margins on high-demand products.
+#### Business Dashboard
+- View revenue by day, week, month
+- Track order counts and average order value
+- Monitor product performance (views, orders, conversion)
+- Analyze customer repeat purchase rates
+- View payment settlement status
 
-**Acceptance Criteria:**
-- Analyst Agent identifies products with declining trend scores (<0.3) and high inventory (>30 days stock)
-- Orchestrator switches strategy to "CLEARANCE" mode with generous discount allowances
-- Negotiator Agent proactively offers discounts and bundle deals for affected items
-- System tracks clearance success rate and adjusts strategy parameters
+#### Notifications
+- WhatsApp notifications for new orders
+- Alerts for low stock items
+- Payment confirmation messages
+- Customer inquiry notifications
+- Admin messages and policy updates
+
+### Customer Capabilities
+
+#### Product Discovery
+- Browse products by category via WhatsApp
+- Search products by name or description
+- View product images and details
+- Ask questions about products
+- Receive product recommendations based on preferences
+
+#### Ordering
+- Add products to cart through conversation
+- Specify quantities and variations
+- Review order summary before confirmation
+- Provide delivery address
+- Confirm order placement
+
+#### Payment
+- Receive UPI payment links via WhatsApp
+- Pay using Razorpay-hosted payment page
+- Support for UPI, cards, wallets, net banking
+- Receive payment confirmation
+- View payment receipt
+
+#### Order Tracking
+- Check order status via WhatsApp
+- Receive updates on order progress
+- Get estimated delivery information
+- Contact seller for order issues
+- Initiate returns or cancellations
+
+### WhatsApp Integration
+
+#### Webhook Handling
+- Receive incoming messages from Meta WhatsApp Cloud API
+- Validate webhook signatures for security
+- Parse text and media messages
+- Handle message status updates (sent, delivered, read)
+- Implement idempotency for duplicate webhooks
+
+#### Message Processing
+- Detect customer intent (browse, order, track, support)
+- Maintain conversation context across messages
+- Route messages to appropriate handlers
+- Generate contextual responses
+- Handle errors gracefully with fallback messages
+
+#### Session Management
+- Create sessions for new conversations
+- Persist session state in DynamoDB
+- Track conversation history
+- Implement session timeouts
+- Resume conversations after interruptions
+
+#### Outbound Messaging
+- Send product catalogs and images
+- Deliver order confirmations
+- Send payment links
+- Provide order status updates
+- Handle message delivery failures with retries
+
+#### Voice and Media Support
+- Transcribe voice messages using Gemini API
+- Process product inquiry voice notes
+- Support image uploads for product search
+- Handle document sharing for support
+
+### Payment Integration
+
+#### Payment Link Creation
+- Generate unique payment links via Razorpay API
+- Include order details and amount
+- Set expiration times for links
+- Support multiple payment methods
+- Handle currency and tax calculations
+
+#### Webhook Verification
+- Validate Razorpay webhook signatures
+- Verify payment authenticity
+- Check payment amounts match orders
+- Detect duplicate webhook deliveries
+- Implement idempotency keys
+
+#### Payment State Management
+- Update order status on payment success
+- Handle payment failures with retry options
+- Process refunds for cancellations
+- Track partial payments
+- Reconcile payments with orders
+
+#### Security and Compliance
+- Never store card details
+- Use tokenization for recurring payments
+- Implement PCI DSS compliance measures
+- Log all payment events for audit
+- Handle disputes and chargebacks
+
+### AI Capabilities
+
+VyaparGyan uses AI to enhance efficiency and decision-making, not replace human judgment. All AI features are assistive and optional.
+
+#### Catalog Assistance
+- Extract product details from images using Gemini Vision
+- Suggest product names and descriptions
+- Auto-categorize products based on images
+- Detect product attributes (color, size, material)
+- Validate image quality and completeness
+
+#### Multilingual Support
+- Transcribe voice messages in Hindi and English
+- Detect language and code-switching
+- Generate responses in customer's preferred language
+- Translate product descriptions
+- Support regional language variations
+
+#### Customer Support
+- Generate contextual reply suggestions for sellers
+- Answer common product questions automatically
+- Provide order status information
+- Handle FAQ queries
+- Escalate complex issues to sellers
+
+#### Pricing Intelligence (Optional)
+- Analyze market trends from public data sources
+- Suggest pricing adjustments based on demand signals
+- Identify trending product categories
+- Provide competitive pricing insights
+- Recommend clearance pricing for slow-moving inventory
+
+#### Negotiation Assistance (Optional)
+- Suggest response strategies during price negotiations
+- Provide guardrails to protect seller margins
+- Recommend discount limits based on inventory and demand
+- Track negotiation patterns and success rates
+- Learn from successful negotiation outcomes
+
+**Important**: All AI suggestions are advisory. Sellers retain full control over pricing, product information, and customer interactions. The system never makes autonomous pricing decisions without seller approval.
 
 ## Non-Functional Requirements
 
-### Performance Requirements
-- **Voice Latency**: End-to-end voice response <2s (WhatsApp webhook → Lambda → Gemini transcription → Bedrock reasoning → response)
-- **Trend Processing**: Complete YouTube Shorts analysis cycle within 4-hour batch window using Lambda cron triggers
-- **Concurrent Users**: Support 100+ simultaneous negotiations per tenant using serverless Lambda auto-scaling
-- **API Response Time**: API Gateway responses <500ms for 95th percentile
+### Performance
 
-### Scalability Requirements
-- **Serverless Auto-scaling**: AWS Lambda automatically scales from 0 to 1000+ concurrent executions based on demand
-- **Database Scaling**: Supabase PostgreSQL free tier (500MB) for prototype, with upgrade path to paid tiers
-- **Zero-Cost Idle**: No charges when system is idle—perfect for small retailers with intermittent traffic
-- **Event-Driven Architecture**: All components triggered by events (WhatsApp messages, cron schedules), ensuring pay-per-use pricing
+- API response time: <500ms for 95th percentile
+- WhatsApp message processing: <2s end-to-end
+- Payment link generation: <1s
+- Product search: <300ms
+- Dashboard load time: <2s
+- Image upload: Support up to 5MB per image
+- Concurrent users: Support 1000+ simultaneous WhatsApp conversations
 
-### Reliability Requirements
-- **System Uptime**: 99.9% availability leveraging AWS Lambda's built-in redundancy across multiple availability zones
-- **Data Consistency**: ACID compliance for financial transactions via Supabase PostgreSQL
-- **Fault Tolerance**: Graceful degradation when individual agents fail, with automatic Lambda retries
-- **Backup Strategy**: Supabase automated daily backups with point-in-time recovery
+### Scalability
 
-### Security Requirements
-- **Data Encryption**: End-to-end encryption for WhatsApp conversations (Meta's native encryption) and payment data
-- **Authentication**: AWS IAM for service-to-service authentication, JWT tokens for tenant access
-- **PCI Compliance**: Secure payment processing with tokenization via UPI payment gateways
-- **Privacy**: GDPR-compliant data handling with customer consent management
+- Serverless architecture auto-scales with demand
+- DynamoDB scales to millions of items
+- S3 handles unlimited image storage
+- Lambda concurrency: 1000+ concurrent executions per function
+- API Gateway: 10,000+ requests per second
+- Zero-cost during idle periods
+- Linear cost scaling with usage
+
+### Security
+
+- Cognito-based authentication with MFA support
+- JWT tokens with short expiration times
+- API Gateway throttling and rate limiting
+- Webhook signature validation
+- Encryption at rest for all data (DynamoDB, S3)
+- Encryption in transit (TLS 1.2+)
+- Secrets stored in AWS Secrets Manager
+- IAM least-privilege access policies
+- Audit logging for all sensitive operations
+- GDPR and data privacy compliance
+
+### Reliability
+
+- Multi-AZ deployment for high availability
+- DynamoDB point-in-time recovery enabled
+- S3 versioning for critical data
+- Lambda automatic retries with exponential backoff
+- Dead letter queues for failed events
+- EventBridge for reliable event delivery
+- SQS for durable message queuing
+- CloudWatch alarms for critical failures
+- Automated health checks and monitoring
+
+### Observability
+
+- Structured logging with request IDs
+- CloudWatch Logs for all Lambda functions
+- CloudWatch Metrics for business and technical KPIs
+- X-Ray tracing for distributed requests
+- Custom dashboards for operations
+- Alerts for errors, latency, and anomalies
+- Log retention policies
+- Debugging tools for production issues
+
+### Cost Efficiency
+
+- Serverless pay-per-use pricing model
+- DynamoDB on-demand billing
+- S3 lifecycle policies for old data
+- Lambda memory optimization
+- API Gateway caching where appropriate
+- CloudWatch log retention limits
+- Reserved capacity for predictable workloads
+- Cost allocation tags for tracking
+- Budget alerts and cost monitoring
+
 ## Success Metrics
 
-### Business Impact Metrics
-- **Margin Uplift**: Average increase in profit margins due to dynamic pricing (Target: 15-20%)
-- **Dead Stock Reduction**: Decrease in inventory aging beyond 60 days (Target: 30% reduction)
-- **Sales Velocity**: Increase in items sold per day through autonomous negotiations (Target: 25% increase)
-- **Customer Satisfaction**: Net Promoter Score for voice negotiation experience (Target: >70)
+### Business Metrics
 
-### Technical Performance Metrics
-- **Trend Accuracy**: Precision of trend predictions leading to successful price increases (Target: >80%)
-- **Negotiation Success Rate**: Percentage of voice conversations resulting in completed sales (Target: >60%)
-- **System Reliability**: Uptime and error rates across all agent components (Target: <1% error rate)
-- **Response Latency**: Voice interaction response times and API performance (Target: <500ms)
+- **Seller Onboarding Conversion**: % of applications that complete onboarding (Target: >70%)
+- **Order Conversion Rate**: % of WhatsApp conversations that result in orders (Target: >40%)
+- **Payment Success Rate**: % of payment links that result in successful payments (Target: >85%)
+- **Average Order Value**: Mean order value across platform (Track trend)
+- **Gross Merchandise Value (GMV)**: Total value of goods sold (Primary growth metric)
+- **Seller Retention**: % of sellers active after 30/60/90 days (Target: >60% at 90 days)
+- **Customer Repeat Rate**: % of customers who make multiple purchases (Target: >30%)
 
 ### Operational Metrics
-- **Agent Coordination**: Successful data handoffs between Analyst and Negotiator agents (Target: >95%)
-- **Tenant Adoption**: Monthly active tenants and feature utilization rates
-- **Scalability**: System performance under increasing load and tenant growth
-- **Cost Efficiency**: Infrastructure costs per transaction and per tenant
 
-## Technical Architecture Overview
+- **Seller Response Time**: Time from order notification to acceptance (Target: <30 minutes)
+- **Order Fulfillment Time**: Time from order to delivery (Target: <48 hours)
+- **Dispute Rate**: % of orders resulting in disputes (Target: <5%)
+- **Admin Review Time**: Time to review seller applications (Target: <24 hours)
+- **WhatsApp Conversation Quality**: Customer satisfaction with chat experience (Target: >4/5)
 
-### Technology Stack
-- **Orchestration Framework**: LangGraph for multi-agent state management, powered by Amazon Bedrock
-- **Large Language Models**: Amazon Bedrock (Claude 3.5 Sonnet or Llama 3) for complex reasoning and orchestration
-- **Computer Vision**: Gemini 1.5 Pro Vision for video thumbnail analysis and trend detection
-- **Voice Processing**: Gemini 1.5 Pro/Flash for native multimodal Speech-to-Text transcription
-- **Databases**: Supabase PostgreSQL (free tier) for transactional data and trend storage
-- **Infrastructure**: AWS Lambda (serverless compute), AWS API Gateway (webhooks), AWS EventBridge (cron triggers), AWS CloudWatch (monitoring)
-- **Messaging**: Meta WhatsApp Cloud API for customer communication
+### Technical Metrics
 
-### Integration Requirements
-- **Social Media APIs**: YouTube Data API v3 (official API for trending Shorts)
-- **Payment Gateways**: UPI integration via Razorpay/PayU
-- **Communication Channels**: Meta WhatsApp Cloud API for voice notes and text messages
-- **Monitoring**: AWS CloudWatch for metrics, logs, and alerts
+- **API Latency**: P95 response time for critical APIs (Target: <500ms)
+- **Error Rate**: % of requests resulting in errors (Target: <1%)
+- **System Uptime**: % of time system is available (Target: >99.5%)
+- **Payment Processing Time**: Time from payment initiation to confirmation (Target: <5s)
+- **Message Delivery Rate**: % of WhatsApp messages successfully delivered (Target: >98%)
 
-## Data Architecture
+### AI Performance Metrics
 
-### Core Entities
-
-#### Tenants & Users
-```sql
--- Shopkeepers (Business Owners)
-tenants: {
-  id, business_name, owner_phone, business_category, created_at
-}
-
--- Customers (End Users)
-customers: {
-  id, phone_number, trust_score, last_active
-}
-```
-
-#### Inventory & Pricing
-```sql
--- Products with AI-driven pricing
-products: {
-  id, tenant_id, name, category, stock_quantity,
-  cost_price, base_ask_price, min_margin_percent,
-  dynamic_floor_price, dynamic_ask_price,
-  current_strategy, is_trending, updated_at
-}
-```
-
-#### Market Intelligence
-```sql
--- Trend data from Analyst Agent
-market_trends: {
-  id, hashtag_keyword, hype_velocity_score,
-  platform_source, suggested_price_hike_percent,
-  detected_at
-}
-
--- Product-Trend relationships
-product_trend_mapping: {
-  id, product_id, trend_id, relevance_score
-}
-```
-
-#### Negotiation Sessions
-```sql
--- Real-time negotiation state
-negotiation_sessions: {
-  id, tenant_id, customer_id, product_id,
-  status, chat_transcript, current_offer_price,
-  customer_sentiment_score, final_agreed_price,
-  is_successful
-}
-```
+- **Catalog Extraction Accuracy**: % of product details correctly extracted from images (Target: >85%)
+- **Transcription Accuracy**: % of voice messages correctly transcribed (Target: >90%)
+- **Language Detection Accuracy**: % of messages with correct language identified (Target: >95%)
+- **Pricing Suggestion Adoption**: % of AI pricing suggestions accepted by sellers (Track trend)
+- **AI Response Relevance**: Customer satisfaction with AI-generated responses (Target: >4/5)
 
 ## Implementation Phases
 
-### Phase 1: Core Agent Framework (Day 1-2)
-- Implement LangGraph orchestration layer powered by Amazon Bedrock
-- Build basic Analyst Agent with YouTube Data API v3 integration
-- Develop Negotiator Agent with text-based WhatsApp interface via Meta Cloud API
-- Create tenant onboarding and product catalog management using Supabase
+### Phase 1: Foundation and Infrastructure (Weeks 1-2)
 
-### Phase 2: Voice Integration (Day 3-4)
-- Integrate Gemini 1.5 Pro/Flash for native multimodal voice transcription
-- Implement real-time voice negotiation pipeline via WhatsApp voice notes
-- Add Hindi/English code-switching capabilities through Gemini's multilingual support
-- Optimize for <2s response latency using Lambda performance tuning
+- Set up AWS account and organization structure
+- Configure Cognito user pools for admin, seller, customer
+- Deploy DynamoDB tables with access patterns
+- Set up S3 buckets for images and documents
+- Create API Gateway with basic endpoints
+- Implement Lambda functions for core APIs
+- Configure CloudWatch logging and monitoring
+- Set up Secrets Manager for API keys
+- Deploy infrastructure using AWS CDK
+- Create development and staging environments
 
-### Phase 3: Advanced Intelligence (Day 5-6)
-- Enhance trend detection with YouTube Shorts analytics and engagement metrics
-- Implement dynamic personality switching in Amazon Bedrock reasoning
-- Add computer vision for inventory verification using Gemini Vision
-- Deploy advanced pricing algorithms with A/B testing
+### Phase 2: Seller Onboarding and Catalog (Weeks 3-4)
 
-### Phase 4: Scale & Optimize (Day 7-8)
-- Multi-tenant architecture with Supabase row-level security
-- Performance optimization and load testing on AWS Lambda
-- Advanced analytics dashboard using AWS QuickSight
-- Beta testing with select retail partners
+- Build seller registration and document upload
+- Implement admin approval workflow
+- Create product CRUD APIs
+- Build image upload and storage
+- Implement category management
+- Create seller dashboard UI
+- Add inventory management features
+- Integrate Gemini for catalog assistance
+- Deploy seller web application
+- Test end-to-end seller workflows
 
-**Cost Efficiency**: The entire prototype runs on AWS Free Tier + $100 hackathon credits, with Gemini Tier 1 API providing generous free quotas. Production costs scale linearly with usage—retailers only pay when customers interact with the system.
+### Phase 3: WhatsApp Commerce MVP (Weeks 5-6)
 
-This requirements document serves as the foundation for implementing VyaparGyan's multi-agent retail intelligence platform, ensuring all stakeholders understand the technical complexity and business value of the autonomous retail ecosystem.
+- Integrate Meta WhatsApp Cloud API
+- Implement webhook handling and validation
+- Build session management in DynamoDB
+- Create product browse workflows
+- Implement order intent detection
+- Build cart and checkout flows
+- Add payment link generation
+- Integrate Gemini for voice transcription
+- Test WhatsApp conversation flows
+- Deploy to staging for beta testing
 
+### Phase 4: Orders and Payments (Weeks 7-8)
+
+- Implement order creation and state management
+- Build payment webhook handling
+- Add Razorpay integration
+- Create order tracking features
+- Implement seller order notifications
+- Build order fulfillment workflows
+- Add refund and cancellation handling
+- Test payment security and idempotency
+- Implement order analytics
+- Deploy to production with limited sellers
+
+### Phase 5: Admin Dashboard and Analytics (Weeks 9-10)
+
+- Build admin web application
+- Implement seller management features
+- Create dispute management system
+- Add analytics dashboards
+- Build reporting and export features
+- Implement audit logging
+- Create monitoring dashboards
+- Add alerting for critical issues
+- Test admin workflows
+- Train admin users
+
+### Phase 6: AI Enhancements (Weeks 11-12)
+
+- Implement multilingual response generation
+- Add pricing intelligence features
+- Build trend analysis pipeline
+- Create negotiation assistance tools
+- Implement recommendation engine
+- Add AI-powered customer support
+- Test AI accuracy and relevance
+- Gather seller feedback on AI features
+- Iterate on AI prompts and models
+- Document AI capabilities and limitations
+
+### Phase 7: Production Hardening (Weeks 13-14)
+
+- Conduct security audit and penetration testing
+- Implement rate limiting and abuse prevention
+- Add comprehensive error handling
+- Optimize Lambda performance and costs
+- Set up backup and disaster recovery
+- Create runbooks for operations
+- Implement feature flags for gradual rollout
+- Conduct load testing
+- Train support team
+- Launch to general availability
 
 ## Future Vision
 
-VyaparGyan is designed to evolve from a pricing copilot into a complete AI operating system for retail:
+### Multilingual Expansion
+Extend support beyond Hindi and English to Tamil, Telugu, Bengali, Marathi, Gujarati, and other regional languages. Enable every retailer in India to use VyaparGyan in their native language.
+
+### Recommendation Engine
+Build personalized product recommendations for customers based on browsing history, purchase patterns, and preferences. Help sellers increase average order value through intelligent cross-selling and upselling.
+
+### Seller Trust Score
+Develop a reputation system based on order fulfillment, customer ratings, dispute resolution, and product quality. Use trust scores to prioritize sellers in search results and recommendations.
+
+### Inventory Prediction
+Use historical sales data and trend analysis to predict future inventory needs. Help sellers optimize stock levels, reduce dead stock, and avoid stockouts of popular items.
 
 ### ONDC Integration
-Connect to India's Open Network for Digital Commerce, enabling retailers to manage pricing strategy across multiple platforms from one central AI brain. Sell on Amazon, Flipkart, and your own store—VyaparGyan optimizes pricing everywhere.
+Connect to India's Open Network for Digital Commerce to enable sellers to reach customers across multiple platforms while managing inventory and orders from a single VyaparGyan dashboard.
+
+### Analytics Lake
+Build a data lake on S3 with Athena for advanced analytics. Enable sellers to gain deeper insights into customer behavior, product performance, and market trends through custom queries and reports.
+
+### Advanced AI Pricing
+Enhance pricing intelligence with real-time competitive analysis, demand forecasting, and dynamic pricing recommendations. Help sellers maximize margins while remaining competitive.
+
+### Logistics Integration
+Partner with logistics providers to offer integrated shipping solutions. Enable sellers to generate shipping labels, track deliveries, and provide customers with real-time delivery updates.
+
+### Seller Financing
+Partner with financial institutions to offer working capital loans based on seller performance data. Help sellers grow their business by providing access to affordable credit.
 
 ### Voice Commerce Expansion
-Beyond WhatsApp: phone calls, smart speakers, in-store voice kiosks. Customers can negotiate naturally in any channel, and the AI maintains context across all touchpoints.
+Extend voice capabilities beyond WhatsApp to phone calls and smart speakers. Enable customers to shop using voice across multiple channels while maintaining conversation context.
 
-### Multilingual Support
-Current: Hindi/English code-switching  
-Next: Tamil, Telugu, Bengali, Marathi, Gujarati, and more  
-Goal: Every retailer in India gets AI assistance in their native language
-
-### Complete Retail Intelligence Platform
-- **Predictive Sourcing**: AI recommends what inventory to buy before trends peak
-- **Automated Reordering**: Dynamic inventory management based on trend velocity
-- **Customer Intelligence**: Build profiles, predict preferences, personalize offers
-- **Financial Integration**: Automated accounting, tax filing, working capital optimization
-
-**The Vision**: Transform India's 60+ million small retailers into data-driven, AI-powered businesses that compete on intelligence, not just capital. VyaparGyan becomes the "brain" that every retailer needs to thrive in the digital economy.
+**The Vision**: Transform India's 60+ million small retailers into modern, data-driven businesses that compete effectively in the digital economy. VyaparGyan becomes the operating system that powers local commerce across Bharat.
