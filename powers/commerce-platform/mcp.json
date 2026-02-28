@@ -1,0 +1,63 @@
+{
+  "mcpServers": {
+    "commerce-ops-mcp": {
+      "command": "node",
+      "args": ["./tools/mcp/commerce-ops/dist/index.js"],
+      "env": {
+        "AWS_REGION": "ap-south-1",
+        "AWS_PROFILE": "kiro-mcp",
+        "APP_ENV": "dev",
+        "DDB_TABLE_NAME": "CommerceCore-dev",
+        "LOG_GROUP_PREFIX": "/aws/commerce"
+      },
+      "disabled": false,
+      "autoApprove": [
+        "get_order",
+        "get_order_timeline",
+        "get_payment",
+        "get_inventory",
+        "get_whatsapp_session",
+        "list_seller_orders"
+      ]
+    },
+    "commerce-catalog-mcp": {
+      "command": "node",
+      "args": ["./tools/mcp/commerce-catalog/dist/index.js"],
+      "env": {
+        "AWS_REGION": "ap-south-1",
+        "AWS_PROFILE": "kiro-mcp",
+        "APP_ENV": "dev",
+        "DDB_TABLE_NAME": "CommerceCore-dev",
+        "S3_MEDIA_BUCKET": "commerce-media-dev"
+      },
+      "disabled": false,
+      "autoApprove": [
+        "get_product",
+        "list_products_by_seller",
+        "list_products_by_category",
+        "get_category",
+        "list_low_stock_products",
+        "get_product_media"
+      ]
+    },
+    "commerce-admin-mcp": {
+      "command": "node",
+      "args": ["./tools/mcp/commerce-admin/dist/index.js"],
+      "env": {
+        "AWS_REGION": "ap-south-1",
+        "AWS_PROFILE": "kiro-mcp",
+        "APP_ENV": "dev",
+        "DDB_TABLE_NAME": "CommerceCore-dev"
+      },
+      "disabled": false,
+      "autoApprove": [
+        "list_pending_seller_approvals",
+        "get_seller_profile",
+        "list_open_disputes",
+        "get_dispute",
+        "get_audit_timeline",
+        "list_recent_payments"
+      ]
+    }
+  }
+}
