@@ -1,123 +1,346 @@
-# Part H — Auth & RBAC Implementation Design
+# Auth & RBAC Implementation Design (AWS Serverless)
 
 ## JWT Verification Flow
 
 ```
-Request with Authorization: Bearer <supabase_jwt>
+Request with Authorization: Bearer <cognito_jwt>
     │
-    ├─ 1. Extract token from header
-    ├─ 2. Decode JWT using Supabase JWT secret (HS256)
-    │      - Verify exp, iss, aud claims
-    │      - Extract sub (auth.users.id)
-    ├─ 3. Load user context (cached in Redis, TTL 5min)
-    │      - Query user_profiles WHERE auth_user_id = sub
-    │      - Query user_roles + roles WHERE user_profile_id = profile.id
-    │      - Query sellers WHERE auth_user_id = sub (if seller role)
-    │      - Query customers WHERE auth_user_id = sub (if customer role)
-    ├─ 4. Build AuthenticatedUser object
+    ├─ 1. API Gateway JWT Authorizer
+    │      - Validates JWT signature using Cognito JWKS
+    │      - Verifies exp, iss, aud claims
+    │      - Extracts sub (Cognito user ID) and cognito:groups
+    │      - Passes claims to Lambda in event.requestContext.authorizer
+    │
+    ├─ 2. Lambda Auth Middleware
+    │      - Extract user context from authorizer claims
+    │      - Build AuthenticatedUser object
+    │      - Attach to request context
+    │
+    ├─ 3. RBAC Guards (application-level)
+    │      - Check cognito:groups for role membership
+    │      - Verify resource ownership for seller/customer scoped operations
+    │      - Query DynamoDB for additional context if needed
+    │
     └─ Return user or raise 401/403
 ```
 
+## Cognito Configuration
+
+### User Pool
+
+- **User Pool ID**: Defined in `infra/cdk/lib/stacks/auth-stack.ts`
+- **Sign-in**: Email or phone number
+- **MFA**: Optional (recommended for admin)
+- **Password Policy**: Min 8 chars, uppercase, lowercase, number, special char
+- **Account Recovery**: Email or SMS
+
+### User Groups
+
+| Group      | Description                                  | IAM Role (optional)       |
+| ---------- | -------------------------------------------- | ------------------------- |
+| `admin`    | Platform administrators                      | AdminRole (full access)   |
+| `seller`   | Sellers managing products and orders         | SellerRole (scoped)       |
+| `customer` | End customers placing orders                 | CustomerRole (read-only)  |
+
+Groups are assigned during user registration or by admin.
+
+### Custom Attributes
+
+- `seller_id` (string): Links Cognito user to sellers table in DynamoDB
+- `customer_id` (string): Links Cognito user to customers table in DynamoDB
+- `display_name` (string): User's display name
+
 ## AuthenticatedUser Model
 
-```python
-class AuthenticatedUser:
-    auth_user_id: UUID          # from JWT sub
-    profile_id: UUID            # user_profiles.id
-    email: str | None
-    phone: str | None
-    display_name: str | None
-    roles: list[str]            # ["admin", "seller", "customer"]
-    seller_id: UUID | None      # sellers.id if role=seller
-    customer_id: UUID | None    # customers.id if role=customer
-    is_active: bool
+```typescript
+// packages/shared/contracts/auth.ts
+export interface AuthenticatedUser {
+  userId: string;              // Cognito sub
+  email?: string;
+  phone?: string;
+  displayName?: string;
+  roles: string[];             // ["admin"] | ["seller"] | ["customer"]
+  sellerId?: string;           // sellers.id if role=seller
+  customerId?: string;         // customers.id if role=customer
+  isActive: boolean;
+  cognitoGroups: string[];     // Raw Cognito groups
+}
 ```
 
-## FastAPI Dependencies
+## Lambda Auth Middleware
 
-### `get_current_user` — Base auth dependency
+```typescript
+// services/api/src/middleware/auth.ts
+import { APIGatewayProxyEventV2WithJWTAuthorizer } from 'aws-lambda';
 
-```python
-async def get_current_user(
-    authorization: str = Header(...),
-    redis: Redis = Depends(get_redis),
-    db: AsyncClient = Depends(get_supabase)
-) -> AuthenticatedUser:
-    token = authorization.replace("Bearer ", "")
-    payload = verify_supabase_jwt(token)  # decode + verify
-    user_id = payload["sub"]
+export function extractAuthContext(
+  event: APIGatewayProxyEventV2WithJWTAuthorizer
+): AuthenticatedUser {
+  const claims = event.requestContext.authorizer.jwt.claims;
+  
+  const userId = claims.sub as string;
+  const email = claims.email as string | undefined;
+  const phone = claims.phone_number as string | undefined;
+  const displayName = claims['custom:display_name'] as string | undefined;
+  const cognitoGroups = (claims['cognito:groups'] as string)?.split(',') || [];
+  
+  // Map Cognito groups to application roles
+  const roles = cognitoGroups.map(group => group.toLowerCase());
+  
+  return {
+    userId,
+    email,
+    phone,
+    displayName,
+    roles,
+    sellerId: claims['custom:seller_id'] as string | undefined,
+    customerId: claims['custom:customer_id'] as string | undefined,
+    isActive: true, // Can be validated against DynamoDB if needed
+    cognitoGroups
+  };
+}
 
-    # Check Redis cache
-    cached = await redis.get(f"user:{user_id}")
-    if cached:
-        return AuthenticatedUser.parse_raw(cached)
-
-    # Load from DB
-    user = await load_user_context(db, user_id)
-    await redis.setex(f"user:{user_id}", 300, user.json())
-    return user
+export function requireAuth(
+  event: APIGatewayProxyEventV2WithJWTAuthorizer
+): AuthenticatedUser {
+  if (!event.requestContext.authorizer) {
+    throw new UnauthorizedError('Missing authorization');
+  }
+  
+  return extractAuthContext(event);
+}
 ```
 
-### `require_roles(*roles)` — Role gate
+## RBAC Guards
 
-```python
-def require_roles(*required_roles: str):
-    async def dependency(user: AuthenticatedUser = Depends(get_current_user)):
-        if not any(r in user.roles for r in required_roles):
-            raise ForbiddenError(f"Requires role: {required_roles}")
-        return user
-    return dependency
+### Role-Based Access
 
-# Usage:
-@router.get("/admin/dashboard")
-async def admin_dashboard(user = Depends(require_roles("admin"))):
-    ...
+```typescript
+// services/api/src/middleware/rbac.ts
+export function requireRoles(...requiredRoles: string[]) {
+  return (user: AuthenticatedUser) => {
+    const hasRole = requiredRoles.some(role => user.roles.includes(role));
+    if (!hasRole) {
+      throw new ForbiddenError(`Requires role: ${requiredRoles.join(' or ')}`);
+    }
+    return user;
+  };
+}
+
+// Usage in handler:
+export async function handler(event: APIGatewayProxyEventV2WithJWTAuthorizer) {
+  const user = requireAuth(event);
+  requireRoles('admin')(user);
+  
+  // Admin-only logic
+}
 ```
 
-### `require_seller` — Seller scope
+### Seller Ownership Check
 
-```python
-async def require_seller(user = Depends(get_current_user)) -> AuthenticatedUser:
-    if "seller" not in user.roles or not user.seller_id:
-        raise ForbiddenError("Seller access required")
-    return user
+```typescript
+export async function requireSellerOwnsResource(
+  user: AuthenticatedUser,
+  resourceType: 'product' | 'order',
+  resourceId: string
+): Promise<void> {
+  // Admin bypass
+  if (user.roles.includes('admin')) {
+    return;
+  }
+  
+  // Seller must have seller_id
+  if (!user.roles.includes('seller') || !user.sellerId) {
+    throw new ForbiddenError('Seller access required');
+  }
+  
+  // Verify ownership in DynamoDB
+  const resource = await dynamoAdapter.get(resourceType, resourceId);
+  
+  if (resource.sellerId !== user.sellerId) {
+    throw new ForbiddenError('Not the owner of this resource');
+  }
+}
+
+// Usage:
+export async function updateProduct(event: APIGatewayProxyEventV2WithJWTAuthorizer) {
+  const user = requireAuth(event);
+  const productId = event.pathParameters!.id!;
+  
+  await requireSellerOwnsResource(user, 'product', productId);
+  
+  // Update product logic
+}
 ```
 
-### `require_seller_owns_product` — Ownership check
+### Customer Ownership Check
 
-```python
-def require_seller_owns_resource(resource_type: str):
-    async def dependency(
-        resource_id: UUID,  # from path param
-        user: AuthenticatedUser = Depends(require_seller),
-        db = Depends(get_supabase)
-    ):
-        # For products: check tenant_id = user.seller_id
-        # For orders: check seller_id = user.seller_id
-        owner = await verify_ownership(db, resource_type, resource_id, user.seller_id)
-        if not owner:
-            raise ForbiddenError("Not the owner of this resource")
-        return user
-    return dependency
+```typescript
+export async function requireCustomerOwnsOrder(
+  user: AuthenticatedUser,
+  orderId: string
+): Promise<void> {
+  // Admin bypass
+  if (user.roles.includes('admin')) {
+    return;
+  }
+  
+  // Customer must have customer_id
+  if (!user.roles.includes('customer') || !user.customerId) {
+    throw new ForbiddenError('Customer access required');
+  }
+  
+  // Verify ownership
+  const order = await orderAdapter.get(orderId);
+  
+  if (order.customerId !== user.customerId) {
+    throw new ForbiddenError('Not your order');
+  }
+}
 ```
 
-### Admin Bypass
+## Admin Bypass Logic
 
-Admin role users bypass all ownership checks but still go through JWT verification. The `is_admin()` function in Supabase RLS handles the DB-level bypass. At application level:
+Admin users bypass all ownership checks but still go through JWT verification:
 
-```python
-async def admin_or_seller_owner(resource_id, user=Depends(get_current_user)):
-    if "admin" in user.roles:
-        return user  # Admin bypass
-    if "seller" not in user.roles or not user.seller_id:
-        raise ForbiddenError()
-    # Verify ownership...
+```typescript
+export function isAdmin(user: AuthenticatedUser): boolean {
+  return user.roles.includes('admin');
+}
+
+export async function requireOwnershipOrAdmin(
+  user: AuthenticatedUser,
+  resourceType: string,
+  resourceId: string
+): Promise<void> {
+  if (isAdmin(user)) {
+    return; // Admin bypass
+  }
+  
+  // Regular ownership check
+  await requireSellerOwnsResource(user, resourceType as any, resourceId);
+}
 ```
 
-## WhatsApp/Webhook Auth (No JWT)
+## Webhook Authentication (No JWT)
 
-For WhatsApp webhooks and Razorpay webhooks, JWT is not used. Instead:
+For WhatsApp and Razorpay webhooks, JWT is not used. Instead:
 
-- **WhatsApp**: Verify `X-Hub-Signature-256` using WhatsApp app secret
-- **Razorpay**: Verify `X-Razorpay-Signature` using webhook secret
-- **Internal service calls**: Use Supabase service_role key for DB operations
+### WhatsApp Webhook
+
+```typescript
+// services/api/src/handlers/whatsapp/webhook.ts
+import crypto from 'crypto';
+
+export function verifyWhatsAppSignature(
+  payload: string,
+  signature: string,
+  secret: string
+): boolean {
+  const expected = crypto
+    .createHmac('sha256', secret)
+    .update(payload)
+    .digest('hex');
+  
+  return crypto.timingSafeEqual(
+    Buffer.from(`sha256=${expected}`),
+    Buffer.from(signature)
+  );
+}
+
+export async function handler(event: APIGatewayProxyEventV2) {
+  const signature = event.headers['x-hub-signature-256'];
+  const secret = await getSecret('whatsapp-app-secret');
+  
+  if (!verifyWhatsAppSignature(event.body!, signature!, secret)) {
+    return { statusCode: 401, body: 'Invalid signature' };
+  }
+  
+  // Process webhook with service-level permissions
+}
+```
+
+### Razorpay Webhook
+
+```typescript
+// services/api/src/handlers/payments/webhook.ts
+export function verifyRazorpaySignature(
+  payload: string,
+  signature: string,
+  secret: string
+): boolean {
+  const expected = crypto
+    .createHmac('sha256', secret)
+    .update(payload)
+    .digest('hex');
+  
+  return crypto.timingSafeEqual(
+    Buffer.from(expected),
+    Buffer.from(signature)
+  );
+}
+```
+
+## IAM Service Permissions
+
+Lambda functions have IAM execution roles with least-privilege permissions:
+
+### Seller Product Handler
+
+```typescript
+// Defined in infra/cdk/lib/stacks/api-stack.ts
+const sellerProductHandler = new NodejsFunction(this, 'SellerProductHandler', {
+  // ...
+});
+
+// Grant DynamoDB permissions
+productsTable.grantReadWriteData(sellerProductHandler);
+inventoryTable.grantReadWriteData(sellerProductHandler);
+
+// Grant S3 permissions for product images
+productImagesBucket.grantReadWrite(sellerProductHandler);
+```
+
+### Admin Handler
+
+```typescript
+const adminHandler = new NodejsFunction(this, 'AdminHandler', {
+  // ...
+});
+
+// Grant full access to all tables (admin operations)
+sellersTable.grantReadWriteData(adminHandler);
+categoriesTable.grantReadWriteData(adminHandler);
+ordersTable.grantReadWriteData(adminHandler);
+```
+
+## Authorization Flow Summary
+
+1. **API Gateway**: JWT authorizer validates token, extracts claims
+2. **Lambda Middleware**: Builds AuthenticatedUser from claims
+3. **RBAC Guards**: Application-level role and ownership checks
+4. **IAM Policies**: Service-level permissions for AWS resources
+5. **Audit Logging**: All authorization decisions logged to CloudWatch
+
+## Key Differences from Supabase
+
+| Aspect                | Supabase (Old)                          | AWS Serverless (New)                    |
+| --------------------- | --------------------------------------- | --------------------------------------- |
+| Auth Provider         | Supabase GoTrue                         | Amazon Cognito                          |
+| JWT Verification      | Supabase JWT secret (HS256)             | Cognito JWKS (RS256)                    |
+| Role Storage          | user_roles table with RLS               | Cognito groups                          |
+| Authorization         | RLS policies (database-level)           | Lambda application logic                |
+| Ownership Checks      | RLS with get_my_seller_id()             | DynamoDB queries in Lambda              |
+| Service Auth          | service_role key                        | IAM execution roles                     |
+| Webhook Auth          | Custom signature verification           | Same (signature verification)           |
+| User Context Caching  | Redis (5min TTL)                        | Not needed (claims in JWT)              |
+
+## Security Best Practices
+
+- **JWT validation**: Always validate at API Gateway level
+- **Least privilege**: Lambda IAM roles grant only required permissions
+- **Secrets rotation**: Rotate Razorpay/WhatsApp secrets regularly via Secrets Manager
+- **Audit logging**: Log all authorization decisions with user context
+- **Rate limiting**: API Gateway throttling per user/IP
+- **MFA**: Enforce for admin users
+- **Token expiration**: Short-lived access tokens (1 hour), refresh tokens for renewal

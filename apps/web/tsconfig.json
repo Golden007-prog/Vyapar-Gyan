@@ -1,0 +1,38 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    // Web-specific settings
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "preserve",
+    "incremental": true,
+    
+    "outDir": "./dist",
+    "rootDir": "./",
+    
+    // Path aliases for clean imports
+    "baseUrl": ".",
+    "paths": {
+      "@admin/*": ["./admin/*"],
+      "@seller/*": ["./seller/*"],
+      "@shared/*": ["./shared/*"],
+      "@contracts/*": ["../../packages/shared/contracts/*"],
+      "@utils/*": ["../../packages/shared/utils/*"]
+    },
+    
+    // Allow importing from shared packages
+    "composite": false
+  },
+  "include": [
+    "admin/**/*",
+    "seller/**/*",
+    "shared/**/*",
+    "next-env.d.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    ".next",
+    "**/*.test.ts",
+    "**/*.test.tsx"
+  ]
+}

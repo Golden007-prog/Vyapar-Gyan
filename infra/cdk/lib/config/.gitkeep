@@ -1,0 +1,5 @@
+# This directory will contain environment-specific configuration files
+# - environment.ts (types and interfaces)
+# - dev.ts (development environment config)
+# - staging.ts (staging environment config)
+# - prod.ts (production environment config)

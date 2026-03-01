@@ -1,0 +1,12 @@
+packages:
+  # Infrastructure (CDK)
+  - 'infra/cdk'
+  
+  # Backend services (Lambda functions)
+  - 'services/*'
+  
+  # Frontend applications
+  - 'apps/*'
+  
+  # Shared packages
+  - 'packages/*'

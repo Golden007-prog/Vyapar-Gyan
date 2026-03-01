@@ -1,4 +1,4 @@
-# Part F — Order Lifecycle Design
+# Order Lifecycle Design (AWS Serverless)
 
 ## Order State Machine
 
@@ -6,12 +6,12 @@
 WhatsApp inquiry / Web browse
     → product selection
     → stock validation (available_stock = stock_quantity - reserved_stock)
-    → PENDING (draft order created, stock reserved)
-    → seller notified (seller_notifications: type=new_order)
+    → PENDING (draft order created, stock reserved via DynamoDB TransactWrite)
+    → seller notified (EventBridge → SQS → notification Lambda)
     → seller ACCEPT → CONFIRMED → payment link created
-    → seller REJECT → CANCELLED → stock unreserved
-    → payment link sent to customer (WhatsApp/web)
-    → Razorpay webhook: payment.captured → CONFIRMED → stock finalized (reserved→sale)
+    → seller REJECT → CANCELLED → stock unreserved (TransactWrite)
+    → payment link sent to customer (WhatsApp via SQS)
+    → Razorpay webhook: payment.captured → CONFIRMED → stock finalized (TransactWrite)
     → Razorpay webhook: payment.failed → stay CONFIRMED, retry link
     → seller marks PROCESSING → notifications sent
     → seller marks SHIPPED → tracking sent
@@ -22,107 +22,380 @@ WhatsApp inquiry / Web browse
 
 | From         | To           | Actor           | Side Effects                                                 |
 | ------------ | ------------ | --------------- | ------------------------------------------------------------ |
-| —            | `pending`    | System          | Reserve stock, create inventory_log(reserved), notify seller |
-| `pending`    | `confirmed`  | Seller (accept) | Create payment link, notify customer                         |
-| `pending`    | `cancelled`  | Seller (reject) | Unreserve stock, inventory_log(unreserved), notify customer  |
-| `pending`    | `cancelled`  | Customer        | Unreserve stock, inventory_log(unreserved), notify seller    |
-| `confirmed`  | `processing` | Seller          | —                                                            |
+| —            | `pending`    | System          | Reserve stock (TransactWrite), create inventory_log(reserved), notify seller |
+| `pending`    | `confirmed`  | Seller (accept) | Create payment link, notify customer via EventBridge         |
+| `pending`    | `cancelled`  | Seller (reject) | Unreserve stock (TransactWrite), inventory_log(unreserved), notify customer  |
+| `pending`    | `cancelled`  | Customer        | Unreserve stock (TransactWrite), inventory_log(unreserved), notify seller    |
+| `confirmed`  | `processing` | Seller          | Publish event to EventBridge                                 |
 | `confirmed`  | `cancelled`  | Admin           | Unreserve stock, refund if paid                              |
-| `processing` | `shipped`    | Seller          | Notify customer with tracking                                |
+| `processing` | `shipped`    | Seller          | Notify customer with tracking via EventBridge                |
 | `shipped`    | `delivered`  | Seller          | Finalize stock (reserved→sale), inventory_log(sale)          |
 | `delivered`  | `returned`   | Admin           | Reverse sale, inventory_log(return), initiate refund         |
 | any          | `refunded`   | Admin           | Process refund via Razorpay, inventory_log(return)           |
 
-## DB Transaction Boundaries
+## DynamoDB Transaction Boundaries
 
 ### Order Creation Transaction (CRITICAL)
 
-```sql
-BEGIN;
-  -- 1. Validate stock for all items
-  SELECT stock_quantity, reserved_stock FROM products WHERE id = ANY($product_ids) FOR UPDATE;
-  -- ↑ FOR UPDATE locks rows to prevent concurrent overselling
+```typescript
+// services/api/src/handlers/orders/create-order.ts
+import { TransactWriteCommand } from '@aws-sdk/lib-dynamodb';
 
-  -- 2. Check available_stock >= requested quantity for each item
-  -- ROLLBACK if any item insufficient
-
-  -- 3. Reserve stock
-  UPDATE products SET reserved_stock = reserved_stock + $qty WHERE id = $product_id;
-
-  -- 4. Create inventory_logs (type=reserved)
-  INSERT INTO inventory_logs (product_id, change_type, quantity_change, quantity_before, quantity_after, reference_type)
-    VALUES ($product_id, 'reserved', $qty, $before, $after, 'order');
-
-  -- 5. Create order
-  INSERT INTO orders (...) VALUES (...);
-
-  -- 6. Create order_items
-  INSERT INTO order_items (...) VALUES (...);
-
-  -- 7. Create seller notification
-  INSERT INTO seller_notifications (seller_id, type, title, reference_id, reference_type)
-    VALUES ($seller_id, 'new_order', 'New order #' || $order_number, $order_id, 'order');
-COMMIT;
+export async function createOrder(request: CreateOrderRequest) {
+  const orderId = crypto.randomUUID();
+  const orderNumber = generateOrderNumber(); // VG-YYYYMMDD-NNNN
+  
+  // 1. Validate stock for all items (parallel queries)
+  const products = await Promise.all(
+    request.items.map(item => productAdapter.get(item.productId))
+  );
+  
+  // 2. Check available stock
+  for (let i = 0; i < products.length; i++) {
+    const product = products[i];
+    const requestedQty = request.items[i].quantity;
+    const availableStock = product.stock_quantity - product.reserved_stock;
+    
+    if (availableStock < requestedQty) {
+      throw new InsufficientStockError(product.name, availableStock);
+    }
+  }
+  
+  // 3. Atomic transaction: reserve stock + create order + create items + log inventory
+  const transactItems = [
+    // Create order
+    {
+      Put: {
+        TableName: process.env.TABLE_NAME!,
+        Item: {
+          PK: `ORDER#${orderId}`,
+          SK: 'METADATA',
+          order_number: orderNumber,
+          seller_id: request.sellerId,
+          customer_id: request.customerId,
+          status: 'pending',
+          subtotal: calculateSubtotal(request.items, products),
+          tax: calculateTax(request.items, products),
+          shipping: calculateShipping(request),
+          total_amount: calculateTotal(request.items, products),
+          shipping_name: request.shippingName,
+          shipping_phone: request.shippingPhone,
+          shipping_address: request.shippingAddress,
+          source: request.source, // 'whatsapp' | 'web'
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        },
+        ConditionExpression: 'attribute_not_exists(PK)' // prevent duplicate
+      }
+    },
+    // Create order items
+    ...request.items.map((item, index) => ({
+      Put: {
+        TableName: process.env.TABLE_NAME!,
+        Item: {
+          PK: `ORDER#${orderId}`,
+          SK: `ITEM#${index}`,
+          product_id: item.productId,
+          product_name: products[index].name, // denormalized for history
+          quantity: item.quantity,
+          unit_price: products[index].base_ask_price,
+          subtotal: item.quantity * products[index].base_ask_price
+        }
+      }
+    })),
+    // Reserve stock for each product
+    ...request.items.map((item, index) => ({
+      Update: {
+        TableName: process.env.TABLE_NAME!,
+        Key: { PK: `PRODUCT#${item.productId}`, SK: 'METADATA' },
+        UpdateExpression: 'SET reserved_stock = reserved_stock + :qty, updated_at = :now',
+        ConditionExpression: 'stock_quantity - reserved_stock >= :qty', // ensure stock available
+        ExpressionAttributeValues: {
+          ':qty': item.quantity,
+          ':now': new Date().toISOString()
+        }
+      }
+    })),
+    // Create inventory logs
+    ...request.items.map((item, index) => ({
+      Put: {
+        TableName: process.env.TABLE_NAME!,
+        Item: {
+          PK: `PRODUCT#${item.productId}`,
+          SK: `INVLOG#${Date.now()}#${crypto.randomUUID()}`,
+          change_type: 'reserved',
+          quantity_change: item.quantity,
+          quantity_before: products[index].stock_quantity,
+          quantity_after: products[index].stock_quantity, // stock_quantity unchanged, reserved_stock increased
+          reference_type: 'order',
+          reference_id: orderId,
+          created_at: new Date().toISOString()
+        }
+      }
+    }))
+  ];
+  
+  // Execute atomic transaction
+  await dynamoClient.send(new TransactWriteCommand({ TransactItems: transactItems }));
+  
+  // 4. Publish event for async notification
+  await eventBridgeClient.send(new PutEventsCommand({
+    Entries: [{
+      Source: 'vyapargyan.orders',
+      DetailType: 'OrderCreated',
+      Detail: JSON.stringify({ orderId, sellerId: request.sellerId, orderNumber })
+    }]
+  }));
+  
+  return { orderId, orderNumber };
+}
 ```
 
 ### Payment Confirmation Transaction
 
-```sql
-BEGIN;
-  -- 1. Update payment status
-  UPDATE payments SET status='captured', provider_payment_id=$pid, paid_at=NOW() WHERE id=$payment_id;
+```typescript
+// services/api/src/handlers/payments/webhook.ts
+export async function finalizeOrderPayment(orderId: string, paymentId: string) {
+  const order = await orderAdapter.get(orderId);
+  
+  const transactItems = [
+    // Update payment status
+    {
+      Update: {
+        TableName: process.env.TABLE_NAME!,
+        Key: { PK: `PAYMENT#${paymentId}`, SK: 'METADATA' },
+        UpdateExpression: 'SET #status = :captured, paid_at = :now',
+        ConditionExpression: '#status <> :captured', // idempotent
+        ExpressionAttributeNames: { '#status': 'status' },
+        ExpressionAttributeValues: {
+          ':captured': 'captured',
+          ':now': new Date().toISOString()
+        }
+      }
+    },
+    // Update order status
+    {
+      Update: {
+        TableName: process.env.TABLE_NAME!,
+        Key: { PK: `ORDER#${orderId}`, SK: 'METADATA' },
+        UpdateExpression: 'SET #status = :confirmed, updated_at = :now',
+        ExpressionAttributeNames: { '#status': 'status' },
+        ExpressionAttributeValues: {
+          ':confirmed': 'confirmed',
+          ':now': new Date().toISOString()
+        }
+      }
+    },
+    // Finalize stock: convert reserved to actual sale
+    ...order.items.map(item => ({
+      Update: {
+        TableName: process.env.TABLE_NAME!,
+        Key: { PK: `PRODUCT#${item.productId}`, SK: 'METADATA' },
+        UpdateExpression: 'SET stock_quantity = stock_quantity - :qty, reserved_stock = reserved_stock - :qty, updated_at = :now',
+        ConditionExpression: 'reserved_stock >= :qty', // ensure stock still reserved
+        ExpressionAttributeValues: {
+          ':qty': item.quantity,
+          ':now': new Date().toISOString()
+        }
+      }
+    })),
+    // Create inventory logs for sale
+    ...order.items.map(item => ({
+      Put: {
+        TableName: process.env.TABLE_NAME!,
+        Item: {
+          PK: `PRODUCT#${item.productId}`,
+          SK: `INVLOG#${Date.now()}#${crypto.randomUUID()}`,
+          change_type: 'sale',
+          quantity_change: -item.quantity,
+          reference_type: 'order',
+          reference_id: orderId,
+          created_at: new Date().toISOString()
+        }
+      }
+    }))
+  ];
+  
+  await dynamoClient.send(new TransactWriteCommand({ TransactItems: transactItems }));
+  
+  // Publish event for notifications
+  await eventBridgeClient.send(new PutEventsCommand({
+    Entries: [{
+      Source: 'vyapargyan.payments',
+      DetailType: 'PaymentCaptured',
+      Detail: JSON.stringify({ orderId, paymentId, sellerId: order.sellerId })
+    }]
+  }));
+}
+```
 
-  -- 2. Update order status
-  UPDATE orders SET status='confirmed', updated_at=NOW() WHERE id=$order_id;
+### Stock Unreservation (Cancel/Reject)
 
-  -- 3. Finalize stock (convert reserved to actual sale)
-  -- For each order item:
-  UPDATE products SET
-    stock_quantity = stock_quantity - $qty,
-    reserved_stock = reserved_stock - $qty
-  WHERE id = $product_id;
-
-  -- 4. Log inventory change (sale)
-  INSERT INTO inventory_logs (product_id, change_type, quantity_change, ...)
-    VALUES ($product_id, 'sale', -$qty, ...);
-
-  -- 5. Notify seller
-  INSERT INTO seller_notifications (seller_id, type, title, reference_id)
-    VALUES ($seller_id, 'payment_received', 'Payment received for #' || $order_number, $order_id);
-
-  -- 6. Audit log
-  INSERT INTO audit_logs (actor_id, action, resource_type, resource_id, new_values)
-    VALUES (NULL, 'payment_captured', 'order', $order_id, $webhook_data);
-COMMIT;
+```typescript
+export async function unreserveOrderStock(orderId: string) {
+  const order = await orderAdapter.get(orderId);
+  
+  const transactItems = [
+    // Update order status
+    {
+      Update: {
+        TableName: process.env.TABLE_NAME!,
+        Key: { PK: `ORDER#${orderId}`, SK: 'METADATA' },
+        UpdateExpression: 'SET #status = :cancelled, updated_at = :now',
+        ExpressionAttributeNames: { '#status': 'status' },
+        ExpressionAttributeValues: {
+          ':cancelled': 'cancelled',
+          ':now': new Date().toISOString()
+        }
+      }
+    },
+    // Unreserve stock
+    ...order.items.map(item => ({
+      Update: {
+        TableName: process.env.TABLE_NAME!,
+        Key: { PK: `PRODUCT#${item.productId}`, SK: 'METADATA' },
+        UpdateExpression: 'SET reserved_stock = reserved_stock - :qty, updated_at = :now',
+        ConditionExpression: 'reserved_stock >= :qty',
+        ExpressionAttributeValues: {
+          ':qty': item.quantity,
+          ':now': new Date().toISOString()
+        }
+      }
+    })),
+    // Log unreservation
+    ...order.items.map(item => ({
+      Put: {
+        TableName: process.env.TABLE_NAME!,
+        Item: {
+          PK: `PRODUCT#${item.productId}`,
+          SK: `INVLOG#${Date.now()}#${crypto.randomUUID()}`,
+          change_type: 'unreserved',
+          quantity_change: -item.quantity,
+          reference_type: 'order',
+          reference_id: orderId,
+          created_at: new Date().toISOString()
+        }
+      }
+    }))
+  ];
+  
+  await dynamoClient.send(new TransactWriteCommand({ TransactItems: transactItems }));
+}
 ```
 
 ## Stock Concurrency Handling
 
-- **`SELECT ... FOR UPDATE`** on products row during order creation prevents overselling
-- **Optimistic locking** via `updated_at` check on order status updates
-- **reserved_stock** separates "spoken for" from "available" — two concurrent orders see correct availability
-- **Negative stock prevented**: CHECK constraint or application-level validation before UPDATE
+- **Conditional expressions** on DynamoDB updates prevent overselling
+- **`stock_quantity - reserved_stock >= :qty`** ensures available stock before reservation
+- **`reserved_stock >= :qty`** ensures stock still reserved before finalizing
+- **Atomic transactions** via TransactWriteItems ensure all-or-nothing updates
+- **Optimistic locking** via conditional expressions on status transitions
+- **No negative stock**: Conditional expressions fail transaction if stock insufficient
 
 ## Idempotency Keys
 
-- Order creation: `idempotency_key = f"order_{customer_id}_{hash(items)}_{timestamp_minute}"`
-- Payment creation: `idempotency_key = f"payment_{order_id}_{attempt}"` — stored in payments.idempotency_key (UNIQUE)
-- Webhook processing: Razorpay event_id stored, checked before processing
+- **Order creation**: `idempotency_key = hash(customer_id + items + timestamp_minute)` stored in DynamoDB with conditional write
+- **Payment creation**: `idempotency_key = "payment_{order_id}_{attempt}"` with GSI for lookup
+- **Webhook processing**: Razorpay `event_id` stored with conditional write to prevent duplicate processing
 
 ## Failure Recovery
 
-- **Order creation fails mid-transaction**: ROLLBACK undoes all stock reservations
-- **Payment webhook fails**: Razorpay retries (up to 24h). Our webhook is idempotent.
-- **Seller never responds**: Cron job cancels orders pending > 48h, unreserves stock
-- **Orphaned reservations**: Nightly job finds orders in `pending` > 72h, cancels and unreserves
+- **Order creation fails mid-transaction**: DynamoDB TransactWrite rolls back all changes atomically
+- **Payment webhook fails**: Razorpay retries (up to 24h). Lambda is idempotent via conditional writes.
+- **Seller never responds**: EventBridge scheduled rule triggers Lambda daily to cancel orders pending > 48h
+- **Orphaned reservations**: Nightly Lambda job finds orders in `pending` > 72h, cancels and unreserves stock
+- **Dead letter queue**: Failed async operations sent to SQS DLQ for manual review
 
 ## Audit Logging
 
-Every state transition creates an `audit_logs` entry with:
+Every state transition creates an audit log entry in DynamoDB:
 
-- `actor_id`: UUID of user (or NULL for system/webhook)
-- `actor_role`: admin/seller/customer/system/webhook
-- `action`: order_created, order_accepted, payment_captured, stock_reserved, etc.
-- `resource_type`: order, payment, product
-- `resource_id`: the entity UUID
-- `old_values` / `new_values`: JSONB diff of changed fields
+```typescript
+// DynamoDB Schema
+PK: AUDIT#{timestamp}#{uuid}
+SK: ORDER#{order_id}
+Attributes:
+  - actor_id: string (user ID or 'system' or 'webhook')
+  - actor_role: 'admin' | 'seller' | 'customer' | 'system' | 'webhook'
+  - action: 'order_created' | 'order_accepted' | 'payment_captured' | 'stock_reserved' | etc.
+  - resource_type: 'order' | 'payment' | 'product'
+  - resource_id: string
+  - old_values: object (JSONB-like)
+  - new_values: object (JSONB-like)
+  - created_at: string ISO timestamp
+  - ttl: number (optional, for automatic cleanup)
+```
+
+Audit logs are queryable via GSI on `resource_type` and `resource_id`.
+
+## DynamoDB Schema
+
+### Orders Table
+
+```
+PK: ORDER#{order_id}
+SK: METADATA
+Attributes:
+  - order_number (string, unique)
+  - seller_id (string) [GSI: SellerOrdersIndex]
+  - customer_id (string) [GSI: CustomerOrdersIndex]
+  - status (string) [GSI: StatusIndex]
+  - subtotal, tax, shipping, total_amount (number)
+  - shipping_name, shipping_phone, shipping_address (string)
+  - source ('whatsapp' | 'web' | 'manual')
+  - created_at, updated_at (string ISO timestamp)
+
+PK: ORDER#{order_id}
+SK: ITEM#{index}
+Attributes:
+  - product_id (string)
+  - product_name (string, denormalized)
+  - quantity (number)
+  - unit_price (number)
+  - subtotal (number)
+```
+
+### Products Table (Stock Management)
+
+```
+PK: PRODUCT#{product_id}
+SK: METADATA
+Attributes:
+  - stock_quantity (number) - total physical stock
+  - reserved_stock (number) - stock reserved for pending orders
+  - available_stock (computed: stock_quantity - reserved_stock)
+  - updated_at (string ISO timestamp)
+```
+
+### Inventory Logs
+
+```
+PK: PRODUCT#{product_id}
+SK: INVLOG#{timestamp}#{uuid}
+Attributes:
+  - change_type ('reserved' | 'unreserved' | 'sale' | 'restock' | 'adjustment' | 'return')
+  - quantity_change (number, positive or negative)
+  - quantity_before (number)
+  - quantity_after (number)
+  - reference_type ('order' | 'manual' | 'return')
+  - reference_id (string)
+  - created_at (string ISO timestamp)
+```
+
+## Monitoring
+
+- **CloudWatch Metrics**: Order creation success rate, stock reservation failures, transaction rollbacks
+- **CloudWatch Alarms**: Alert on high order creation failure rate, stock inconsistencies
+- **X-Ray Tracing**: End-to-end tracing from order creation to payment confirmation
+- **DynamoDB Metrics**: Monitor consumed capacity, throttled requests, transaction conflicts
+
+## Key Differences from SQL
+
+| Aspect                | SQL (Old)                          | DynamoDB (New)                      |
+| --------------------- | ---------------------------------- | ----------------------------------- |
+| Transactions          | BEGIN/COMMIT with row locks        | TransactWriteItems (atomic)         |
+| Stock Locking         | SELECT ... FOR UPDATE              | Conditional expressions             |
+| Rollback              | ROLLBACK on error                  | Automatic on transaction failure    |
+| Inventory Logs        | INSERT in same transaction         | Put items in TransactWrite          |
+| Concurrency           | Row-level locks                    | Optimistic locking with conditions  |
+| Idempotency           | UNIQUE constraints                 | Conditional writes                  |

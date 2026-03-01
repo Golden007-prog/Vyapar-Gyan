@@ -19,15 +19,28 @@ VyaparGyan is an AI-powered commerce platform for local Indian retailers. It ena
 
 ## Architecture
 
-- **Backend**: FastAPI on Python with Supabase (PostgreSQL + Auth + Storage)
+- **Backend**: AWS Lambda functions with TypeScript/Node.js 20
+- **API Layer**: Amazon API Gateway HTTP API with JWT authorization
+- **Authentication**: Amazon Cognito User Pools with role-based groups
+- **Data Storage**: DynamoDB for operational data (single-table design)
+- **File Storage**: S3 for media uploads, documents, and raw payloads
+- **Async Processing**: EventBridge and SQS for event-driven workflows
 - **Customer Channel**: WhatsApp Cloud API for conversational commerce
 - **Payments**: Razorpay integration with webhook handling
 - **AI**: Google Gemini for voice transcription, image analysis, multilingual support
+- **Web Interface**: Next.js application for Admin and Seller dashboards
+- **Observability**: CloudWatch Logs, Metrics, and Alarms
+- **Infrastructure**: AWS CDK for infrastructure as code
+- **Developer Tools**: Kiro IDE with MCP servers for platform data access
 
 ## Design Philosophy
 
-- Production-grade, event-driven architecture
-- Role-based access control (RBAC) with JWT authentication
-- Structured logging with request IDs for observability
-- API-first design with clear separation of concerns
-- AI features are assistive and optional, not autonomous
+- Serverless-first architecture for operational simplicity and low idle cost
+- Event-driven design where it adds value (async workflows, audit trails)
+- Role-based authorization through Cognito groups and Lambda application logic
+- Single-table DynamoDB design for efficient data access patterns
+- WhatsApp-first commerce experience optimized for Bharat sellers and customers
+- AI features are assistive, bounded, and optional - not autonomous decision-makers
+- Production-oriented observability with structured logging and request tracing
+- Infrastructure as code for reproducible deployments across environments
+- Clear separation of concerns between handlers, business logic, and adapters

@@ -1,0 +1,4 @@
+# This directory will contain reusable CDK constructs
+# - lambda-function.ts (reusable Lambda construct)
+# - api-route.ts (API route construct)
+# - queue-processor.ts (SQS processor construct)

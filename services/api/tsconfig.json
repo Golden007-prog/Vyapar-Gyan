@@ -1,0 +1,28 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    
+    // Path aliases for clean imports
+    "baseUrl": "./src",
+    "paths": {
+      "@handlers/*": ["./handlers/*"],
+      "@middleware/*": ["./middleware/*"],
+      "@repositories/*": ["./repositories/*"],
+      "@services/*": ["./services/*"],
+      "@integrations/*": ["./integrations/*"],
+      "@utils/*": ["./utils/*"],
+      "@shared/contracts": ["../../packages/shared/contracts"],
+      "@shared/utils": ["../../packages/shared/utils"]
+    }
+  },
+  "include": [
+    "src/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "**/*.test.ts"
+  ]
+}

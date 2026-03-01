@@ -1,0 +1,7 @@
+# This directory will contain CDK stack definitions
+# - database-stack.ts (DynamoDB tables)
+# - storage-stack.ts (S3 buckets)
+# - auth-stack.ts (Cognito user pools)
+# - api-stack.ts (API Gateway + Lambda functions)
+# - events-stack.ts (EventBridge + SQS)
+# - monitoring-stack.ts (CloudWatch alarms and dashboards)

@@ -3,145 +3,230 @@
 ## Repository Layout
 
 ```
-├── backend/              # FastAPI application
-│   ├── app/
-│   │   ├── api/v1/      # API route handlers
-│   │   ├── core/        # Core utilities (auth, config, logging, RBAC)
-│   │   ├── integrations/# External service clients
-│   │   ├── repositories/# Data access layer (future)
-│   │   ├── schemas/     # Pydantic models for request/response
-│   │   ├── services/    # Business logic layer
-│   │   ├── scripts/     # Admin scripts (bootstrap, seeding)
-│   │   ├── workers/     # Background workers (future)
-│   │   └── main.py      # Application entry point
-│   ├── requirements.txt
-│   ├── Dockerfile
-│   └── docker-compose.yml
-├── docs/                # Design and architecture documentation
-├── tools/mcp/           # MCP servers for platform data access
-└── powers/              # Kiro power definitions
+├── infra/cdk/           # AWS CDK infrastructure as code
+│   ├── bin/             # CDK app entry point
+│   ├── lib/
+│   │   ├── config/      # Environment-specific configuration
+│   │   ├── stacks/      # CDK stack definitions
+│   │   └── constructs/  # Reusable CDK constructs
+│   ├── cdk.json
+│   └── package.json
+├── services/api/        # Lambda handlers and backend logic
+│   ├── src/
+│   │   ├── handlers/    # Lambda function handlers by domain
+│   │   ├── core/        # Core utilities (auth, config, logging)
+│   │   ├── adapters/    # External service adapters
+│   │   ├── middleware/  # Request/response middleware
+│   │   └── shared/      # Shared types, errors, utilities
+│   ├── package.json
+│   └── tsconfig.json
+├── apps/web/            # Next.js Admin/Seller web application
+│   ├── src/
+│   │   ├── app/         # Next.js app router pages
+│   │   ├── components/  # React components
+│   │   └── lib/         # Client utilities
+│   ├── package.json
+│   └── tsconfig.json
+├── packages/
+│   └── shared-contracts/# Shared TypeScript types and API contracts
+│       ├── src/
+│       ├── package.json
+│       └── tsconfig.json
+├── tools/mcp/           # MCP servers for developer/operator tooling
+│   ├── commerce-ops/    # Operations data access
+│   ├── commerce-catalog/# Catalog data access
+│   └── commerce-admin/  # Admin data access
+├── powers/              # Kiro power definitions
+│   └── commerce-platform/
+├── .kiro/
+│   ├── steering/        # Project steering documentation
+│   ├── settings/        # Kiro configuration
+│   └── specs/           # Feature specifications
+└── docs/                # Design and architecture documentation
 ```
 
 ## Backend Application Structure
 
-### `app/api/v1/`
-API route handlers organized by domain:
-- `auth.py` - Authentication endpoints (login, refresh, logout)
-- `admin.py` - Admin operations (seller approval, categories, disputes)
-- `seller.py` - Seller operations (products, inventory, orders)
-- `catalog.py` - Public catalog browsing
-- `orders.py` - Order creation and tracking
-- `whatsapp.py` - WhatsApp webhook handling
-- `payments.py` - Payment webhooks and status
-- `router.py` - Aggregates all routers under `/api/v1`
+### `services/api/src/handlers/`
+Lambda function handlers organized by domain:
+- `auth/` - Authentication (login, refresh, token validation)
+- `admin/` - Admin operations (seller approval, categories, disputes)
+- `seller/` - Seller operations (products, inventory, orders)
+- `catalog/` - Public catalog browsing
+- `orders/` - Order creation and tracking
+- `whatsapp/` - WhatsApp webhook handling
+- `payments/` - Payment webhooks and status updates
+- `websocket/` - WebSocket connection handlers (future)
+- `profile/` - User profile management
 
-### `app/core/`
+Each domain folder contains handler files like:
+- `create-product-handler.ts`
+- `whatsapp-webhook-handler.ts`
+- `payment-webhook-handler.ts`
+
+### `services/api/src/core/`
 Core framework utilities:
-- `config.py` - Environment configuration with Pydantic settings
-- `auth.py` - JWT verification and user context extraction
-- `rbac.py` - Role-based access control dependencies
-- `security.py` - Password hashing, token generation
-- `exceptions.py` - Custom exceptions and error handlers
-- `logging.py` - Structured logging setup with request IDs
+- `config.ts` - Environment configuration and AWS SDK clients
+- `auth.ts` - Cognito JWT verification and user context extraction
+- `authorization.ts` - Role-based access control logic
+- `errors.ts` - Custom error classes and error handling
+- `logger.ts` - Structured logging with request context
+- `validation.ts` - Zod schema validation utilities
 
-### `app/integrations/`
-External service clients:
-- `supabase_client.py` - Supabase database, auth, and storage client
-- `whatsapp_client.py` - WhatsApp Cloud API client
-- `razorpay_client.py` - Razorpay payment gateway client
+### `services/api/src/adapters/`
+External service adapters:
+- `dynamodb-adapter.ts` - DynamoDB operations with single-table design
+- `s3-adapter.ts` - S3 operations for media and document storage
+- `eventbridge-adapter.ts` - EventBridge event publishing
+- `sqs-adapter.ts` - SQS message sending
+- `whatsapp-adapter.ts` - WhatsApp Cloud API client
+- `razorpay-adapter.ts` - Razorpay payment gateway client
+- `gemini-adapter.ts` - Google Gemini AI client
 
-### `app/services/`
-Business logic layer:
-- `catalog_service.py` - Product and category operations
-- `whatsapp_handler.py` - WhatsApp message processing logic
-- `whatsapp_session.py` - Session state management
+### `services/api/src/middleware/`
+Lambda middleware and utilities:
+- `api-gateway-middleware.ts` - API Gateway request/response handling
+- `auth-middleware.ts` - Authentication and authorization middleware
+- `error-middleware.ts` - Error handling and formatting
+- `logging-middleware.ts` - Request logging and tracing
+- `validation-middleware.ts` - Request validation
 
-### `app/schemas/`
-Pydantic models for validation:
-- `common.py` - Shared response formats and base models
-- Domain-specific schemas in respective modules
+### `services/api/src/shared/`
+Shared types and utilities:
+- `types.ts` - Common TypeScript types and interfaces
+- `constants.ts` - Application constants and enums
+- `utils.ts` - Utility functions
+- `schemas.ts` - Zod validation schemas
 
 ## Code Organization Patterns
 
 ### Layered Architecture
 
 ```
-API Routes (app/api/v1/)
+Lambda Handlers (services/api/src/handlers/)
     ↓
-Services (app/services/)
+Business Logic / Use Cases
     ↓
-Integrations (app/integrations/)
+Adapters (services/api/src/adapters/)
     ↓
-External APIs (Supabase, WhatsApp, Razorpay)
+External Services (DynamoDB, S3, EventBridge, WhatsApp, Razorpay, Gemini)
 ```
 
-### Dependency Injection
+### Thin Lambda Handlers
 
-- Use FastAPI's `Depends()` for dependency injection
-- Common dependencies in `app/core/rbac.py` (e.g., `require_admin`, `require_seller`)
-- Settings injected via `get_settings()` from `app/core/config.py`
+- Handlers are thin entry points that orchestrate business logic
+- Extract request context (auth, validation) via middleware
+- Delegate to service/use-case functions for business logic
+- Return standardized API Gateway responses
+- Keep handlers focused on HTTP/event concerns
+
+### Repository/Adapter Pattern
+
+- Adapters encapsulate external service interactions
+- DynamoDB adapter handles single-table design queries
+- S3 adapter manages document and media operations
+- EventBridge adapter publishes domain events
+- SQS adapter sends async work messages
+- External API adapters (WhatsApp, Razorpay, Gemini) handle integration logic
 
 ### Error Handling
 
-- Custom exceptions in `app/core/exceptions.py`
-- Global exception handlers registered in `app/main.py`
-- Consistent error response format via `app/schemas/common.py`
+- Custom error classes in `services/api/src/core/errors.ts`
+- Error middleware catches and formats errors consistently
+- API Gateway error responses follow standard format
+- CloudWatch logs capture full error context
+- Structured error logging with stack traces
 
-### Logging
+### Logging and Observability
 
-- Structured logging with `structlog`
-- Request ID context propagation via `contextvars`
-- Log all requests with method, path, status, elapsed time
-- Use `get_logger(__name__)` in each module
+- Structured JSON logging to CloudWatch Logs
+- Request ID propagation through all logs
+- Log correlation with AWS X-Ray tracing
+- Log all requests with method, path, status, duration
+- Use logger instance from `services/api/src/core/logger.ts`
+
+### Authentication and Authorization
+
+- Cognito JWT tokens validated in auth middleware
+- User context extracted from token claims
+- Role-based authorization checks in handlers
+- Cognito groups map to application roles (admin, seller, customer)
+- IAM policies enforce least privilege at infrastructure level
 
 ## Naming Conventions
 
 ### Files and Modules
-- Snake case: `catalog_service.py`, `whatsapp_client.py`
-- Group related functionality in single files
-- Use `__init__.py` for package exports
+- Kebab case for handlers: `create-product-handler.ts`, `whatsapp-webhook-handler.ts`
+- Kebab case for adapters: `dynamodb-adapter.ts`, `razorpay-adapter.ts`
+- Kebab case for utilities: `api-gateway-middleware.ts`
+- Group related functionality in domain folders
 
 ### Functions and Variables
-- Snake case: `get_user_profile()`, `order_id`
-- Async functions prefixed with `async def`
-- Private functions prefixed with underscore: `_validate_signature()`
+- camelCase: `getUserProfile()`, `orderId`, `isValidToken`
+- Async functions use `async` keyword naturally
+- Private functions/methods prefixed with underscore: `_validateSignature()`
+- Handler exports named clearly: `createProductHandler`, `whatsappWebhookHandler`
 
-### Classes
-- Pascal case: `AppError`, `OrderService`, `WhatsAppClient`
-- Pydantic models: `UserProfile`, `OrderCreate`, `ProductResponse`
+### Types and Interfaces
+- PascalCase: `AppError`, `OrderService`, `WhatsAppAdapter`
+- Interface prefix optional: `IOrderRepository` or `OrderRepository`
+- Type aliases: `UserId`, `OrderStatus`, `ProductResponse`
+- Zod schemas: `CreateProductSchema`, `OrderResponseSchema`
 
-### Constants
-- Upper snake case: `MAX_RETRIES`, `DEFAULT_TIMEOUT`
-- Defined at module level or in config
+### Constants and Enums
+- UPPER_SNAKE_CASE: `MAX_RETRIES`, `DEFAULT_TIMEOUT`, `TABLE_NAME`
+- Enums in PascalCase: `OrderStatus`, `UserRole`, `PaymentMethod`
+- Defined at module level or in `shared/constants.ts`
 
 ## Import Organization
 
-```python
-# Standard library
-from __future__ import annotations
-import uuid
-from datetime import datetime
+```typescript
+// Node.js built-ins
+import { randomUUID } from 'crypto';
 
-# Third-party
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+// AWS SDK
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { S3Client } from '@aws-sdk/client-s3';
 
-# Local application
-from app.core.auth import get_current_user
-from app.core.rbac import require_seller
-from app.services.catalog_service import CatalogService
+// Third-party
+import { z } from 'zod';
+import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
+
+// Local application
+import { logger } from '../core/logger';
+import { verifyToken } from '../core/auth';
+import { requireRole } from '../core/authorization';
+import { DynamoDBAdapter } from '../adapters/dynamodb-adapter';
 ```
 
 ## Documentation Standards
 
-- Docstrings for all public functions and classes
-- Type hints for all function parameters and return values
-- API endpoint docstrings appear in Swagger UI
-- Use `"""Triple quotes"""` for docstrings
+- JSDoc comments for all public functions and classes
+- TypeScript types for all function parameters and return values
+- Clear function and variable names that self-document intent
+- README files in major directories explaining structure
 
-## Testing (Future)
+## Testing
 
-- Tests in `backend/tests/` mirroring `app/` structure
-- Use `pytest` for test framework
-- Fixtures for common test data
-- Mock external services (Supabase, WhatsApp, Razorpay)
+### Unit Tests
+- Tests in `services/api/src/**/__tests__/` alongside source files
+- Use Jest for test framework
+- Mock AWS SDK clients and external services
+- Test business logic in isolation
+
+### Integration Tests
+- Tests in `services/api/test/integration/`
+- Test handler functions with mock events
+- Validate DynamoDB queries and S3 operations
+- Use LocalStack for local AWS service emulation
+
+### Contract Tests
+- Validate API Gateway request/response contracts
+- Ensure Zod schemas match API documentation
+- Test shared types in `packages/shared-contracts/`
+
+### MCP Server Tests
+- Tests in `tools/mcp/*/test/`
+- Validate MCP tool inputs and outputs
+- Test against real DynamoDB tables (read-only)
+- Ensure data access patterns work correctly

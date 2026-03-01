@@ -1,0 +1,25 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./",
+    
+    // Path aliases for clean imports
+    "baseUrl": ".",
+    "paths": {
+      "@config/*": ["./lib/config/*"],
+      "@stacks/*": ["./lib/stacks/*"],
+      "@constructs/*": ["./lib/constructs/*"]
+    }
+  },
+  "include": [
+    "bin/**/*",
+    "lib/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "cdk.out",
+    "**/*.test.ts"
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./",
+    
+    // Path aliases for clean imports
+    "baseUrl": ".",
+    "paths": {
+      "@contracts/*": ["./contracts/*"],
+      "@utils/*": ["./utils/*"]
+    },
+    
+    // Shared packages should be importable by other workspaces
+    "composite": true,
+    "declarationMap": true
+  },
+  "include": [
+    "contracts/**/*",
+    "utils/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "**/*.test.ts"
+  ]
+}
