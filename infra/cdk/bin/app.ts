@@ -69,9 +69,10 @@ const databaseStack = new DatabaseStack(app, `${config.resourcePrefix}-database`
 
 console.log(`DatabaseStack instantiated: ${databaseStack.stackName}`);
 
-// 2. Storage Stack
+// 2. Storage Stack (depends on Database for inventory upload Lambda)
 const storageStack = new StorageStack(app, `${config.resourcePrefix}-storage`, {
   config,
+  table: databaseStack.table,
   env: {
     account,
     region,
@@ -79,6 +80,7 @@ const storageStack = new StorageStack(app, `${config.resourcePrefix}-storage`, {
   description: `Storage infrastructure for VyaparGyan ${environment} environment`,
 });
 
+storageStack.addDependency(databaseStack);
 console.log(`StorageStack instantiated: ${storageStack.stackName}`);
 
 // 3. Auth Stack

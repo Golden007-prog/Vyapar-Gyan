@@ -19,8 +19,12 @@ import {
   BlockPublicAccess,
   LifecycleRule,
   StorageClass,
+  EventType,
 } from 'aws-cdk-lib/aws-s3';
-import { RemovalPolicy } from 'aws-cdk-lib';
+import { RemovalPolicy, Duration } from 'aws-cdk-lib';
+import { Function, Runtime, Code, Architecture } from 'aws-cdk-lib/aws-lambda';
+import { S3EventSource } from 'aws-cdk-lib/aws-lambda-event-sources';
+import { Table } from 'aws-cdk-lib/aws-dynamodb';
 import { EnvironmentConfig } from '../config';
 
 /**
@@ -29,6 +33,8 @@ import { EnvironmentConfig } from '../config';
 export interface StorageStackProps extends cdk.StackProps {
   /** Environment-specific configuration */
   config: EnvironmentConfig;
+  /** DynamoDB table from DatabaseStack */
+  table: Table;
 }
 
 /**
@@ -43,11 +49,14 @@ export class StorageStack extends cdk.Stack {
   
   /** Application logs bucket */
   public readonly logsBucket: Bucket;
+  
+  /** Inventory upload processor Lambda function */
+  public readonly inventoryUploadFunction: Function;
 
   constructor(scope: Construct, id: string, props: StorageStackProps) {
     super(scope, id, props);
 
-    const { config } = props;
+    const { config, table } = props;
 
     // Create logs bucket first (used for access logging by other buckets)
     this.logsBucket = new Bucket(this, 'LogsBucket', {
@@ -140,6 +149,62 @@ export class StorageStack extends cdk.Stack {
     this.addBucketTags(this.documentsBucket, 'documents', config);
     this.addBucketTags(this.logsBucket, 'logs', config);
 
+    // Create Lambda function for inventory upload processing
+    this.inventoryUploadFunction = new Function(this, 'InventoryUploadFunction', {
+      functionName: `${config.resourcePrefix}-inventory-upload`,
+      runtime: Runtime.NODEJS_20_X,
+      architecture: Architecture.ARM_64,
+      handler: 'handlers/seller/inventory-upload-handler.handler',
+      code: Code.fromAsset('../../services/api/dist'),
+      timeout: Duration.seconds(60), // Longer timeout for image processing
+      memorySize: 1024, // More memory for Gemini API calls
+      environment: {
+        ENVIRONMENT: config.environment,
+        TABLE_NAME: table.tableName,
+        PRODUCT_IMAGES_BUCKET: this.productImagesBucket.bucketName,
+        DOCUMENTS_BUCKET: this.documentsBucket.bucketName,
+        LOG_LEVEL: 'info',
+      },
+    });
+
+    // Grant permissions to inventory upload function
+    table.grantWriteData(this.inventoryUploadFunction);
+    this.documentsBucket.grantRead(this.inventoryUploadFunction);
+
+    // Add S3 event trigger for inventory uploads
+    // Trigger on files uploaded to sellers/{sellerId}/inventory/ prefix
+    this.inventoryUploadFunction.addEventSource(
+      new S3EventSource(this.documentsBucket, {
+        events: [EventType.OBJECT_CREATED],
+        filters: [
+          {
+            prefix: 'sellers/',
+            suffix: '.csv',
+          },
+        ],
+      })
+    );
+
+    // Add triggers for image files (Khata books)
+    const imageExtensions = ['.jpg', '.jpeg', '.png', '.webp'];
+    for (const ext of imageExtensions) {
+      this.inventoryUploadFunction.addEventSource(
+        new S3EventSource(this.documentsBucket, {
+          events: [EventType.OBJECT_CREATED],
+          filters: [
+            {
+              prefix: 'sellers/',
+              suffix: ext,
+            },
+          ],
+        })
+      );
+    }
+
+    // Add environment-specific tags to Lambda
+    cdk.Tags.of(this.inventoryUploadFunction).add('Name', `${config.resourcePrefix}-inventory-upload`);
+    cdk.Tags.of(this.inventoryUploadFunction).add('Service', 'inventory');
+
     // Output bucket names and ARNs for reference by other stacks
     new cdk.CfnOutput(this, 'ProductImagesBucketName', {
       value: this.productImagesBucket.bucketName,
@@ -175,6 +240,12 @@ export class StorageStack extends cdk.Stack {
       value: this.logsBucket.bucketArn,
       description: 'Logs S3 bucket ARN',
       exportName: `${config.resourcePrefix}-logs-bucket-arn`,
+    });
+
+    new cdk.CfnOutput(this, 'InventoryUploadFunctionArn', {
+      value: this.inventoryUploadFunction.functionArn,
+      description: 'Inventory upload Lambda function ARN',
+      exportName: `${config.resourcePrefix}-inventory-upload-function-arn`,
     });
   }
 

@@ -30,11 +30,20 @@ export async function routeMessage(context: MessageContext): Promise<void> {
         break;
       
       case 'browsing':
+      case 'product_inquiry':
+      case 'idle':
+        // All browsing-related states use the same handler
         await browsingHandler(context);
         break;
       
       case 'checkout':
+      case 'ordering':
+      case 'payment':
         await checkoutHandler(context);
+        break;
+      
+      case 'support':
+        await handleSupport(context);
         break;
       
       default:
@@ -49,7 +58,22 @@ export async function routeMessage(context: MessageContext): Promise<void> {
       sessionId: session.id,
       state,
       error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
     });
     throw error;
   }
+}
+
+/**
+ * Handle support state (placeholder)
+ */
+async function handleSupport(context: MessageContext): Promise<void> {
+  const { session } = context;
+  
+  logger.info('Support state handler placeholder', {
+    sessionId: session.id,
+  });
+  
+  // For now, treat support like browsing
+  await browsingHandler(context);
 }

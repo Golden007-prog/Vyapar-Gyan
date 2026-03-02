@@ -158,6 +158,79 @@ export class DatabaseStack extends cdk.Stack {
       }),
     });
 
+    // PhoneIndex: For WhatsApp session lookup by phone number
+    // Access patterns:
+    // - Find session by phone number (phoneNumber = 919876543210, channelType = whatsapp)
+    this.table.addGlobalSecondaryIndex({
+      indexName: 'PhoneIndex',
+      partitionKey: {
+        name: 'phoneNumber',
+        type: AttributeType.STRING,
+      },
+      sortKey: {
+        name: 'channelType',
+        type: AttributeType.STRING,
+      },
+      projectionType: ProjectionType.ALL,
+      
+      // Read/write capacity for GSI (only used if billing mode is PROVISIONED)
+      ...(config.dynamodb.billingMode === BillingMode.PROVISIONED && {
+        readCapacity: config.dynamodb.readCapacity,
+        writeCapacity: config.dynamodb.writeCapacity,
+      }),
+    });
+
+    // TODO: Add remaining GSIs one at a time (DynamoDB limitation)
+    // Uncomment and deploy incrementally:
+    
+    // CategoryIndex: For listing products by category
+    this.table.addGlobalSecondaryIndex({
+      indexName: 'CategoryIndex',
+      partitionKey: { name: 'categoryId', type: AttributeType.STRING },
+      sortKey: { name: 'createdAt', type: AttributeType.STRING },
+      projectionType: ProjectionType.ALL,
+      ...(config.dynamodb.billingMode === BillingMode.PROVISIONED && {
+        readCapacity: config.dynamodb.readCapacity,
+        writeCapacity: config.dynamodb.writeCapacity,
+      }),
+    });
+
+    // SellerStockIndex: For AI dead-stock detection
+    this.table.addGlobalSecondaryIndex({
+      indexName: 'SellerStockIndex',
+      partitionKey: { name: 'sellerId', type: AttributeType.STRING },
+      sortKey: { name: 'stockAddedDate', type: AttributeType.STRING },
+      projectionType: ProjectionType.ALL,
+      ...(config.dynamodb.billingMode === BillingMode.PROVISIONED && {
+        readCapacity: config.dynamodb.readCapacity,
+        writeCapacity: config.dynamodb.writeCapacity,
+      }),
+    });
+
+    // SellerOrdersIndex: For listing orders by seller
+    this.table.addGlobalSecondaryIndex({
+      indexName: 'SellerOrdersIndex',
+      partitionKey: { name: 'sellerId', type: AttributeType.STRING },
+      sortKey: { name: 'createdAt', type: AttributeType.STRING },
+      projectionType: ProjectionType.ALL,
+      ...(config.dynamodb.billingMode === BillingMode.PROVISIONED && {
+        readCapacity: config.dynamodb.readCapacity,
+        writeCapacity: config.dynamodb.writeCapacity,
+      }),
+    });
+
+    // CustomerOrdersIndex: For listing orders by customer
+    this.table.addGlobalSecondaryIndex({
+      indexName: 'CustomerOrdersIndex',
+      partitionKey: { name: 'customerId', type: AttributeType.STRING },
+      sortKey: { name: 'createdAt', type: AttributeType.STRING },
+      projectionType: ProjectionType.ALL,
+      ...(config.dynamodb.billingMode === BillingMode.PROVISIONED && {
+        readCapacity: config.dynamodb.readCapacity,
+        writeCapacity: config.dynamodb.writeCapacity,
+      }),
+    });
+
     // Add environment-specific tags
     cdk.Tags.of(this.table).add('Name', `${config.resourcePrefix}-main-table`);
     cdk.Tags.of(this.table).add('Service', 'database');

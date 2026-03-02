@@ -4,7 +4,6 @@ import { logger } from './logger';
 import { getConfig } from './config';
 
 const dynamoDBClient = new DynamoDBClient({});
-const config = getConfig();
 
 export interface IdempotencyOptions {
   ttlSeconds?: number;
@@ -22,8 +21,17 @@ export class IdempotencyService {
   private defaultTtlSeconds: number;
 
   constructor(options: IdempotencyOptions = {}) {
-    this.tableName = options.tableName || config.tableName;
+    this.tableName = options.tableName || '';
     this.defaultTtlSeconds = options.ttlSeconds || 60;
+  }
+
+  private async getTableName(): Promise<string> {
+    if (this.tableName) {
+      return this.tableName;
+    }
+    const config = await getConfig();
+    this.tableName = config.tableName;
+    return this.tableName;
   }
 
   /**
@@ -34,6 +42,7 @@ export class IdempotencyService {
    * @returns true if lock acquired (first time processing), false if duplicate
    */
   async acquireLock(messageId: string, context?: Record<string, any>): Promise<boolean> {
+    const tableName = await this.getTableName();
     const now = Math.floor(Date.now() / 1000);
     const expiresAt = now + this.defaultTtlSeconds;
 
@@ -48,7 +57,7 @@ export class IdempotencyService {
 
     try {
       const command = new PutItemCommand({
-        TableName: this.tableName,
+        TableName: tableName,
         Item: marshall(item),
         ConditionExpression: 'attribute_not_exists(PK)',
       });
@@ -68,8 +77,7 @@ export class IdempotencyService {
         error: error instanceof Error ? error.message : String(error),
       });
       throw error;
-    }
-  }
+    }  }
 
   /**
    * Check if a message has already been processed

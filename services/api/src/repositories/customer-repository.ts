@@ -5,7 +5,6 @@ import { logger } from '../utils/logger';
 import { getConfig } from '../utils/config';
 
 const dynamoDBClient = new DynamoDBClient({});
-const config = getConfig();
 
 export interface Customer {
   id: string;
@@ -32,7 +31,16 @@ export class CustomerRepository {
   private tableName: string;
 
   constructor(tableName?: string) {
-    this.tableName = tableName || config.tableName;
+    this.tableName = tableName || '';
+  }
+
+  private async getTableName(): Promise<string> {
+    if (this.tableName) {
+      return this.tableName;
+    }
+    const config = await getConfig();
+    this.tableName = config.tableName;
+    return this.tableName;
   }
 
   /**
@@ -53,10 +61,13 @@ export class CustomerRepository {
       id: randomUUID(),
       phoneNumber,
       profileName,
-      whatsappId,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
+    
+    if (whatsappId) {
+      customer.whatsappId = whatsappId;
+    }
 
     await this.create(customer);
     logger.info('New customer created', { customerId: customer.id, phoneNumber });
@@ -68,8 +79,9 @@ export class CustomerRepository {
    * Get customer by phone number
    */
   async getByPhoneNumber(phoneNumber: string): Promise<Customer | null> {
+    const tableName = await this.getTableName();
     const command = new GetItemCommand({
-      TableName: this.tableName,
+      TableName: tableName,
       Key: marshall({
         PK: `CUSTOMER#${phoneNumber}`,
         SK: 'PROFILE',
@@ -89,6 +101,7 @@ export class CustomerRepository {
    * Create new customer
    */
   async create(customer: Customer): Promise<void> {
+    const tableName = await this.getTableName();
     const item = {
       PK: `CUSTOMER#${customer.phoneNumber}`,
       SK: 'PROFILE',
@@ -96,7 +109,7 @@ export class CustomerRepository {
     };
 
     const command = new PutItemCommand({
-      TableName: this.tableName,
+      TableName: tableName,
       Item: marshall(item),
     });
 

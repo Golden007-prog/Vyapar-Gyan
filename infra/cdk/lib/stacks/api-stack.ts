@@ -16,7 +16,7 @@ import {
   HttpApi,
   HttpMethod,
   CorsHttpMethod,
-  HttpStage,
+  PayloadFormatVersion,
 } from 'aws-cdk-lib/aws-apigatewayv2';
 import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
 import { Function, Runtime, Code, Architecture } from 'aws-cdk-lib/aws-lambda';
@@ -74,13 +74,9 @@ export class APIStack extends cdk.Stack {
         allowHeaders: ['Content-Type', 'Authorization', 'X-Request-ID'],
         maxAge: Duration.hours(1),
       },
-    });
-
-    // Create default stage
-    const defaultStage = new HttpStage(this, 'DefaultStage', {
-      httpApi: this.httpApi,
-      stageName: '$default',
-      autoDeploy: true,
+      
+      // HttpApi automatically creates a $default stage with auto-deploy enabled
+      // No need to explicitly create HttpStage - it causes 409 ConflictException
     });
 
     // Create WhatsApp webhook Lambda function
@@ -106,9 +102,14 @@ export class APIStack extends cdk.Stack {
     eventBus.grantPutEventsTo(this.whatsappWebhookFunction);
 
     // Create Lambda integration for WhatsApp webhook
+    // IMPORTANT: Configure to pass raw body for Twilio signature validation
     const whatsappWebhookIntegration = new HttpLambdaIntegration(
       'WhatsAppWebhookIntegration',
-      this.whatsappWebhookFunction
+      this.whatsappWebhookFunction,
+      {
+        // Pass raw request body (not base64 encoded) for signature validation
+        payloadFormatVersion: PayloadFormatVersion.VERSION_2_0,
+      }
     );
 
     // Add routes for WhatsApp webhook (GET for verification, POST for messages)

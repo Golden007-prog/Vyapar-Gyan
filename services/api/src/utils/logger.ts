@@ -75,13 +75,16 @@ function shouldLog(level: LogLevel): boolean {
 /**
  * Format an error object for logging
  */
-function formatError(error: Error | unknown): LogEntry['error'] {
+function formatError(error: Error | unknown): { message: string; stack?: string; name?: string } {
   if (error instanceof Error) {
-    return {
+    const formatted: { message: string; stack?: string; name?: string } = {
       name: error.name,
       message: error.message,
-      stack: error.stack,
     };
+    if (error.stack) {
+      formatted.stack = error.stack;
+    }
+    return formatted;
   }
   
   return {
@@ -124,9 +127,15 @@ export class Logger {
       timestamp: new Date().toISOString(),
       level,
       message,
-      requestId: asyncContext.requestId,
-      userId: asyncContext.userId,
     };
+    
+    // Add optional fields only if they exist
+    if (asyncContext.requestId) {
+      entry.requestId = asyncContext.requestId;
+    }
+    if (asyncContext.userId) {
+      entry.userId = asyncContext.userId;
+    }
     
     // Merge contexts: default -> async -> provided
     const mergedContext = {
@@ -145,7 +154,7 @@ export class Logger {
     }
     
     // Add error if provided
-    if (error) {
+    if (error !== undefined) {
       entry.error = formatError(error);
     }
     
@@ -237,3 +246,8 @@ export function setContext(context: Partial<LogContext>): void {
     Object.assign(currentContext, context);
   }
 }
+
+/**
+ * Default logger instance for convenience
+ */
+export const logger = createLogger();

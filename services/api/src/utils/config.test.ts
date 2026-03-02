@@ -32,7 +32,6 @@ describe('Configuration Loader', () => {
     process.env.PRODUCT_IMAGES_BUCKET = 'vyapargyan-dev-images';
     process.env.DOCUMENTS_BUCKET = 'vyapargyan-dev-documents';
     process.env.LOG_LEVEL = 'info';
-    process.env.WHATSAPP_API_URL = 'https://graph.facebook.com/v18.0';
   });
   
   afterEach(() => {
@@ -44,9 +43,9 @@ describe('Configuration Loader', () => {
     beforeEach(() => {
       // Mock SSM Parameter Store responses
       ssmMock.on(GetParameterCommand, {
-        Name: '/dev/whatsapp/phone-number-id'
+        Name: '/dev/twilio/phone-number'
       }).resolves({
-        Parameter: { Value: '123456789' }
+        Parameter: { Value: '+1234567890' }
       });
       
       ssmMock.on(GetParameterCommand, {
@@ -57,9 +56,15 @@ describe('Configuration Loader', () => {
       
       // Mock Secrets Manager responses
       secretsMock.on(GetSecretValueCommand, {
-        SecretId: '/dev/whatsapp/token'
+        SecretId: '/dev/twilio/account-sid'
       }).resolves({
-        SecretString: 'whatsapp-token-secret'
+        SecretString: 'AC1234567890abcdef'
+      });
+      
+      secretsMock.on(GetSecretValueCommand, {
+        SecretId: '/dev/twilio/auth-token'
+      }).resolves({
+        SecretString: 'twilio-auth-token-secret'
       });
       
       secretsMock.on(GetSecretValueCommand, {
@@ -90,7 +95,9 @@ describe('Configuration Loader', () => {
       expect(config.tableName).toBe('vyapargyan-dev-table');
       expect(config.eventBusName).toBe('vyapargyan-dev-events');
       expect(config.userPoolId).toBe('us-east-1_test123');
-      expect(config.whatsappToken).toBe('whatsapp-token-secret');
+      expect(config.twilioAccountSid).toBe('AC1234567890abcdef');
+      expect(config.twilioAuthToken).toBe('twilio-auth-token-secret');
+      expect(config.twilioPhoneNumber).toBe('+1234567890');
       expect(config.razorpayKeyId).toBe('rzp_test_key123');
       expect(config.razorpayKeySecret).toBe('razorpay-secret-key');
       expect(config.geminiApiKey).toBe('gemini-api-key-secret');
@@ -107,7 +114,7 @@ describe('Configuration Loader', () => {
       
       // Verify AWS clients were only called once
       expect(ssmMock.calls().length).toBe(2); // Two SSM parameters
-      expect(secretsMock.calls().length).toBe(4); // Four secrets
+      expect(secretsMock.calls().length).toBe(5); // Five secrets
     });
     
     it('should use default log level if not specified', async () => {
@@ -201,20 +208,20 @@ describe('Configuration Loader', () => {
     
     it('should throw error if SSM parameter is not found', async () => {
       ssmMock.on(GetParameterCommand, {
-        Name: '/dev/whatsapp/phone-number-id'
+        Name: '/dev/twilio/phone-number'
       }).rejects(new Error('ParameterNotFound'));
       
-      await expect(getConfig()).rejects.toThrow('Failed to get parameter /dev/whatsapp/phone-number-id');
+      await expect(getConfig()).rejects.toThrow('Failed to get parameter /dev/twilio/phone-number');
     });
     
     it('should throw error if SSM parameter has no value', async () => {
       ssmMock.on(GetParameterCommand, {
-        Name: '/dev/whatsapp/phone-number-id'
+        Name: '/dev/twilio/phone-number'
       }).resolves({
         Parameter: {}
       });
       
-      await expect(getConfig()).rejects.toThrow('Parameter /dev/whatsapp/phone-number-id not found or has no value');
+      await expect(getConfig()).rejects.toThrow('Parameter /dev/twilio/phone-number not found or has no value');
     });
     
     it('should throw error if secret is not found', async () => {
@@ -225,10 +232,10 @@ describe('Configuration Loader', () => {
       
       // Mock Secrets Manager to fail
       secretsMock.on(GetSecretValueCommand, {
-        SecretId: '/dev/whatsapp/token'
+        SecretId: '/dev/twilio/account-sid'
       }).rejects(new Error('ResourceNotFoundException'));
       
-      await expect(getConfig()).rejects.toThrow('Failed to get secret /dev/whatsapp/token');
+      await expect(getConfig()).rejects.toThrow('Failed to get secret /dev/twilio/account-sid');
     });
     
     it('should throw error if secret has no value', async () => {
@@ -239,24 +246,10 @@ describe('Configuration Loader', () => {
       
       // Mock Secrets Manager to return empty
       secretsMock.on(GetSecretValueCommand, {
-        SecretId: '/dev/whatsapp/token'
+        SecretId: '/dev/twilio/account-sid'
       }).resolves({});
       
-      await expect(getConfig()).rejects.toThrow('Secret /dev/whatsapp/token not found or has no value');
-    });
-    
-    it('should throw error if WhatsApp API URL is invalid', async () => {
-      process.env.WHATSAPP_API_URL = 'not-a-url';
-      
-      // Mock AWS responses
-      ssmMock.on(GetParameterCommand).resolves({
-        Parameter: { Value: 'test-value' }
-      });
-      secretsMock.on(GetSecretValueCommand).resolves({
-        SecretString: 'test-secret'
-      });
-      
-      await expect(getConfig()).rejects.toThrow('Configuration validation failed');
+      await expect(getConfig()).rejects.toThrow('Secret /dev/twilio/account-sid not found or has no value');
     });
   });
   
@@ -283,7 +276,7 @@ describe('Configuration Loader', () => {
       
       // Verify AWS clients were called twice
       expect(ssmMock.calls().length).toBe(4); // 2 parameters × 2 loads
-      expect(secretsMock.calls().length).toBe(8); // 4 secrets × 2 loads
+      expect(secretsMock.calls().length).toBe(10); // 5 secrets × 2 loads
     });
   });
   
@@ -304,7 +297,10 @@ describe('Configuration Loader', () => {
       // Verify correct secret paths were used
       const secretCalls = secretsMock.calls();
       expect(secretCalls.some(call => 
-        call.args[0].input.SecretId === '/dev/whatsapp/token'
+        call.args[0].input.SecretId === '/dev/twilio/account-sid'
+      )).toBe(true);
+      expect(secretCalls.some(call => 
+        call.args[0].input.SecretId === '/dev/twilio/auth-token'
       )).toBe(true);
       expect(secretCalls.some(call => 
         call.args[0].input.SecretId === '/dev/razorpay/key-secret'
@@ -330,7 +326,10 @@ describe('Configuration Loader', () => {
       // Verify correct secret paths were used
       const secretCalls = secretsMock.calls();
       expect(secretCalls.some(call => 
-        call.args[0].input.SecretId === '/staging/whatsapp/token'
+        call.args[0].input.SecretId === '/staging/twilio/account-sid'
+      )).toBe(true);
+      expect(secretCalls.some(call => 
+        call.args[0].input.SecretId === '/staging/twilio/auth-token'
       )).toBe(true);
       expect(secretCalls.some(call => 
         call.args[0].input.SecretId === '/staging/razorpay/key-secret'
@@ -353,7 +352,10 @@ describe('Configuration Loader', () => {
       // Verify correct secret paths were used
       const secretCalls = secretsMock.calls();
       expect(secretCalls.some(call => 
-        call.args[0].input.SecretId === '/prod/whatsapp/token'
+        call.args[0].input.SecretId === '/prod/twilio/account-sid'
+      )).toBe(true);
+      expect(secretCalls.some(call => 
+        call.args[0].input.SecretId === '/prod/twilio/auth-token'
       )).toBe(true);
       expect(secretCalls.some(call => 
         call.args[0].input.SecretId === '/prod/razorpay/key-secret'

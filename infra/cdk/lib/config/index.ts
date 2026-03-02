@@ -10,7 +10,7 @@ export { getDevConfig } from './dev';
 export { getStagingConfig } from './staging';
 export { getProdConfig } from './prod';
 
-import { EnvironmentConfig, EnvironmentType } from './environment';
+import { EnvironmentConfig } from './environment';
 import { getDevConfig } from './dev';
 import { getStagingConfig } from './staging';
 import { getProdConfig } from './prod';

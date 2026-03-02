@@ -34,8 +34,6 @@ export function getDevConfig(account: string, region: string = 'us-east-1'): Env
     s3: {
       versioning: false,
       lifecycleRules: {
-        transitionToIADays: undefined,
-        transitionToGlacierDays: undefined,
         expirationDays: 30, // Delete objects after 30 days
       },
       accessLogging: false,
@@ -51,7 +49,6 @@ export function getDevConfig(account: string, region: string = 'us-east-1'): Env
     lambda: {
       memorySize: 512,
       timeout: Duration.seconds(30),
-      reservedConcurrentExecutions: undefined,
       tracing: true,
     },
     

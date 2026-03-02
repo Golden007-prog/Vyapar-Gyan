@@ -12,7 +12,7 @@ import { getConfig } from './config';
  * Example Lambda handler that uses configuration
  */
 export const handler = async (
-  event: APIGatewayProxyEventV2,
+  _event: APIGatewayProxyEventV2,
   context: Context
 ): Promise<APIGatewayProxyResultV2> => {
   try {
@@ -21,7 +21,7 @@ export const handler = async (
     
     // Log environment info (safe to log)
     console.log('Handler started', {
-      requestId: context.requestId,
+      requestId: context.awsRequestId,
       environment: config.environment,
       region: config.region,
       logLevel: config.logLevel,
@@ -45,7 +45,7 @@ export const handler = async (
     };
   } catch (error) {
     console.error('Configuration error', {
-      requestId: context.requestId,
+      requestId: context.awsRequestId,
       error: error instanceof Error ? error.message : String(error),
     });
     
@@ -66,28 +66,31 @@ export const handler = async (
  * Example: Using configuration with external service clients
  */
 export const handlerWithClients = async (
-  event: APIGatewayProxyEventV2,
-  context: Context
+  _event: APIGatewayProxyEventV2,
+  _context: Context
 ): Promise<APIGatewayProxyResultV2> => {
   try {
     const config = await getConfig();
     
-    // Initialize WhatsApp client with configuration
-    const whatsappClient = {
-      apiUrl: config.whatsappApiUrl,
-      token: config.whatsappToken,
-      phoneNumberId: config.whatsappPhoneNumberId,
-    };
+    // Example: Initialize WhatsApp client with configuration
+    // const whatsappClient = {
+    //   apiUrl: config.whatsappApiUrl,
+    //   token: config.whatsappToken,
+    //   phoneNumberId: config.whatsappPhoneNumberId,
+    // };
     
-    // Initialize Razorpay client with configuration
-    const razorpayClient = {
-      keyId: config.razorpayKeyId,
-      keySecret: config.razorpayKeySecret,
-      webhookSecret: config.razorpayWebhookSecret,
-    };
+    // Example: Initialize Razorpay client with configuration
+    // const razorpayClient = {
+    //   keyId: config.razorpayKeyId,
+    //   keySecret: config.razorpayKeySecret,
+    //   webhookSecret: config.razorpayWebhookSecret,
+    // };
     
     // Use clients to perform operations
     // ... business logic here ...
+    
+    // Demonstrate config is loaded
+    console.log('Config loaded', { environment: config.environment });
     
     return {
       statusCode: 200,
@@ -107,8 +110,8 @@ export const handlerWithClients = async (
  * Example: Environment-specific behavior
  */
 export const handlerWithEnvironmentLogic = async (
-  event: APIGatewayProxyEventV2,
-  context: Context
+  _event: APIGatewayProxyEventV2,
+  _context: Context
 ): Promise<APIGatewayProxyResultV2> => {
   const config = await getConfig();
   
@@ -127,7 +130,7 @@ export const handlerWithEnvironmentLogic = async (
   // Use log level from configuration
   const shouldLogDebug = config.logLevel === 'debug';
   if (shouldLogDebug) {
-    console.debug('Debug logging enabled', { event });
+    console.debug('Debug logging enabled', { event: _event });
   }
   
   return {

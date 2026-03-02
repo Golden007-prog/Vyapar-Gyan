@@ -21,12 +21,10 @@ const configSchema = z.object({
   userPoolId: z.string().min(1),
   userPoolClientId: z.string().min(1),
   
-  // WhatsApp (from Secrets Manager)
-  whatsappApiUrl: z.string().url(),
-  whatsappToken: z.string().min(1),
-  whatsappPhoneNumberId: z.string().min(1),
-  whatsappVerifyToken: z.string().min(1),
-  whatsappAppSecret: z.string().min(1),
+  // Twilio (from Secrets Manager)
+  twilioAccountSid: z.string().min(1),
+  twilioAuthToken: z.string().min(1),
+  twilioPhoneNumber: z.string().min(1),
   
   // Razorpay (from Secrets Manager and SSM)
   razorpayKeyId: z.string().min(1),
@@ -35,6 +33,9 @@ const configSchema = z.object({
   
   // Gemini AI (from Secrets Manager)
   geminiApiKey: z.string().min(1),
+  
+  // Grok AI (from Secrets Manager)
+  grokApiKey: z.string().min(1),
   
   // S3 Buckets
   productImagesBucket: z.string().min(1),
@@ -146,12 +147,11 @@ export async function getConfig(): Promise<Config> {
       documentsBucket: process.env.DOCUMENTS_BUCKET!,
       logLevel: (process.env.LOG_LEVEL as 'debug' | 'info' | 'warn' | 'error') || 'info',
       
-      // WhatsApp configuration (from Secrets Manager)
-      whatsappApiUrl: process.env.WHATSAPP_API_URL || 'https://graph.facebook.com/v18.0',
-      whatsappToken: await getSecret(`/${environment}/whatsapp/token`),
-      whatsappPhoneNumberId: await getParameter(`/${environment}/whatsapp/phone-number-id`),
-      whatsappVerifyToken: await getSecret(`/${environment}/whatsapp/verify-token`),
-      whatsappAppSecret: await getSecret(`/${environment}/whatsapp/app-secret`),
+      // Twilio configuration (from Secrets Manager)
+      // Updated for Twilio integration
+      twilioAccountSid: await getSecret(`/${environment}/twilio/account-sid`),
+      twilioAuthToken: await getSecret(`/${environment}/twilio/auth-token`),
+      twilioPhoneNumber: await getParameter(`/${environment}/twilio/phone-number`),
       
       // Razorpay configuration (mixed: key ID from SSM, secrets from Secrets Manager)
       razorpayKeyId: await getParameter(`/${environment}/razorpay/key-id`),
@@ -159,7 +159,10 @@ export async function getConfig(): Promise<Config> {
       razorpayWebhookSecret: await getSecret(`/${environment}/razorpay/webhook-secret`),
       
       // Gemini AI configuration (from Secrets Manager)
-      geminiApiKey: await getSecret(`/${environment}/gemini/api-key`),
+      geminiApiKey: await getSecret('GEMINI_API_KEY'),
+      
+      // Grok AI configuration (from Secrets Manager)
+      grokApiKey: await getSecret('GROK_API_KEY'),
     };
     
     // Validate configuration against schema

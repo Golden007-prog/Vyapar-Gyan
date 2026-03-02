@@ -2,14 +2,18 @@
   "mcpServers": {
     "fetch": {
       "command": "uvx",
-      "args": ["mcp-server-fetch"],
+      "args": [
+        "mcp-server-fetch"
+      ],
       "env": {},
       "disabled": true,
       "autoApprove": []
     },
     "aws-iac": {
       "command": "uvx",
-      "args": ["awslabs.aws-iac-mcp-server@latest"],
+      "args": [
+        "awslabs.aws-iac-mcp-server@latest"
+      ],
       "env": {
         "FASTMCP_LOG_LEVEL": "ERROR"
       },
@@ -18,7 +22,9 @@
     },
     "commerce-ops-mcp": {
       "command": "node",
-      "args": ["./tools/mcp/commerce-ops/dist/index.js"],
+      "args": [
+        "./tools/mcp/commerce-ops/dist/index.js"
+      ],
       "env": {
         "AWS_REGION": "ap-south-1",
         "AWS_PROFILE": "kiro-mcp",
@@ -38,7 +44,9 @@
     },
     "commerce-catalog-mcp": {
       "command": "node",
-      "args": ["./tools/mcp/commerce-catalog/dist/index.js"],
+      "args": [
+        "./tools/mcp/commerce-catalog/dist/index.js"
+      ],
       "env": {
         "AWS_REGION": "ap-south-1",
         "AWS_PROFILE": "kiro-mcp",
@@ -57,7 +65,9 @@
     },
     "commerce-admin-mcp": {
       "command": "node",
-      "args": ["./tools/mcp/commerce-admin/dist/index.js"],
+      "args": [
+        "./tools/mcp/commerce-admin/dist/index.js"
+      ],
       "env": {
         "AWS_REGION": "ap-south-1",
         "AWS_PROFILE": "kiro-mcp",
@@ -72,6 +82,22 @@
         "get_dispute",
         "get_audit_timeline",
         "list_recent_payments"
+      ]
+    },
+    "twilio-mcp": {
+      "command": "node",
+      "args": [
+        "./tools/mcp/twilio-mcp/dist/index.js"
+      ],
+      "env": {
+        "TWILIO_ACCOUNT_SID": "${TWILIO_ACCOUNT_SID}",
+        "TWILIO_AUTH_TOKEN": "${TWILIO_AUTH_TOKEN}",
+        "TWILIO_PHONE_NUMBER": "${TWILIO_PHONE_NUMBER}"
+      },
+      "disabled": false,
+      "autoApprove": [
+        "get_message_history",
+        "get_message_status"
       ]
     }
   }

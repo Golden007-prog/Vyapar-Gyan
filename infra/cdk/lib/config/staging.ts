@@ -52,7 +52,6 @@ export function getStagingConfig(account: string, region: string = 'us-east-1'):
     lambda: {
       memorySize: 1024,
       timeout: Duration.seconds(60),
-      reservedConcurrentExecutions: undefined,
       tracing: true,
     },
     

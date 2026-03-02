@@ -51,18 +51,24 @@
 Lambda function handlers organized by domain:
 - `auth/` - Authentication (login, refresh, token validation)
 - `admin/` - Admin operations (seller approval, categories, disputes)
-- `seller/` - Seller operations (products, inventory, orders)
+- `seller/` - Seller operations (products, inventory, orders, analytics). Includes `inventory-upload-handler.ts` for processing CSV and Khata book image uploads via S3 triggers
 - `catalog/` - Public catalog browsing
 - `orders/` - Order creation and tracking
-- `whatsapp/` - WhatsApp webhook handling
-- `payments/` - Payment webhooks and status updates
+- `messaging/` - Twilio webhook handling and Next.js web app chat syncing (formerly `whatsapp/`)
+- `payments/` - Payment webhooks and status updates (Razorpay Route with commission splitting)
+- `campaign/` - Handlers for automated WhatsApp discount notifications to customers
+- `ai/` - EventBridge scheduled workers including `trend-analyzer-worker.ts` (Grok/Gemini market research) and `dead-stock-agent.ts` (Bedrock orchestration)
 - `websocket/` - WebSocket connection handlers (future)
 - `profile/` - User profile management
 
 Each domain folder contains handler files like:
 - `create-product-handler.ts`
-- `whatsapp-webhook-handler.ts`
+- `inventory-upload-handler.ts`
+- `messaging-webhook-handler.ts`
 - `payment-webhook-handler.ts`
+- `trend-analyzer-worker.ts`
+- `dead-stock-agent.ts`
+- `send-discount-campaign-handler.ts`
 
 ### `services/api/src/core/`
 Core framework utilities:
@@ -75,13 +81,15 @@ Core framework utilities:
 
 ### `services/api/src/adapters/`
 External service adapters:
-- `dynamodb-adapter.ts` - DynamoDB operations with single-table design
-- `s3-adapter.ts` - S3 operations for media and document storage
+- `dynamodb-adapter.ts` - DynamoDB operations with single-table design and multi-seller partition strategy
+- `s3-adapter.ts` - S3 operations for media, document storage, and Khata book images
 - `eventbridge-adapter.ts` - EventBridge event publishing
 - `sqs-adapter.ts` - SQS message sending
-- `whatsapp-adapter.ts` - WhatsApp Cloud API client
-- `razorpay-adapter.ts` - Razorpay payment gateway client
-- `gemini-adapter.ts` - Google Gemini AI client
+- `twilio-adapter.ts` - Twilio SDK client for omnichannel messaging (WhatsApp, SMS, in-app chat)
+- `razorpay-adapter.ts` - Razorpay Route/Transfers API client for commission splitting and seller payouts
+- `gemini-adapter.ts` - Google Gemini AI client for OCR, voice transcription, and market analysis
+- `grok-adapter.ts` - xAI Grok API client for market trend analysis
+- `bedrock-adapter.ts` - Amazon Bedrock client for AI orchestration
 
 ### `services/api/src/middleware/`
 Lambda middleware and utilities:
@@ -109,8 +117,10 @@ Business Logic / Use Cases
     ↓
 Adapters (services/api/src/adapters/)
     ↓
-External Services (DynamoDB, S3, EventBridge, WhatsApp, Razorpay, Gemini)
+External Services (DynamoDB, S3, EventBridge, Twilio, Razorpay Route, Gemini, Grok, Bedrock)
 ```
+
+Note: Checkout logic no longer reserves inventory during cart phase. Stock deduction is finalized only inside the Razorpay payment webhook handler upon successful payment confirmation.
 
 ### Thin Lambda Handlers
 

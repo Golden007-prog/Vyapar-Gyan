@@ -10,8 +10,8 @@
 
 ## Data and Storage
 
-- **DynamoDB** - NoSQL database for operational commerce data (single-table design)
-- **S3** - Object storage for media uploads, documents, raw payloads, exports
+- **DynamoDB** - NoSQL database for operational commerce data (single-table design with multi-seller partition strategy, tracking stock age, monthly revenue, and analytics)
+- **S3** - Object storage for media uploads, documents, raw payloads, exports, and Khata book images
 - **Cognito User Pools** - User authentication and identity management
 - **Cognito Identity Pools** - Temporary AWS credentials for client uploads (future)
 
@@ -49,9 +49,11 @@
 
 ## External Integrations
 
-- **WhatsApp Cloud API** - Meta's WhatsApp Business Platform for customer messaging
-- **Razorpay** - Payment gateway for UPI, cards, wallets, net banking
-- **Google Gemini** - AI for voice transcription, image analysis, multilingual support
+- **Twilio SDK** - Omnichannel messaging platform for WhatsApp, SMS, and in-app chat routing
+- **Razorpay Route (Transfers)** - Payment gateway with automated commission splitting and direct seller payouts for UPI, cards, wallets, net banking
+- **Google Gemini** - AI for voice transcription, OCR (Khata book parsing), image analysis, multilingual support, and market trend research
+- **xAI Grok API** - AI for live market trend research powering dynamic pricing recommendations
+- **Amazon Bedrock** - Orchestration engine for dead-stock detection and automated discount campaign generation
 
 ## Frontend
 
@@ -177,14 +179,16 @@ aws s3 ls s3://vyapargyan-dev-media/ --profile kiro-mcp
 
 - `AWS_REGION` - AWS region for services
 - `TABLE_NAME` - DynamoDB table name
-- `MEDIA_BUCKET` - S3 bucket for media uploads
+- `MEDIA_BUCKET` - S3 bucket for media uploads and Khata book images
 - `USER_POOL_ID` - Cognito User Pool ID
 - `USER_POOL_CLIENT_ID` - Cognito App Client ID
-- `WHATSAPP_PHONE_NUMBER_ID` - WhatsApp Business Phone Number ID
-- `WHATSAPP_ACCESS_TOKEN` - WhatsApp API access token (from Secrets Manager)
+- `TWILIO_ACCOUNT_SID` - Twilio account identifier (from Secrets Manager)
+- `TWILIO_AUTH_TOKEN` - Twilio authentication token (from Secrets Manager)
+- `TWILIO_PHONE_NUMBER` - Twilio WhatsApp-enabled phone number
 - `RAZORPAY_KEY_ID` - Razorpay API key ID (from Secrets Manager)
 - `RAZORPAY_KEY_SECRET` - Razorpay API key secret (from Secrets Manager)
-- `GEMINI_API_KEY` - Google Gemini API key (from Secrets Manager)
+- `GEMINI_API_KEY` - Google Gemini API key for OCR and market analysis (from Secrets Manager)
+- `GROK_API_KEY` - xAI Grok API key for market trend analyzer (from Secrets Manager)
 
 ### AWS Profiles
 

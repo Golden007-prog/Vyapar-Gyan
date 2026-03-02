@@ -39,7 +39,6 @@ export function getProdConfig(account: string, region: string = 'ap-south-1'): E
       lifecycleRules: {
         transitionToIADays: 90,
         transitionToGlacierDays: 365,
-        expirationDays: undefined, // Never delete in production
       },
       accessLogging: true,
     },

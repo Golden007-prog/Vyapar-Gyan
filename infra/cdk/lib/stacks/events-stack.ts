@@ -12,11 +12,11 @@
 
 import * as cdk from 'aws-cdk-lib';
 import { Construct } from 'constructs';
-import { EventBus, Rule, RuleTargetInput } from 'aws-cdk-lib/aws-events';
-import { SqsQueue } from 'aws-cdk-lib/aws-events-targets';
+import { EventBus, Rule, RuleTargetInput, Schedule } from 'aws-cdk-lib/aws-events';
+import { SqsQueue, LambdaFunction } from 'aws-cdk-lib/aws-events-targets';
 import { Queue, QueueEncryption } from 'aws-cdk-lib/aws-sqs';
-import { Function, Runtime, Code, Architecture } from 'aws-cdk-lib/aws-lambda';
-import { SqsEventSource } from 'aws-cdk-lib/aws-lambda-event-sources';
+import { Function, Runtime, Code, Architecture, StartingPosition } from 'aws-cdk-lib/aws-lambda';
+import { SqsEventSource, DynamoEventSource } from 'aws-cdk-lib/aws-lambda-event-sources';
 import { Table } from 'aws-cdk-lib/aws-dynamodb';
 import { Duration } from 'aws-cdk-lib';
 import { EnvironmentConfig } from '../config';
@@ -43,6 +43,12 @@ export class EventsStack extends cdk.Stack {
   
   /** WhatsApp worker Lambda function */
   public readonly whatsappWorkerFunction: Function;
+  
+  /** Trend analyzer worker Lambda function */
+  public readonly trendAnalyzerFunction: Function;
+  
+  /** Campaign worker Lambda function */
+  public readonly campaignWorkerFunction: Function;
 
   constructor(scope: Construct, id: string, props: EventsStackProps) {
     super(scope, id, props);
@@ -108,7 +114,7 @@ export class EventsStack extends cdk.Stack {
         EVENT_BUS_NAME: this.eventBus.eventBusName,
         LOG_LEVEL: 'info',
       },
-      reservedConcurrentExecutions: config.environment === 'prod' ? 10 : undefined,
+      ...(config.environment === 'prod' && { reservedConcurrentExecutions: 10 }),
     });
 
     // Grant permissions to worker function
@@ -129,6 +135,95 @@ export class EventsStack extends cdk.Stack {
     cdk.Tags.of(this.eventBus).add('Service', 'events');
     cdk.Tags.of(this.whatsappMessagesQueue).add('Name', `${config.resourcePrefix}-whatsapp-queue`);
     cdk.Tags.of(this.whatsappMessagesQueue).add('Service', 'events');
+
+    // Create Trend Analyzer Lambda function for scheduled AI insights
+    this.trendAnalyzerFunction = new Function(this, 'TrendAnalyzerFunction', {
+      functionName: `${config.resourcePrefix}-trend-analyzer`,
+      runtime: Runtime.NODEJS_20_X,
+      architecture: Architecture.ARM_64,
+      handler: 'handlers/ai/trend-analyzer-worker.handler',
+      code: Code.fromAsset('../../services/api/dist'),
+      timeout: Duration.minutes(5), // Longer timeout for batch processing
+      memorySize: 1024,
+      environment: {
+        ENVIRONMENT: config.environment,
+        TABLE_NAME: table.tableName,
+        LOG_LEVEL: 'info',
+      },
+    });
+
+    // Grant permissions to trend analyzer function
+    table.grantReadWriteData(this.trendAnalyzerFunction);
+
+    // Create EventBridge scheduled rule for daily trend analysis
+    // Runs at 2:00 AM IST (20:30 UTC previous day)
+    const trendAnalyzerRule = new Rule(this, 'TrendAnalyzerSchedule', {
+      ruleName: `${config.resourcePrefix}-trend-analyzer-schedule`,
+      description: 'Daily scheduled trigger for market trend analysis and dead stock detection',
+      schedule: Schedule.cron({
+        minute: '30',
+        hour: '20', // 2:00 AM IST
+        day: '*',
+        month: '*',
+        year: '*',
+      }),
+    });
+
+    // Add Lambda as target for the scheduled rule
+    trendAnalyzerRule.addTarget(new LambdaFunction(this.trendAnalyzerFunction));
+
+    // Add tags to trend analyzer
+    cdk.Tags.of(this.trendAnalyzerFunction).add('Name', `${config.resourcePrefix}-trend-analyzer`);
+    cdk.Tags.of(this.trendAnalyzerFunction).add('Service', 'ai-insights');
+
+    // Create Campaign Worker Lambda function for automated WhatsApp campaigns
+    this.campaignWorkerFunction = new Function(this, 'CampaignWorkerFunction', {
+      functionName: `${config.resourcePrefix}-campaign-worker`,
+      runtime: Runtime.NODEJS_20_X,
+      architecture: Architecture.ARM_64,
+      handler: 'handlers/ai/campaign-worker.handler',
+      code: Code.fromAsset('../../services/api/dist'),
+      timeout: Duration.minutes(5), // Longer timeout for batch WhatsApp sending
+      memorySize: 1024,
+      environment: {
+        ENVIRONMENT: config.environment,
+        TABLE_NAME: table.tableName,
+        LOG_LEVEL: 'info',
+      },
+    });
+
+    // Grant permissions to campaign worker function
+    table.grantReadWriteData(this.campaignWorkerFunction);
+
+    // Add DynamoDB Stream as event source for campaign worker
+    // Triggers when INSIGHT items are modified (status changed to 'approved')
+    // Note: Table has streams enabled (StreamViewType.NEW_AND_OLD_IMAGES)
+    this.campaignWorkerFunction.addEventSource(
+      new DynamoEventSource(table as any, {
+        startingPosition: StartingPosition.LATEST,
+        batchSize: 10,
+        maxBatchingWindow: Duration.seconds(5),
+        retryAttempts: 2,
+        filters: [
+          // Only process INSIGHT items
+          {
+            pattern: JSON.stringify({
+              dynamodb: {
+                NewImage: {
+                  SK: {
+                    S: [{ prefix: 'INSIGHT#' }],
+                  },
+                },
+              },
+            }),
+          },
+        ],
+      })
+    );
+
+    // Add tags to campaign worker
+    cdk.Tags.of(this.campaignWorkerFunction).add('Name', `${config.resourcePrefix}-campaign-worker`);
+    cdk.Tags.of(this.campaignWorkerFunction).add('Service', 'ai-campaigns');
 
     // Output event bus and queue details
     new cdk.CfnOutput(this, 'EventBusName', {
@@ -153,6 +248,18 @@ export class EventsStack extends cdk.Stack {
       value: this.whatsappMessagesQueue.queueArn,
       description: 'WhatsApp messages SQS queue ARN',
       exportName: `${config.resourcePrefix}-whatsapp-queue-arn`,
+    });
+
+    new cdk.CfnOutput(this, 'TrendAnalyzerFunctionArn', {
+      value: this.trendAnalyzerFunction.functionArn,
+      description: 'Trend analyzer Lambda function ARN',
+      exportName: `${config.resourcePrefix}-trend-analyzer-arn`,
+    });
+
+    new cdk.CfnOutput(this, 'CampaignWorkerFunctionArn', {
+      value: this.campaignWorkerFunction.functionArn,
+      description: 'Campaign worker Lambda function ARN',
+      exportName: `${config.resourcePrefix}-campaign-worker-arn`,
     });
   }
 }

@@ -1,6 +1,6 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { EventBridgeClient, PutEventsCommand } from '@aws-sdk/client-eventbridge';
-import crypto from 'crypto';
+import { validateRequest } from 'twilio';
 import { logger } from '../../utils/logger';
 import { getConfig, type Config } from '../../utils/config';
 
@@ -10,10 +10,11 @@ let config: Config;
 /**
  * WhatsApp Webhook Handler
  * 
- * Handles both GET (verification) and POST (incoming messages) requests from Meta's WhatsApp Cloud API.
- * 
- * GET: Responds to Meta's webhook verification challenge
- * POST: Validates signature, drops raw payload to EventBridge, returns 200 OK immediately
+ * Handles POST requests from Twilio's WhatsApp API.
+ * - Validates Twilio signature for security
+ * - Parses form-encoded webhook payload
+ * - Transforms Twilio payload to internal event format
+ * - Publishes to EventBridge for async processing
  */
 export const handler = async (
   event: APIGatewayProxyEvent
@@ -25,35 +26,32 @@ export const handler = async (
     config = await getConfig();
   }
   
-  logger.info('WhatsApp webhook request received', {
+  logger.info('Twilio WhatsApp webhook request received', {
     requestId,
     method: event.httpMethod,
     path: event.path,
+    contentType: event.headers['content-type'] || event.headers['Content-Type'],
   });
 
   try {
-    // Handle GET request for webhook verification
-    if (event.httpMethod === 'GET') {
-      return handleVerification(event);
+    // Only handle POST requests
+    if (event.httpMethod !== 'POST') {
+      return {
+        statusCode: 405,
+        body: JSON.stringify({ error: 'Method not allowed' }),
+      };
     }
 
-    // Handle POST request for incoming webhooks
-    if (event.httpMethod === 'POST') {
-      return await handleIncomingWebhook(event, requestId);
-    }
-
-    return {
-      statusCode: 405,
-      body: JSON.stringify({ error: 'Method not allowed' }),
-    };
+    return await handleIncomingWebhook(event, requestId);
   } catch (error) {
-    logger.error('Error processing WhatsApp webhook', {
+    logger.error('Error processing Twilio webhook', {
       requestId,
       error: error instanceof Error ? error.message : String(error),
       stack: error instanceof Error ? error.stack : undefined,
     });
 
-    // Always return 200 to prevent Meta from retrying
+    // Return 200 to prevent Twilio from retrying
+    // Errors are logged and can be investigated via CloudWatch
     return {
       statusCode: 200,
       body: JSON.stringify({ status: 'error_logged' }),
@@ -62,32 +60,7 @@ export const handler = async (
 };
 
 /**
- * Handle Meta's webhook verification challenge
- */
-function handleVerification(event: APIGatewayProxyEvent): APIGatewayProxyResult {
-  const mode = event.queryStringParameters?.['hub.mode'];
-  const token = event.queryStringParameters?.['hub.verify_token'];
-  const challenge = event.queryStringParameters?.['hub.challenge'];
-
-  logger.info('Webhook verification request', { mode, token: token ? '***' : undefined });
-
-  if (mode === 'subscribe' && token === config.whatsappVerifyToken) {
-    logger.info('Webhook verification successful');
-    return {
-      statusCode: 200,
-      body: challenge || '',
-    };
-  }
-
-  logger.warn('Webhook verification failed', { mode, tokenMatch: token === config.whatsappVerifyToken });
-  return {
-    statusCode: 403,
-    body: JSON.stringify({ error: 'Verification failed' }),
-  };
-}
-
-/**
- * Handle incoming WhatsApp webhook POST request
+ * Handle incoming Twilio WhatsApp webhook POST request
  */
 async function handleIncomingWebhook(
   event: APIGatewayProxyEvent,
@@ -103,44 +76,44 @@ async function handleIncomingWebhook(
     };
   }
 
-  // Verify webhook signature
-  const signature = event.headers['x-hub-signature-256'] || event.headers['X-Hub-Signature-256'];
-  if (!verifySignature(body, signature)) {
-    logger.error('Invalid webhook signature', { requestId });
+  // Parse form-encoded body (Twilio sends application/x-www-form-urlencoded)
+  const twilioPayload = parseFormData(body);
+  
+  if (!twilioPayload) {
+    logger.error('Failed to parse webhook body', { requestId });
     return {
       statusCode: 200,
-      body: JSON.stringify({ status: 'invalid_signature' }),
+      body: JSON.stringify({ status: 'invalid_body' }),
     };
   }
 
-  // Parse and validate payload
-  let payload: any;
-  try {
-    payload = JSON.parse(body);
-  } catch (error) {
-    logger.error('Failed to parse webhook body', { requestId, error });
+  // Verify Twilio webhook signature using parsed params
+  const signature = event.headers['x-twilio-signature'] || event.headers['X-Twilio-Signature'];
+  const url = reconstructUrl(event);
+  
+  if (!verifyTwilioSignature(url, twilioPayload, signature)) {
+    logger.error('Invalid Twilio webhook signature', { requestId });
     return {
-      statusCode: 200,
-      body: JSON.stringify({ status: 'invalid_json' }),
+      statusCode: 403,
+      body: JSON.stringify({ error: 'Invalid signature' }),
     };
   }
 
-  // Validate it's from a WhatsApp business account
-  if (payload.object !== 'whatsapp_business_account') {
-    logger.warn('Non-WhatsApp business account webhook received', {
-      requestId,
-      object: payload.object,
-    });
-    return {
-      statusCode: 200,
-      body: JSON.stringify({ status: 'ignored' }),
-    };
-  }
+  logger.info('Twilio webhook payload parsed', {
+    requestId,
+    from: twilioPayload.From,
+    to: twilioPayload.To,
+    messageSid: twilioPayload.SmsMessageSid || twilioPayload.MessageSid,
+    messageStatus: twilioPayload.SmsStatus || twilioPayload.MessageStatus,
+  });
 
-  // Drop raw payload to EventBridge
-  await publishToEventBridge(payload, requestId);
+  // Transform Twilio payload to internal WhatsApp event format
+  const internalPayload = transformTwilioToWhatsAppFormat(twilioPayload, requestId);
 
-  logger.info('WhatsApp webhook processed successfully', { requestId });
+  // Publish to EventBridge for async processing
+  await publishToEventBridge(internalPayload, requestId);
+
+  logger.info('Twilio webhook processed successfully', { requestId });
   return {
     statusCode: 200,
     body: JSON.stringify({ status: 'received' }),
@@ -148,29 +121,213 @@ async function handleIncomingWebhook(
 }
 
 /**
- * Verify webhook signature using app secret
+ * Reconstruct the full URL for signature validation
  */
-function verifySignature(body: string, signature: string | undefined): boolean {
+function reconstructUrl(event: APIGatewayProxyEvent): string {
+  const host = event.headers.Host || event.headers.host || '';
+  const path = event.path || '';
+  const protocol = event.headers['X-Forwarded-Proto'] || 'https';
+  
+  // Include query string if present
+  let url = `${protocol}://${host}${path}`;
+  
+  if (event.queryStringParameters) {
+    const queryString = Object.entries(event.queryStringParameters)
+      .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value || '')}`)
+      .join('&');
+    
+    if (queryString) {
+      url += `?${queryString}`;
+    }
+  }
+  
+  return url;
+}
+
+/**
+ * Verify Twilio webhook signature
+ */
+function verifyTwilioSignature(url: string, params: Record<string, string>, signature: string | undefined): boolean {
   if (!signature) {
-    logger.warn('Missing webhook signature');
+    logger.warn('Missing Twilio webhook signature');
     return false;
   }
 
-  const appSecret = config.whatsappAppSecret;
-  if (!appSecret) {
-    logger.error('WHATSAPP_APP_SECRET not configured');
+  const authToken = config.twilioAuthToken;
+  if (!authToken) {
+    logger.error('TWILIO_AUTH_TOKEN not configured');
     return false;
   }
 
-  const expectedSignature = 'sha256=' + crypto
-    .createHmac('sha256', appSecret)
-    .update(body)
-    .digest('hex');
+  try {
+    const isValid = validateRequest(authToken, signature, url, params);
+    
+    if (!isValid) {
+      logger.warn('Twilio signature validation failed', {
+        url,
+        signatureProvided: signature.substring(0, 10) + '...',
+      });
+    }
+    
+    return isValid;
+  } catch (error) {
+    logger.error('Error validating Twilio signature', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return false;
+  }
+}
 
-  return crypto.timingSafeEqual(
-    Buffer.from(signature),
-    Buffer.from(expectedSignature)
-  );
+/**
+ * Parse form-encoded data from Twilio webhook
+ */
+function parseFormData(body: string): Record<string, string> | null {
+  try {
+    const params: Record<string, string> = {};
+    const pairs = body.split('&');
+    
+    for (const pair of pairs) {
+      const [key, value] = pair.split('=');
+      if (key && value !== undefined) {
+        params[decodeURIComponent(key)] = decodeURIComponent(value.replace(/\+/g, ' '));
+      }
+    }
+    
+    return params;
+  } catch (error) {
+    logger.error('Failed to parse form data', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
+
+/**
+ * Transform Twilio payload to internal WhatsApp event format
+ * 
+ * This maintains compatibility with our existing worker.ts which expects
+ * the Meta WhatsApp Cloud API format.
+ * 
+ * Twilio payload fields:
+ * - SmsMessageSid or MessageSid: Unique message identifier
+ * - From: Sender's WhatsApp number (whatsapp:+1234567890)
+ * - To: Recipient's WhatsApp number (whatsapp:+1234567890)
+ * - Body: Message text content
+ * - NumMedia: Number of media attachments
+ * - MediaUrl0, MediaContentType0: First media attachment
+ * - ProfileName: Sender's WhatsApp profile name
+ * - SmsStatus or MessageStatus: Message status (received, sent, delivered, read, failed)
+ */
+function transformTwilioToWhatsAppFormat(twilioPayload: Record<string, string>, requestId: string): any {
+  // Extract phone number from whatsapp:+1234567890 format
+  const fromNumber = twilioPayload.From?.replace('whatsapp:', '').replace('+', '') || '';
+  const toNumber = twilioPayload.To?.replace('whatsapp:', '').replace('+', '') || '';
+  const messageSid = twilioPayload.SmsMessageSid || twilioPayload.MessageSid || '';
+  const body = twilioPayload.Body || '';
+  const profileName = twilioPayload.ProfileName || 'Unknown';
+  const timestamp = Math.floor(Date.now() / 1000).toString();
+
+  // Determine message type
+  let messageType = 'text';
+  const numMedia = parseInt(twilioPayload.NumMedia || '0', 10);
+  
+  if (numMedia > 0) {
+    const mediaContentType = twilioPayload.MediaContentType0 || '';
+    if (mediaContentType.startsWith('image/')) {
+      messageType = 'image';
+    } else if (mediaContentType.startsWith('video/')) {
+      messageType = 'video';
+    } else if (mediaContentType.startsWith('audio/')) {
+      messageType = 'audio';
+    } else {
+      messageType = 'document';
+    }
+  }
+
+  // Build message object in Meta WhatsApp format
+  const message: any = {
+    id: messageSid,
+    from: fromNumber,
+    timestamp,
+    type: messageType,
+  };
+
+  // Add type-specific content
+  if (messageType === 'text') {
+    message.text = { body };
+  } else if (messageType === 'image') {
+    message.image = {
+      id: messageSid,
+      mime_type: twilioPayload.MediaContentType0,
+      url: twilioPayload.MediaUrl0,
+    };
+    if (body) {
+      message.image.caption = body;
+    }
+  } else if (messageType === 'video') {
+    message.video = {
+      id: messageSid,
+      mime_type: twilioPayload.MediaContentType0,
+      url: twilioPayload.MediaUrl0,
+    };
+    if (body) {
+      message.video.caption = body;
+    }
+  } else if (messageType === 'audio') {
+    message.audio = {
+      id: messageSid,
+      mime_type: twilioPayload.MediaContentType0,
+      url: twilioPayload.MediaUrl0,
+    };
+  } else if (messageType === 'document') {
+    message.document = {
+      id: messageSid,
+      mime_type: twilioPayload.MediaContentType0,
+      url: twilioPayload.MediaUrl0,
+      filename: twilioPayload.MediaUrl0?.split('/').pop() || 'document',
+    };
+  }
+
+  // Build payload in Meta WhatsApp webhook format
+  const whatsappPayload = {
+    object: 'whatsapp_business_account',
+    entry: [
+      {
+        id: toNumber,
+        changes: [
+          {
+            value: {
+              messaging_product: 'whatsapp',
+              metadata: {
+                display_phone_number: toNumber,
+                phone_number_id: toNumber,
+              },
+              contacts: [
+                {
+                  profile: {
+                    name: profileName,
+                  },
+                  wa_id: fromNumber,
+                },
+              ],
+              messages: [message],
+            },
+            field: 'messages',
+          },
+        ],
+      },
+    ],
+  };
+
+  logger.debug('Transformed Twilio payload to WhatsApp format', {
+    requestId,
+    messageSid,
+    fromNumber,
+    messageType,
+    hasMedia: numMedia > 0,
+  });
+
+  return whatsappPayload;
 }
 
 /**
@@ -180,12 +337,13 @@ async function publishToEventBridge(payload: any, requestId: string): Promise<vo
   const command = new PutEventsCommand({
     Entries: [
       {
-        Source: 'vyapargyan.whatsapp',
+        Source: 'vyapargyan.whatsapp.twilio',
         DetailType: 'IncomingWhatsAppWebhook',
         Detail: JSON.stringify({
           payload,
           receivedAt: new Date().toISOString(),
           requestId,
+          source: 'twilio',
         }),
         EventBusName: config.eventBusName || 'default',
       },

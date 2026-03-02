@@ -136,14 +136,14 @@ The approach prioritizes incremental development with early validation through c
     - Include timestamp, level, message, and context fields
     - _Requirements: 7.5, 8.1, 8.2, 8.3_
 
-  - [~] 7.3 Create response formatter utilities
+  - [ ] 7.3 Create response formatter utilities
     - Create `services/api/src/utils/response.ts`
     - Implement success response formatter
     - Implement error response formatter with consistent structure
     - Add helper functions for common status codes
     - _Requirements: 7.3, 7.4_
 
-  - [~] 7.4 Create custom error classes
+  - [ ] 7.4 Create custom error classes
     - Create `services/api/src/utils/errors.ts`
     - Define error hierarchy (ValidationError, UnauthorizedError, etc.)
     - Include error codes and HTTP status mappings
@@ -166,34 +166,34 @@ The approach prioritizes incremental development with early validation through c
     - **Validates: Requirements 9.6, 9.7**
 
 - [ ] 8. Middleware system
-  - [~] 8.1 Create middleware framework
+  - [ ] 8.1 Create middleware framework
     - Create `services/api/src/middleware/index.ts` with middleware types
     - Implement middleware chain executor
     - Add support for async middleware functions
     - _Requirements: 7.1, 7.2_
 
-  - [~] 8.2 Implement authentication middleware
+  - [ ] 8.2 Implement authentication middleware
     - Create `services/api/src/middleware/auth.ts`
     - Verify JWT tokens from Cognito
     - Extract user context from token claims
     - Add user to request context
     - _Requirements: 12.1, 12.2, 12.3_
 
-  - [~] 8.3 Implement error handler middleware
+  - [ ] 8.3 Implement error handler middleware
     - Create `services/api/src/middleware/error-handler.ts`
     - Catch and format all errors consistently
     - Map error types to HTTP status codes
     - Log errors with full context
     - _Requirements: 7.4_
 
-  - [~] 8.4 Implement request logger middleware
+  - [ ] 8.4 Implement request logger middleware
     - Create `services/api/src/middleware/logger.ts`
     - Log incoming requests with method, path, and headers
     - Log outgoing responses with status and duration
     - Include request ID in all logs
     - _Requirements: 8.2_
 
-  - [~] 8.5 Implement validator middleware
+  - [ ] 8.5 Implement validator middleware
     - Create `services/api/src/middleware/validator.ts`
     - Validate request body against Zod schemas
     - Return 400 errors for validation failures
@@ -210,35 +210,35 @@ The approach prioritizes incremental development with early validation through c
     - _Requirements: 7.1, 7.2, 7.3, 7.4_
 
 - [ ] 9. Repository layer (DynamoDB access)
-  - [~] 9.1 Create base repository class
+  - [ ] 9.1 Create base repository class
     - Create `services/api/src/repositories/base-repository.ts`
     - Implement get, put, query, scan, and delete operations
     - Add error handling for DynamoDB errors
     - Include retry logic with exponential backoff
     - _Requirements: 3.6, 3.7_
 
-  - [~] 9.2 Create user repository
+  - [ ] 9.2 Create user repository
     - Create `services/api/src/repositories/user-repository.ts`
     - Implement getUserById, getUserByEmail, listUsersByRole
     - Implement createUser, updateUser, deleteUser
     - Use GSI1 for role-based queries, GSI2 for email lookups
     - _Requirements: 3.6, 3.7_
 
-  - [~] 9.3 Create product repository
+  - [ ] 9.3 Create product repository
     - Create `services/api/src/repositories/product-repository.ts`
     - Implement getProductById, listProductsBySeller, listProductsByCategory
     - Implement createProduct, updateProduct, deleteProduct
     - Use GSI1 for seller queries, GSI2 for category queries
     - _Requirements: 3.6, 3.7_
 
-  - [~] 9.4 Create order repository
+  - [ ] 9.4 Create order repository
     - Create `services/api/src/repositories/order-repository.ts`
     - Implement getOrderById, listOrdersByCustomer, listOrdersBySeller
     - Implement createOrder, updateOrderStatus, getOrderItems
     - Use GSI1 for customer queries, GSI2 for seller queries
     - _Requirements: 3.6, 3.7_
 
-  - [~] 9.5 Create session repository
+  - [ ] 9.5 Create session repository
     - Create `services/api/src/repositories/session-repository.ts`
     - Implement getSessionByPhone, createSession, updateSession
     - Configure TTL for automatic session expiration
@@ -257,7 +257,7 @@ The approach prioritizes incremental development with early validation through c
   - Ask the user if questions arise
 
 - [ ] 11. Integration clients (external services)
-  - [~] 11.1 Create WhatsApp client
+  - [ ] 11.1 Create WhatsApp client
     - Create `services/api/src/integrations/whatsapp-client.ts`
     - Implement sendMessage, sendTemplate, uploadMedia methods
     - Add retry logic with exponential backoff
@@ -265,14 +265,14 @@ The approach prioritizes incremental development with early validation through c
     - Handle rate limiting (429 errors)
     - _Requirements: 14.1, 14.2, 14.3_
 
-  - [~] 11.2 Create Razorpay client
+  - [ ] 11.2 Create Razorpay client
     - Create `services/api/src/integrations/razorpay-client.ts`
     - Implement createOrder, verifyPayment, refundPayment methods
     - Add webhook signature verification
     - Handle API errors and retries
     - _Requirements: 14.4, 14.5_
 
-  - [~] 11.3 Create Gemini client
+  - [ ] 11.3 Create Gemini client
     - Create `services/api/src/integrations/gemini-client.ts`
     - Implement transcribeAudio, analyzeImage, translateText methods
     - Add retry logic for transient failures
@@ -287,7 +287,7 @@ The approach prioritizes incremental development with early validation through c
     - _Requirements: 14.1, 14.2, 14.3, 14.4, 14.5, 14.6_
 
 - [ ] 12. Service layer (business logic)
-  - [~] 12.1 Create catalog service
+  - [ ] 12.1 Create catalog service
     - Create `services/api/src/services/catalog-service.ts`
     - Implement getProduct, listProducts, searchProducts
     - Implement createProduct, updateProduct, deleteProduct
@@ -295,7 +295,7 @@ The approach prioritizes incremental development with early validation through c
     - Use product repository for data access
     - _Requirements: Business logic for catalog operations_
 
-  - [~] 12.2 Create order service
+  - [ ] 12.2 Create order service
     - Create `services/api/src/services/order-service.ts`
     - Implement createOrder, getOrder, updateOrderStatus
     - Implement listOrdersByCustomer, listOrdersBySeller
@@ -304,7 +304,7 @@ The approach prioritizes incremental development with early validation through c
     - Publish order events to EventBridge
     - _Requirements: Business logic for order operations_
 
-  - [~] 12.3 Create WhatsApp service
+  - [ ] 12.3 Create WhatsApp service
     - Create `services/api/src/services/whatsapp-service.ts`
     - Implement message processing logic
     - Implement session state management
@@ -312,7 +312,7 @@ The approach prioritizes incremental development with early validation through c
     - Use session repository and WhatsApp client
     - _Requirements: Business logic for WhatsApp interactions_
 
-  - [~] 12.4 Create payment service
+  - [ ] 12.4 Create payment service
     - Create `services/api/src/services/payment-service.ts`
     - Implement createPayment, verifyPayment, handleWebhook
     - Add payment status tracking
@@ -328,7 +328,7 @@ The approach prioritizes incremental development with early validation through c
     - _Requirements: Service layer business logic_
 
 - [ ] 13. Lambda handlers - Authentication
-  - [~] 13.1 Create login handler
+  - [ ] 13.1 Create login handler
     - Create `services/api/src/handlers/auth/login.ts`
     - Validate email and password
     - Authenticate with Cognito
@@ -336,14 +336,14 @@ The approach prioritizes incremental development with early validation through c
     - Apply middleware chain (logger, error handler, validator)
     - _Requirements: 12.1, 12.2_
 
-  - [~] 13.2 Create refresh token handler
+  - [ ] 13.2 Create refresh token handler
     - Create `services/api/src/handlers/auth/refresh.ts`
     - Validate refresh token
     - Issue new access token
     - Apply middleware chain
     - _Requirements: 12.1, 12.2_
 
-  - [~] 13.3 Create logout handler
+  - [ ] 13.3 Create logout handler
     - Create `services/api/src/handlers/auth/logout.ts`
     - Invalidate tokens in Cognito
     - Apply middleware chain
@@ -357,7 +357,7 @@ The approach prioritizes incremental development with early validation through c
     - _Requirements: 12.1, 12.2_
 
 - [ ] 14. Lambda handlers - Admin operations
-  - [~] 14.1 Create approve seller handler
+  - [ ] 14.1 Create approve seller handler
     - Create `services/api/src/handlers/admin/approve-seller.ts`
     - Validate admin role
     - Update seller status in user repository
@@ -365,14 +365,14 @@ The approach prioritizes incremental development with early validation through c
     - Apply middleware chain (auth, logger, error handler)
     - _Requirements: Admin operations_
 
-  - [~] 14.2 Create manage categories handler
+  - [ ] 14.2 Create manage categories handler
     - Create `services/api/src/handlers/admin/manage-categories.ts`
     - Implement create, update, delete category operations
     - Validate admin role
     - Apply middleware chain
     - _Requirements: Admin operations_
 
-  - [~] 14.3 Create resolve dispute handler
+  - [ ] 14.3 Create resolve dispute handler
     - Create `services/api/src/handlers/admin/resolve-dispute.ts`
     - Implement dispute resolution logic
     - Update order status
@@ -388,7 +388,7 @@ The approach prioritizes incremental development with early validation through c
     - _Requirements: Admin operations_
 
 - [ ] 15. Lambda handlers - Seller operations
-  - [~] 15.1 Create product management handlers
+  - [ ] 15.1 Create product management handlers
     - Create `services/api/src/handlers/seller/create-product.ts`
     - Create `services/api/src/handlers/seller/update-inventory.ts`
     - Validate seller role and ownership
@@ -396,7 +396,7 @@ The approach prioritizes incremental development with early validation through c
     - Apply middleware chain
     - _Requirements: Seller operations_
 
-  - [~] 15.2 Create order listing handler
+  - [ ] 15.2 Create order listing handler
     - Create `services/api/src/handlers/seller/list-orders.ts`
     - List orders for authenticated seller
     - Support pagination and filtering
@@ -412,7 +412,7 @@ The approach prioritizes incremental development with early validation through c
     - _Requirements: Seller operations_
 
 - [ ] 16. Lambda handlers - Catalog and orders
-  - [~] 16.1 Create catalog browsing handlers
+  - [ ] 16.1 Create catalog browsing handlers
     - Create `services/api/src/handlers/catalog/browse-products.ts`
     - Create `services/api/src/handlers/catalog/search-products.ts`
     - Support pagination and filtering
@@ -420,7 +420,7 @@ The approach prioritizes incremental development with early validation through c
     - Apply middleware chain (no auth required for browsing)
     - _Requirements: Catalog operations_
 
-  - [~] 16.2 Create order management handlers
+  - [ ] 16.2 Create order management handlers
     - Create `services/api/src/handlers/orders/create-order.ts`
     - Create `services/api/src/handlers/orders/get-order.ts`
     - Create `services/api/src/handlers/orders/update-status.ts`
@@ -437,7 +437,7 @@ The approach prioritizes incremental development with early validation through c
     - _Requirements: Catalog and order operations_
 
 - [ ] 17. Lambda handlers - WhatsApp and payments
-  - [~] 17.1 Create WhatsApp webhook handler
+  - [ ] 17.1 Create WhatsApp webhook handler
     - Create `services/api/src/handlers/whatsapp/webhook.ts`
     - Verify webhook signature
     - Parse incoming messages
@@ -445,7 +445,7 @@ The approach prioritizes incremental development with early validation through c
     - Apply middleware chain
     - _Requirements: 14.1, 14.2_
 
-  - [~] 17.2 Create payment webhook handler
+  - [ ] 17.2 Create payment webhook handler
     - Create `services/api/src/handlers/payments/webhook.ts`
     - Verify Razorpay webhook signature
     - Process payment status updates
@@ -466,7 +466,7 @@ The approach prioritizes incremental development with early validation through c
   - Ask the user if questions arise
 
 - [ ] 19. API Gateway and Lambda integration (ApiStack)
-  - [~] 19.1 Create reusable Lambda construct
+  - [ ] 19.1 Create reusable Lambda construct
     - Create `infra/cdk/lib/constructs/lambda-function.ts`
     - Configure Node.js 20 runtime and TypeScript bundling
     - Set up environment variables and IAM permissions
@@ -474,7 +474,7 @@ The approach prioritizes incremental development with early validation through c
     - Add environment-specific naming and tags
     - _Requirements: 1.1, 1.2, 1.3, 8.4, 8.5_
 
-  - [~] 19.2 Create ApiStack with HTTP API
+  - [ ] 19.2 Create ApiStack with HTTP API
     - Create `infra/cdk/lib/stacks/api-stack.ts`
     - Create HTTP API Gateway with CORS configuration
     - Create Cognito authorizer for protected routes
@@ -483,7 +483,7 @@ The approach prioritizes incremental development with early validation through c
     - Add environment-specific naming and tags
     - _Requirements: 1.4, 1.5, 12.4, 12.5_
 
-  - [~] 19.3 Create WebSocket API
+  - [ ] 19.3 Create WebSocket API
     - Add WebSocket API to ApiStack
     - Create connect, disconnect, and message handlers
     - Configure WebSocket routes and integrations
@@ -509,7 +509,7 @@ The approach prioritizes incremental development with early validation through c
     - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5_
 
 - [ ] 20. Events infrastructure (EventBridge and SQS)
-  - [~] 20.1 Create EventsStack
+  - [ ] 20.1 Create EventsStack
     - Create `infra/cdk/lib/stacks/events-stack.ts`
     - Create EventBridge event bus
     - Create SQS queues (order processing, notifications)
@@ -527,7 +527,7 @@ The approach prioritizes incremental development with early validation through c
     - _Requirements: 10.1, 10.2, 10.3_
 
 - [ ] 21. Monitoring infrastructure (CloudWatch)
-  - [~] 21.1 Create MonitoringStack
+  - [ ] 21.1 Create MonitoringStack
     - Create `infra/cdk/lib/stacks/monitoring-stack.ts`
     - Create CloudWatch alarms for Lambda errors and throttling
     - Create alarms for DynamoDB throttling
@@ -544,7 +544,7 @@ The approach prioritizes incremental development with early validation through c
     - _Requirements: 8.6, 8.7_
 
 - [ ] 22. Secrets and configuration management
-  - [~] 22.1 Create secrets in Secrets Manager
+  - [ ] 22.1 Create secrets in Secrets Manager
     - Create CDK code to provision secrets (placeholders)
     - Add WhatsApp API token secret
     - Add Razorpay key secret
@@ -552,7 +552,7 @@ The approach prioritizes incremental development with early validation through c
     - Configure environment-specific secret names
     - _Requirements: 9.1, 9.4_
 
-  - [~] 22.2 Create parameters in SSM Parameter Store
+  - [ ] 22.2 Create parameters in SSM Parameter Store
     - Create CDK code to provision parameters
     - Add non-sensitive configuration parameters
     - Configure environment-specific parameter names
@@ -567,7 +567,7 @@ The approach prioritizes incremental development with early validation through c
     - **Validates: Requirements 9.4**
 
 - [ ] 23. IAM permissions and security
-  - [~] 23.1 Configure Lambda IAM roles
+  - [ ] 23.1 Configure Lambda IAM roles
     - Add DynamoDB permissions (least privilege, specific table ARNs)
     - Add S3 permissions (least privilege, specific bucket ARNs)
     - Add Secrets Manager permissions (specific secret ARNs)
@@ -592,21 +592,21 @@ The approach prioritizes incremental development with early validation through c
   - Ask the user if questions arise
 
 - [ ] 25. Testing setup and configuration
-  - [~] 25.1 Set up Jest for unit testing
+  - [ ] 25.1 Set up Jest for unit testing
     - Create `services/api/jest.config.js`
     - Configure TypeScript support with ts-jest
     - Set up test coverage reporting
     - Create test utilities and mocks
     - _Requirements: Testing infrastructure_
 
-  - [~] 25.2 Set up fast-check for property-based testing
+  - [ ] 25.2 Set up fast-check for property-based testing
     - Install fast-check dependency
     - Create property test utilities
     - Configure minimum 100 iterations per property
     - Create generators for common data types
     - _Requirements: Property-based testing_
 
-  - [~] 25.3 Set up integration testing environment
+  - [ ] 25.3 Set up integration testing environment
     - Create Docker Compose file for DynamoDB Local
     - Create integration test setup scripts
     - Configure test database initialization
@@ -619,14 +619,14 @@ The approach prioritizes incremental development with early validation through c
     - _Requirements: Property-based testing_
 
 - [ ] 26. Shared contracts and types
-  - [~] 26.1 Create shared TypeScript types
+  - [ ] 26.1 Create shared TypeScript types
     - Create `packages/shared/contracts/domain/` types
     - Define User, Product, Order, Payment types
     - Create API request and response types
     - Create event types for EventBridge
     - _Requirements: Shared types across services_
 
-  - [~] 26.2 Create shared utilities
+  - [ ] 26.2 Create shared utilities
     - Create `packages/shared/utils/` with common utilities
     - Add validation helpers
     - Add date/time utilities
@@ -634,27 +634,27 @@ The approach prioritizes incremental development with early validation through c
     - _Requirements: Shared utilities_
 
 - [ ] 27. Documentation and deployment
-  - [~] 27.1 Create deployment documentation
+  - [ ] 27.1 Create deployment documentation
     - Document CDK deployment process
     - Create deployment scripts for each environment
     - Document environment variable requirements
     - Create troubleshooting guide
     - _Requirements: Deployment documentation_
 
-  - [~] 27.2 Create local development guide
+  - [ ] 27.2 Create local development guide
     - Document local development setup
     - Create scripts for running services locally
     - Document testing procedures
     - Create debugging guide
     - _Requirements: Development documentation_
 
-  - [~] 27.3 Create environment variable examples
+  - [ ] 27.3 Create environment variable examples
     - Create `.env.example` files for each service
     - Document all required and optional variables
     - Provide example values
     - _Requirements: Configuration documentation_
 
-  - [~] 27.4 Update root README
+  - [ ] 27.4 Update root README
     - Add project overview and architecture diagram
     - Add quick start guide
     - Add links to detailed documentation
