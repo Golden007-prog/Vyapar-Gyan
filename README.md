@@ -1,32 +1,62 @@
 # VyaparGyan
 
-AI-powered commerce platform for local Indian retailers, enabling sellers to manage products and orders via web dashboard while customers browse and purchase through WhatsApp.
+AI-powered multi-seller marketplace for local Indian retailers. Sellers manage products and orders via web dashboard while customers browse and purchase through WhatsApp and web chat. The platform acts as an intelligent business manager with proactive AI insights, automated marketing campaigns, and Khata book OCR.
+
+**GitHub:** https://github.com/Golden007-prog/Vyapar-Gyan.git
+
+## Demo Quick Start
+
+```bash
+# 1. Clone and install
+git clone https://github.com/Golden007-prog/Vyapar-Gyan.git
+cd Vyapar-Gyan
+pnpm install
+
+# 2. Start the web app
+pnpm --filter @vyapargyan/web dev
+
+# 3. Open http://localhost:3000 and click "Try the Demo"
+```
+
+### Demo Accounts
+
+| Role | Phone | Password | What You'll See |
+|------|-------|----------|-----------------|
+| Admin (Platform) | 9000000001 | DemoAdmin@123 | Platform metrics, seller moderation, system health, audit logs |
+| Seller (Dragon Store) | 9000000002 | DemoSeller@123 | AI insights, approval inbox, inventory upload (CSV + OCR), customer inbox, orders, campaigns |
+| Customer | 9000000003 | DemoCustomer@123 | Product catalog, real-time chat with seller, order tracking, account settings |
 
 ## Overview
 
 VyaparGyan bridges the gap between traditional retail and digital commerce by providing:
 
-- **WhatsApp-first commerce**: Customers browse products, place orders, and make payments through familiar WhatsApp conversations
-- **Web dashboard**: Sellers and admins manage inventory, orders, and operations through a modern Next.js interface
-- **AI assistance**: Voice transcription, image analysis, and multilingual support powered by Google Gemini
-- **Payment integration**: Seamless UPI, card, and wallet payments via Razorpay
-- **Event-driven workflows**: Automated order processing, notifications, and audit trails
+- **Omnichannel Commerce**: Customers shop via web chat and WhatsApp (Twilio), sellers manage everything from one unified inbox
+- **AI Business Manager**: Proactive insights for dead stock detection, dynamic pricing, and automated WhatsApp marketing campaigns (Bedrock + Gemini + Grok)
+- **Khata Book OCR**: Sellers photograph handwritten ledgers; Gemini Vision digitizes inventory automatically
+- **CSV Stock Ingestion**: Bulk inventory upload with column validation and error feedback
+- **Smart Payments**: Razorpay Route handles commission splitting and direct seller payouts
+- **Full Admin Control**: Platform moderation, seller approval/rejection, system health monitoring, audit trails
+- **Event-driven workflows**: Automated order processing, AI campaign execution, notifications, and audit trails
 
 ## Architecture
 
 Modern AWS serverless architecture built for scale and operational simplicity:
 
-- **Compute**: AWS Lambda (Node.js 20, TypeScript)
+- **Compute**: AWS Lambda (Node.js 20, TypeScript) — 55+ handlers across 10 domains
 - **API**: API Gateway HTTP API with JWT authorization
-- **Authentication**: Amazon Cognito User Pools with role-based groups
-- **Database**: DynamoDB (single-table design for efficient access patterns)
-- **Storage**: S3 (product images, documents, raw payloads, exports)
-- **Events**: EventBridge + SQS for async workflows and domain events
-- **Messaging**: WhatsApp Cloud API for customer interactions
-- **Payments**: Razorpay integration with webhook handling
-- **AI**: Google Gemini for voice, image, and language processing
+- **Authentication**: Amazon Cognito User Pools with role-based groups (admin/seller/customer)
+- **Database**: DynamoDB (single-table design with multi-seller partition strategy)
+- **Storage**: S3 (product images, Khata book photos, documents, exports)
+- **Events**: EventBridge + SQS for async workflows, AI pipelines, and campaign execution
+- **Messaging**: Twilio SDK for omnichannel messaging (WhatsApp, SMS, in-app chat routing)
+- **Payments**: Razorpay Route (Transfers) for automated commission splitting and seller payouts
+- **AI — Orchestration**: Amazon Bedrock for dead-stock detection and discount campaign generation
+- **AI — Analysis**: Google Gemini for OCR, voice transcription, and market analysis
+- **AI — Trends**: xAI Grok for live market trend research and dynamic pricing
+- **Frontend**: Next.js 14 with Tailwind CSS (22 pages, 14 components)
 - **Observability**: CloudWatch Logs, Metrics, Alarms, and X-Ray tracing
-- **Infrastructure**: AWS CDK v2 with TypeScript
+- **Infrastructure**: AWS CDK v2 with TypeScript (7 CloudFormation stacks)
+- **Developer Tools**: Kiro IDE with 3 MCP servers for platform data access
 - **Package Manager**: pnpm workspaces for monorepo management
 
 ## Repository Structure
@@ -79,7 +109,7 @@ vyapargyan/
 │   ├── whatsapp_orchestration.md # WhatsApp conversation flows
 │   ├── order_lifecycle.md        # Order state machine
 │   └── payment_integration.md    # Razorpay integration
-└── backend/                      # Legacy FastAPI application (being phased out)
+└── backend/                      # Backend configuration and environment
 ```
 
 ## Prerequisites
@@ -88,7 +118,7 @@ vyapargyan/
 - **pnpm**: 8.x or higher (`npm install -g pnpm`)
 - **AWS CLI**: v2 configured with appropriate credentials
 - **AWS CDK**: v2 installed globally (`npm install -g aws-cdk`)
-- **Python**: 3.11+ (for legacy backend and MCP servers)
+- **Python**: 3.11+ (for MCP servers)
 - **uv/uvx**: Python package manager for MCP servers ([installation guide](https://docs.astral.sh/uv/getting-started/installation/))
 
 ## Quick Start
@@ -180,9 +210,12 @@ cd tools/mcp/commerce-admin && pnpm install && pnpm build
 
 - Seller onboarding with document verification and admin approval
 - Product catalog management with image uploads and inventory tracking
-- WhatsApp-based customer commerce (browsing, ordering, payment)
-- Order lifecycle management with payment integration (Razorpay)
-- Admin controls for moderation, analytics, and dispute resolution
+- Omnichannel messaging: customers and sellers communicate via web chat and WhatsApp (Twilio)
+- Automated stock ingestion: CSV upload and Khata book OCR via Gemini Vision
+- Proactive AI insights: dead stock detection, dynamic pricing, restock alerts (Bedrock + Gemini + Grok)
+- Automated WhatsApp campaigns: seller-approved discounts sent to past customers
+- Order lifecycle management with commission-based payment splitting (Razorpay Route)
+- Admin controls for seller moderation, platform analytics, system health, and audit trails
 - AI assistance for catalog extraction, voice transcription, and multilingual support
 
 ## Development Workflow
@@ -368,32 +401,37 @@ MCP server configuration is in `.kiro/settings/mcp.json` and automatically loade
 
 ## Documentation
 
-### Architecture and Design
-- [Design Document](design.md) - High-level architecture and design decisions
-- [Platform Foundation Spec](.kiro/specs/platform-foundation/) - Requirements, design, and implementation tasks
-- [DynamoDB Schema](services/api/DYNAMODB_SCHEMA.md) - Single-table design and access patterns
-- [TypeScript Setup](docs/typescript-setup.md) - Monorepo configuration and tooling
+All core documentation lives in the [`docs/`](docs/) directory.
 
-### API and Integration
-- [API Contract](docs/api_contract.md) - REST API endpoint specifications
-- [Authentication & RBAC](docs/auth_rbac.md) - Cognito integration and role-based access control
-- [WhatsApp Orchestration](docs/whatsapp_orchestration.md) - Conversation flows and state management
-- [Order Lifecycle](docs/order_lifecycle.md) - Order state machine and transitions
-- [Payment Integration](docs/payment_integration.md) - Razorpay webhook handling and reconciliation
+### Project Overview
+- [Overview](docs/overview.md) — Full project overview, current status, and feature inventory
+- [Design Document](docs/design.md) — System architecture and design decisions
+- [Requirements](docs/requirements.md) — Product requirements document
+- [Implementation History](docs/implementation_history.md) — Chronological changelog of all milestones
 
-### Development
-- [Coding Sequence](docs/coding_sequence.md) - Development workflow and best practices
-- [Engineering Cards](docs/engineering_cards.md) - Feature implementation cards
-- [Readiness Audit](docs/readiness_audit.md) - Production readiness checklist
-- [CDK Deployment Guide](infra/cdk/DEPLOYMENT.md) - Infrastructure deployment procedures
+### Architecture and Integration
+- [API Contract](docs/api_contract.md) — REST API endpoint specifications
+- [Authentication & RBAC](docs/auth_rbac.md) — Cognito integration and role-based access control
+- [WhatsApp Orchestration](docs/whatsapp_orchestration.md) — Conversation flows and state management
+- [WhatsApp Seller Routing](docs/whatsapp-seller-routing.md) — Seller message routing design
+- [Order Lifecycle](docs/order_lifecycle.md) — Order state machine and transitions
+- [Payment Integration](docs/payment_integration.md) — Razorpay webhook handling and reconciliation
+- [Razorpay Integration Reference](docs/RAZORPAY_INTEGRATION_REFERENCE.md) — Razorpay Route setup and configuration
+- [Bedrock Architecture](docs/bedrock-architecture.md) — Amazon Bedrock AI orchestration design
+- [Bedrock Seller Copilot](docs/bedrock-seller-copilot-flow.md) — Seller copilot conversation flow
+- [DynamoDB Schema](services/api/DYNAMODB_SCHEMA.md) — Single-table design and access patterns
+- [TypeScript Setup](docs/typescript-setup.md) — Monorepo configuration and tooling
+
+### Development and Operations
+- [Coding Sequence](docs/coding_sequence.md) — Development workflow and best practices
+- [Engineering Cards](docs/engineering_cards.md) — Feature implementation cards
+- [Readiness Audit](docs/readiness_audit.md) — Production readiness checklist
+- [CDK Deployment Guide](infra/cdk/DEPLOYMENT.md) — Infrastructure deployment procedures
+- [Judge Demo Plan](docs/JUDGE_DEMO_PLAN.md) — Demo storyline and preparation checklist
 
 ### Testing
-- [WhatsApp Test Plan](services/api/src/handlers/whatsapp/__tests__/TEST_PLAN.md) - WhatsApp integration testing
-- [Test Results](services/api/TEST_RESULTS.md) - Latest test execution results
-- [Integration Testing](services/api/src/handlers/whatsapp/__tests__/integration.md) - Integration test scenarios
-
-### Legacy
-- [Legacy Backend](backend/README.md) - FastAPI application (being phased out)
+- [WhatsApp Test Plan](services/api/src/handlers/whatsapp/__tests__/TEST_PLAN.md) — WhatsApp integration testing
+- [Test Results](services/api/TEST_RESULTS.md) — Latest test execution results
 
 ## Design Philosophy
 

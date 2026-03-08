@@ -77,7 +77,7 @@ export class MessageRepository {
 
     const command = new PutItemCommand({
       TableName: tableName,
-      Item: marshall(item),
+      Item: marshall(item, { removeUndefinedValues: true }),
     });
 
     await dynamoDBClient.send(command);
@@ -103,7 +103,7 @@ export class MessageRepository {
       ExpressionAttributeValues: marshall({
         ':pk': `SESSION#${sessionId}`,
         ':sk': 'MESSAGE#',
-      }),
+      }, { removeUndefinedValues: true }),
       ScanIndexForward: false, // Most recent first
       Limit: limit,
     });

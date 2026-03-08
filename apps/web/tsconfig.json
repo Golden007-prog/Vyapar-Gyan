@@ -1,38 +1,42 @@
 {
-  "extends": "../../tsconfig.json",
   "compilerOptions": {
-    // Web-specific settings
+    "target": "ES2022",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "jsx": "preserve",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "allowJs": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
     "incremental": true,
-    
-    "outDir": "./dist",
-    "rootDir": "./",
+    "isolatedModules": true,
     
     // Path aliases for clean imports
     "baseUrl": ".",
     "paths": {
-      "@admin/*": ["./admin/*"],
-      "@seller/*": ["./seller/*"],
-      "@shared/*": ["./shared/*"],
-      "@contracts/*": ["../../packages/shared/contracts/*"],
-      "@utils/*": ["../../packages/shared/utils/*"]
+      "@/*": ["./*"],
+      "@/components/*": ["./components/*"],
+      "@/lib/*": ["./lib/*"],
+      "@/app/*": ["./app/*"]
     },
     
-    // Allow importing from shared packages
-    "composite": false
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ]
   },
   "include": [
-    "admin/**/*",
-    "seller/**/*",
-    "shared/**/*",
-    "next-env.d.ts"
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts"
   ],
   "exclude": [
-    "node_modules",
-    "dist",
-    ".next",
-    "**/*.test.ts",
-    "**/*.test.tsx"
+    "node_modules"
   ]
 }

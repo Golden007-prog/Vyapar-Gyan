@@ -170,7 +170,7 @@ export class CatalogRepository {
         ':query': query.toLowerCase(),
         ':active': true,
         ':zero': 0,
-      }),
+      }, { removeUndefinedValues: true }),
       Limit: limit,
     });
 

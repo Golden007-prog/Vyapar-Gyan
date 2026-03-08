@@ -6,12 +6,12 @@
 import { z } from "zod";
 
 /**
- * Environment schema with strict validation.
+ * Environment schema with flexible validation.
  */
 export const envSchema = z.object({
-  AWS_REGION: z.literal("ap-south-1"),
-  DYNAMODB_TABLE_NAME: z.literal("CommerceCore-dev"),
-  AWS_PROFILE: z.literal("kiro-mcp"),
+  AWS_REGION: z.string().default("ap-south-1"),
+  DYNAMODB_TABLE_NAME: z.string().default("dev-vyapargyan-main"),
+  AWS_PROFILE: z.string().default("default"),
   S3_MEDIA_BUCKET: z.string().min(1).optional(),
 });
 

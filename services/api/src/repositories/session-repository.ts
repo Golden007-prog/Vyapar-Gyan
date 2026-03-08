@@ -6,6 +6,15 @@ import { getConfig } from '../utils/config';
 
 const dynamoDBClient = new DynamoDBClient({});
 
+export interface CartItem {
+  productId: string;
+  sellerId: string;
+  name: string;
+  price: number;
+  quantity: number;
+  addedAt: string;
+}
+
 export interface Session {
   id: string;
   customerId: string;
@@ -13,6 +22,7 @@ export interface Session {
   channelType: 'whatsapp';
   state: string;
   context?: Record<string, any>;
+  cart?: CartItem[];
   createdAt: string;
   updatedAt: string;
   lastActivityAt: string;
@@ -115,7 +125,7 @@ export class SessionRepository {
 
     const command = new PutItemCommand({
       TableName: tableName,
-      Item: marshall(item),
+      Item: marshall(item, { removeUndefinedValues: true }),
     });
 
     await dynamoDBClient.send(command);
@@ -192,9 +202,161 @@ export class SessionRepository {
       UpdateExpression: 'SET lastActivityAt = :lastActivityAt',
       ExpressionAttributeValues: marshall({
         ':lastActivityAt': new Date().toISOString(),
+      }, { removeUndefinedValues: true }),
+    });
+
+    await dynamoDBClient.send(command);
+  }
+
+  /**
+   * Add item to cart
+   */
+  async addToCart(
+    customerId: string,
+    phoneNumber: string,
+    item: Omit<CartItem, 'addedAt'>
+  ): Promise<CartItem[]> {
+    const tableName = await this.getTableName();
+    
+    // Get current session to retrieve existing cart
+    const session = await this.getByCustomer(customerId, phoneNumber);
+    const currentCart = session?.cart || [];
+
+    // Check if product already in cart
+    const existingItemIndex = currentCart.findIndex(
+      (cartItem) => cartItem.productId === item.productId
+    );
+
+    let updatedCart: CartItem[];
+    
+    if (existingItemIndex >= 0) {
+      // Update quantity if product already in cart
+      updatedCart = [...currentCart];
+      const existingItem = updatedCart[existingItemIndex];
+      if (existingItem) {
+        updatedCart[existingItemIndex] = {
+          ...existingItem,
+          quantity: existingItem.quantity + item.quantity,
+          addedAt: new Date().toISOString(),
+        };
+      }
+    } else {
+      // Add new item to cart
+      updatedCart = [
+        ...currentCart,
+        {
+          ...item,
+          addedAt: new Date().toISOString(),
+        },
+      ];
+    }
+
+    // Update cart in DynamoDB
+    const command = new UpdateItemCommand({
+      TableName: tableName,
+      Key: marshall({
+        PK: `SESSION#${customerId}`,
+        SK: `WHATSAPP#${phoneNumber}`,
+      }),
+      UpdateExpression: 'SET cart = :cart, updatedAt = :updatedAt, lastActivityAt = :lastActivityAt',
+      ExpressionAttributeValues: marshall({
+        ':cart': updatedCart,
+        ':updatedAt': new Date().toISOString(),
+        ':lastActivityAt': new Date().toISOString(),
       }),
     });
 
     await dynamoDBClient.send(command);
+    logger.info('Item added to cart', { 
+      customerId, 
+      productId: item.productId, 
+      quantity: item.quantity,
+      cartSize: updatedCart.length 
+    });
+
+    return updatedCart;
+  }
+
+  /**
+   * Remove item from cart
+   */
+  async removeFromCart(
+    customerId: string,
+    phoneNumber: string,
+    productId: string
+  ): Promise<CartItem[]> {
+    const tableName = await this.getTableName();
+    
+    // Get current session to retrieve existing cart
+    const session = await this.getByCustomer(customerId, phoneNumber);
+    const currentCart = session?.cart || [];
+
+    // Filter out the item
+    const updatedCart = currentCart.filter(
+      (cartItem) => cartItem.productId !== productId
+    );
+
+    // Update cart in DynamoDB
+    const command = new UpdateItemCommand({
+      TableName: tableName,
+      Key: marshall({
+        PK: `SESSION#${customerId}`,
+        SK: `WHATSAPP#${phoneNumber}`,
+      }),
+      UpdateExpression: 'SET cart = :cart, updatedAt = :updatedAt, lastActivityAt = :lastActivityAt',
+      ExpressionAttributeValues: marshall({
+        ':cart': updatedCart,
+        ':updatedAt': new Date().toISOString(),
+        ':lastActivityAt': new Date().toISOString(),
+      }),
+    });
+
+    await dynamoDBClient.send(command);
+    logger.info('Item removed from cart', { 
+      customerId, 
+      productId,
+      cartSize: updatedCart.length 
+    });
+
+    return updatedCart;
+  }
+
+  /**
+   * Get cart items
+   */
+  async getCart(customerId: string, phoneNumber: string): Promise<CartItem[]> {
+    const session = await this.getByCustomer(customerId, phoneNumber);
+    return session?.cart || [];
+  }
+
+  /**
+   * Clear cart
+   */
+  async clearCart(customerId: string, phoneNumber: string): Promise<void> {
+    const tableName = await this.getTableName();
+    
+    const command = new UpdateItemCommand({
+      TableName: tableName,
+      Key: marshall({
+        PK: `SESSION#${customerId}`,
+        SK: `WHATSAPP#${phoneNumber}`,
+      }),
+      UpdateExpression: 'SET cart = :cart, updatedAt = :updatedAt, lastActivityAt = :lastActivityAt',
+      ExpressionAttributeValues: marshall({
+        ':cart': [],
+        ':updatedAt': new Date().toISOString(),
+        ':lastActivityAt': new Date().toISOString(),
+      }),
+    });
+
+    await dynamoDBClient.send(command);
+    logger.info('Cart cleared', { customerId });
+  }
+
+  /**
+   * Calculate cart subtotal
+   */
+  calculateCartSubtotal(cart: CartItem[]): number {
+    return cart.reduce((total, item) => total + (item.price * item.quantity), 0);
   }
 }

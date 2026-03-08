@@ -1,0 +1,69 @@
+name: Deploy Frontend to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Build static export
+        working-directory: apps/web
+        env:
+          NEXT_PUBLIC_DEMO_MODE: "true"
+          NEXT_PUBLIC_API_URL: "https://6jseqwaaeh.execute-api.ap-south-1.amazonaws.com"
+          NEXT_PUBLIC_COGNITO_USER_POOL_ID: "ap-south-1_jeKcCOzvw"
+          NEXT_PUBLIC_COGNITO_CLIENT_ID: "7fo79pf9va180tvmagefefngcg"
+          NEXT_PUBLIC_AWS_REGION: "ap-south-1"
+          NEXT_PUBLIC_BASE_PATH: "/Vyapar-Gyan"
+        run: pnpm build
+
+      - name: Add .nojekyll
+        run: touch apps/web/out/.nojekyll
+
+      - name: Add 404 fallback for SPA routing
+        run: cp apps/web/out/index.html apps/web/out/404.html
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: apps/web/out
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

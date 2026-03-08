@@ -20,6 +20,7 @@
 import twilio, { Twilio } from 'twilio';
 import { logger } from '../utils/logger';
 import { getConfig } from '../utils/config';
+import { publishLatencyMetric, publishCountMetric } from '../core/metrics';
 
 export interface SendMessageOptions {
   to: string; // E.164 format phone number
@@ -31,6 +32,7 @@ export interface SendMessageResult {
   messageId: string; // Twilio message SID
   status: string;
   dateCreated: Date;
+  statusCallbackConfigured: boolean; // Whether statusCallback URL was set for delivery tracking
 }
 
 /**
@@ -105,7 +107,11 @@ export class TwilioAdapter {
         messageOptions.mediaUrl = mediaUrl;
       }
       
+      const sendStart = Date.now();
       const result = await this.sendWithRetry(messageOptions);
+
+      publishLatencyMetric('TwilioSendLatency', Date.now() - sendStart);
+      publishCountMetric('MessagesSent', 1, { Channel: 'whatsapp' });
 
       logger.info('WhatsApp message sent successfully', {
         messageId: result.messageId,
@@ -197,23 +203,27 @@ export class TwilioAdapter {
           from: options.from,
         });
 
+        const apiBaseUrl = process.env.API_BASE_URL;
         const message = await this.client.messages.create({
           to: options.to,
           from: options.from,
           body: options.body,
           ...(options.mediaUrl && { mediaUrl: [options.mediaUrl] }),
+          ...(apiBaseUrl && { statusCallback: `${apiBaseUrl}/api/v1/whatsapp/status` }),
         });
 
         logger.debug('Twilio message created', {
           sid: message.sid,
           status: message.status,
           dateCreated: message.dateCreated,
+          statusCallbackConfigured: !!apiBaseUrl,
         });
 
         return {
           messageId: message.sid,
           status: message.status,
           dateCreated: message.dateCreated,
+          statusCallbackConfigured: !!apiBaseUrl,
         };
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error));

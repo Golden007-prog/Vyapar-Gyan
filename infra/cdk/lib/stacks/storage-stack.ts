@@ -379,15 +379,16 @@ export class StorageStack extends cdk.Stack {
       expiration: cdk.Duration.days(expirationDays),
     });
 
-    // Transition to IA after 7 days (for prod/staging)
-    if (config.environment !== 'dev') {
+    // Transition to IA after 30 days (AWS minimum for STANDARD_IA)
+    // Only for prod where logs are kept longer than 30 days
+    if (config.environment === 'prod') {
       rules.push({
         id: 'transition-to-ia',
         enabled: true,
         transitions: [
           {
             storageClass: StorageClass.INFREQUENT_ACCESS,
-            transitionAfter: cdk.Duration.days(7),
+            transitionAfter: cdk.Duration.days(30),
           },
         ],
       });

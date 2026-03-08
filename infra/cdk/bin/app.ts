@@ -54,6 +54,7 @@ import { StorageStack } from '../lib/stacks/storage-stack';
 import { AuthStack } from '../lib/stacks/auth-stack';
 import { EventsStack } from '../lib/stacks/events-stack';
 import { APIStack } from '../lib/stacks/api-stack';
+import { BedrockStack } from '../lib/stacks/bedrock-stack';
 
 // Instantiate stacks in dependency order
 
@@ -95,10 +96,14 @@ const authStack = new AuthStack(app, `${config.resourcePrefix}-auth`, {
 
 console.log(`AuthStack instantiated: ${authStack.stackName}`);
 
-// 4. Events Stack (depends on Database)
+// 4. Events Stack (depends on Database, Auth, and Storage)
 const eventsStack = new EventsStack(app, `${config.resourcePrefix}-events`, {
   config,
   table: databaseStack.table,
+  userPool: authStack.userPool,
+  userPoolClientId: authStack.apiServiceClient.userPoolClientId,
+  documentsBucket: storageStack.documentsBucket,
+  productImagesBucket: storageStack.productImagesBucket,
   env: {
     account,
     region,
@@ -107,14 +112,22 @@ const eventsStack = new EventsStack(app, `${config.resourcePrefix}-events`, {
 });
 
 eventsStack.addDependency(databaseStack);
+eventsStack.addDependency(authStack);
+eventsStack.addDependency(storageStack);
 console.log(`EventsStack instantiated: ${eventsStack.stackName}`);
 
-// 5. API Stack (depends on Database, Auth, and Events)
+// 5. API Stack (depends on Database, Auth, Events, and Storage)
 const apiStack = new APIStack(app, `${config.resourcePrefix}-api`, {
   config,
   table: databaseStack.table,
   userPool: authStack.userPool,
+  userPoolClientId: authStack.apiServiceClient.userPoolClientId,
+  userPoolClients: [authStack.webAdminClient, authStack.webSellerClient, authStack.apiServiceClient],
   eventBus: eventsStack.eventBus,
+  documentsBucket: storageStack.documentsBucket,
+  productImagesBucket: storageStack.productImagesBucket,
+  mediaProcessingQueue: eventsStack.mediaProcessingQueue,
+  mediaProcessingDLQ: eventsStack.mediaProcessingDLQ,
   env: {
     account,
     region,
@@ -125,7 +138,34 @@ const apiStack = new APIStack(app, `${config.resourcePrefix}-api`, {
 apiStack.addDependency(databaseStack);
 apiStack.addDependency(authStack);
 apiStack.addDependency(eventsStack);
+apiStack.addDependency(storageStack);
 console.log(`APIStack instantiated: ${apiStack.stackName}`);
+
+// Add API_BASE_URL to events-stack workers that send Twilio messages
+// (cross-stack reference — events-stack is created before api-stack)
+eventsStack.whatsappWorkerFunction.addEnvironment('API_BASE_URL', apiStack.httpApi.apiEndpoint);
+eventsStack.campaignWorkerFunction.addEnvironment('API_BASE_URL', apiStack.httpApi.apiEndpoint);
+
+// 6. Bedrock Stack (depends on Database, Events, and Storage)
+const bedrockStack = new BedrockStack(app, `${config.resourcePrefix}-bedrock`, {
+  config,
+  table: databaseStack.table,
+  eventBus: eventsStack.eventBus,
+  documentsBucket: storageStack.documentsBucket,
+  env: {
+    account,
+    region,
+  },
+  description: `Bedrock AI infrastructure for VyaparGyan ${environment} environment`,
+});
+
+bedrockStack.addDependency(databaseStack);
+bedrockStack.addDependency(eventsStack);
+bedrockStack.addDependency(storageStack);
+console.log(`BedrockStack instantiated: ${bedrockStack.stackName}`);
+
+// Add API_BASE_URL to Bedrock action group function (sends Twilio messages)
+bedrockStack.actionGroupFunction.addEnvironment('API_BASE_URL', apiStack.httpApi.apiEndpoint);
 
 // Add tags to all resources from configuration
 Object.entries(config.tags).forEach(([key, value]) => {

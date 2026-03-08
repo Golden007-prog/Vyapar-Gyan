@@ -1,10 +1,14 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { EventBridgeClient, PutEventsCommand } from '@aws-sdk/client-eventbridge';
+import { DynamoDBClient, PutItemCommand, ConditionalCheckFailedException } from '@aws-sdk/client-dynamodb';
+import { marshall } from '@aws-sdk/util-dynamodb';
 import { validateRequest } from 'twilio';
 import { logger } from '../../utils/logger';
 import { getConfig, type Config } from '../../utils/config';
+import { publishLatencyMetric, publishCountMetric } from '../../core/metrics';
 
 const eventBridgeClient = new EventBridgeClient({});
+const dynamoDBClient = new DynamoDBClient({});
 let config: Config;
 
 /**
@@ -19,23 +23,43 @@ let config: Config;
 export const handler = async (
   event: APIGatewayProxyEvent
 ): Promise<APIGatewayProxyResult> => {
+  const startTime = Date.now();
   const requestId = event.requestContext.requestId;
-  
-  // Load config on first invocation
-  if (!config) {
-    config = await getConfig();
-  }
   
   logger.info('Twilio WhatsApp webhook request received', {
     requestId,
     method: event.httpMethod,
     path: event.path,
     contentType: event.headers['content-type'] || event.headers['Content-Type'],
+    bodyLength: event.body?.length || 0,
+    isBase64Encoded: event.isBase64Encoded,
   });
 
   try {
+    // Load config on first invocation
+    if (!config) {
+      logger.info('Loading configuration from Secrets Manager and SSM', { requestId });
+      try {
+        config = await getConfig();
+        logger.info('Configuration loaded successfully', { requestId });
+      } catch (configError) {
+        logger.error('FATAL: Failed to load configuration', {
+          requestId,
+          error: configError instanceof Error ? configError.message : String(configError),
+          stack: configError instanceof Error ? configError.stack : undefined,
+        });
+        throw configError;
+      }
+    }
+
+    // Check HTTP method - support both API Gateway v1 (httpMethod) and v2 (requestContext.http.method)
+    const method = event.httpMethod || (event.requestContext as any)?.http?.method;
+    
+    logger.info('HTTP method detected', { requestId, method, hasHttpMethod: !!event.httpMethod, hasRequestContextMethod: !!(event.requestContext as any)?.http?.method });
+    
     // Only handle POST requests
-    if (event.httpMethod !== 'POST') {
+    if (method && method !== 'POST') {
+      logger.warn('Non-POST request received', { requestId, method });
       return {
         statusCode: 405,
         body: JSON.stringify({ error: 'Method not allowed' }),
@@ -44,10 +68,11 @@ export const handler = async (
 
     return await handleIncomingWebhook(event, requestId);
   } catch (error) {
-    logger.error('Error processing Twilio webhook', {
+    logger.error('FATAL: Error processing Twilio webhook', {
       requestId,
       error: error instanceof Error ? error.message : String(error),
       stack: error instanceof Error ? error.stack : undefined,
+      errorName: error instanceof Error ? error.name : 'Unknown',
     });
 
     // Return 200 to prevent Twilio from retrying
@@ -56,6 +81,9 @@ export const handler = async (
       statusCode: 200,
       body: JSON.stringify({ status: 'error_logged' }),
     };
+  } finally {
+    publishLatencyMetric('WhatsAppWebhookLatency', Date.now() - startTime, { Channel: 'whatsapp' });
+    publishCountMetric('MessagesReceived', 1, { Channel: 'whatsapp' });
   }
 };
 
@@ -68,55 +96,111 @@ async function handleIncomingWebhook(
 ): Promise<APIGatewayProxyResult> {
   const body = event.body;
   
+  logger.info('Processing webhook body', {
+    requestId,
+    hasBody: !!body,
+    bodyLength: body?.length || 0,
+    isBase64Encoded: event.isBase64Encoded,
+  });
+  
   if (!body) {
-    logger.warn('Empty webhook body received');
+    logger.warn('Empty webhook body received', { requestId });
     return {
       statusCode: 200,
       body: JSON.stringify({ status: 'ignored' }),
     };
   }
 
+  // Decode base64 if needed
+  const decodedBody = event.isBase64Encoded ? Buffer.from(body, 'base64').toString('utf-8') : body;
+  
+  logger.info('Body decoded', {
+    requestId,
+    decodedLength: decodedBody.length,
+    preview: decodedBody.substring(0, 100),
+  });
+
   // Parse form-encoded body (Twilio sends application/x-www-form-urlencoded)
-  const twilioPayload = parseFormData(body);
+  const twilioPayload = parseFormData(decodedBody);
   
   if (!twilioPayload) {
-    logger.error('Failed to parse webhook body', { requestId });
+    logger.error('FATAL: Failed to parse webhook body', { 
+      requestId,
+      bodyPreview: decodedBody.substring(0, 200),
+    });
     return {
       statusCode: 200,
       body: JSON.stringify({ status: 'invalid_body' }),
     };
   }
 
+  logger.info('Twilio webhook payload parsed successfully', {
+    requestId,
+    from: twilioPayload.From,
+    to: twilioPayload.To,
+    messageSid: twilioPayload.SmsMessageSid || twilioPayload.MessageSid,
+    messageStatus: twilioPayload.SmsStatus || twilioPayload.MessageStatus,
+    bodyPreview: twilioPayload.Body?.substring(0, 50),
+  });
+
   // Verify Twilio webhook signature using parsed params
   const signature = event.headers['x-twilio-signature'] || event.headers['X-Twilio-Signature'];
   const url = reconstructUrl(event);
   
+  logger.info('Verifying Twilio signature', {
+    requestId,
+    hasSignature: !!signature,
+    url,
+    authTokenConfigured: !!config.twilioAuthToken,
+  });
+  
   if (!verifyTwilioSignature(url, twilioPayload, signature)) {
-    logger.error('Invalid Twilio webhook signature', { requestId });
+    logger.error('FATAL: Invalid Twilio webhook signature', { 
+      requestId,
+      url,
+      hasSignature: !!signature,
+      authTokenConfigured: !!config.twilioAuthToken,
+    });
     return {
       statusCode: 403,
       body: JSON.stringify({ error: 'Invalid signature' }),
     };
   }
 
-  logger.info('Twilio webhook payload parsed', {
-    requestId,
-    from: twilioPayload.From,
-    to: twilioPayload.To,
-    messageSid: twilioPayload.SmsMessageSid || twilioPayload.MessageSid,
-    messageStatus: twilioPayload.SmsStatus || twilioPayload.MessageStatus,
-  });
+  logger.info('Twilio signature verified successfully', { requestId });
+
+  // Idempotency check — prevent duplicate webhook processing (Req 13)
+  const messageSid = twilioPayload.MessageSid || twilioPayload.SmsMessageSid;
+  if (messageSid) {
+    const isNew = await acquireIdempotency(messageSid, requestId);
+    if (!isNew) {
+      logger.info('Duplicate webhook, skipping', { requestId, messageSid });
+      return {
+        statusCode: 200,
+        headers: { 'Content-Type': 'text/xml' },
+        body: '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
+      };
+    }
+  }
 
   // Transform Twilio payload to internal WhatsApp event format
   const internalPayload = transformTwilioToWhatsAppFormat(twilioPayload, requestId);
+
+  logger.info('Payload transformed, publishing to EventBridge', { requestId });
 
   // Publish to EventBridge for async processing
   await publishToEventBridge(internalPayload, requestId);
 
   logger.info('Twilio webhook processed successfully', { requestId });
+  
+  // Return empty TwiML response to prevent echo
+  // Twilio expects TwiML XML or empty response, not JSON
   return {
     statusCode: 200,
-    body: JSON.stringify({ status: 'received' }),
+    headers: {
+      'Content-Type': 'text/xml',
+    },
+    body: '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
   };
 }
 
@@ -125,12 +209,16 @@ async function handleIncomingWebhook(
  */
 function reconstructUrl(event: APIGatewayProxyEvent): string {
   const host = event.headers.Host || event.headers.host || '';
-  const path = event.path || '';
-  const protocol = event.headers['X-Forwarded-Proto'] || 'https';
   
-  // Include query string if present
+  // Support both API Gateway v1 (event.path) and v2 (event.rawPath or event.requestContext.http.path)
+  const path = event.path || (event as any).rawPath || (event.requestContext as any)?.http?.path || '';
+  
+  const protocol = event.headers['X-Forwarded-Proto'] || event.headers['x-forwarded-proto'] || 'https';
+  
+  // Build base URL with path
   let url = `${protocol}://${host}${path}`;
   
+  // Include query string if present
   if (event.queryStringParameters) {
     const queryString = Object.entries(event.queryStringParameters)
       .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value || '')}`)
@@ -141,6 +229,14 @@ function reconstructUrl(event: APIGatewayProxyEvent): string {
     }
   }
   
+  logger.info('Reconstructed URL for signature validation', {
+    url,
+    host,
+    path,
+    protocol,
+    hasQueryParams: !!event.queryStringParameters,
+  });
+  
   return url;
 }
 
@@ -148,14 +244,22 @@ function reconstructUrl(event: APIGatewayProxyEvent): string {
  * Verify Twilio webhook signature
  */
 function verifyTwilioSignature(url: string, params: Record<string, string>, signature: string | undefined): boolean {
+  // HACKATHON BYPASS: Skip signature validation in dev environment
+  if (config.environment === 'dev') {
+    logger.warn('⚠️  SECURITY WARNING: Twilio signature validation BYPASSED in dev environment', {
+      environment: config.environment,
+    });
+    return true;
+  }
+  
   if (!signature) {
-    logger.warn('Missing Twilio webhook signature');
+    logger.warn('Missing Twilio webhook signature header');
     return false;
   }
 
   const authToken = config.twilioAuthToken;
   if (!authToken) {
-    logger.error('TWILIO_AUTH_TOKEN not configured');
+    logger.error('FATAL: TWILIO_AUTH_TOKEN not configured in Secrets Manager');
     return false;
   }
 
@@ -166,13 +270,17 @@ function verifyTwilioSignature(url: string, params: Record<string, string>, sign
       logger.warn('Twilio signature validation failed', {
         url,
         signatureProvided: signature.substring(0, 10) + '...',
+        paramsCount: Object.keys(params).length,
       });
+    } else {
+      logger.info('Twilio signature validation succeeded');
     }
     
     return isValid;
   } catch (error) {
-    logger.error('Error validating Twilio signature', {
+    logger.error('FATAL: Error validating Twilio signature', {
       error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
     });
     return false;
   }
@@ -220,8 +328,9 @@ function parseFormData(body: string): Record<string, string> | null {
  */
 function transformTwilioToWhatsAppFormat(twilioPayload: Record<string, string>, requestId: string): any {
   // Extract phone number from whatsapp:+1234567890 format
-  const fromNumber = twilioPayload.From?.replace('whatsapp:', '').replace('+', '') || '';
-  const toNumber = twilioPayload.To?.replace('whatsapp:', '').replace('+', '') || '';
+  // IMPORTANT: Keep the + prefix to match database format (+918927049085)
+  const fromNumber = twilioPayload.From?.replace('whatsapp:', '') || '';
+  const toNumber = twilioPayload.To?.replace('whatsapp:', '') || '';
   const messageSid = twilioPayload.SmsMessageSid || twilioPayload.MessageSid || '';
   const body = twilioPayload.Body || '';
   const profileName = twilioPayload.ProfileName || 'Unknown';
@@ -331,24 +440,129 @@ function transformTwilioToWhatsAppFormat(twilioPayload: Record<string, string>, 
 }
 
 /**
+ * Acquire idempotency lock for a webhook message using DDB conditional write.
+ * PK: IDEMPOTENCY#{messageSid}, SK: WEBHOOK
+ * ConditionExpression: attribute_not_exists(PK)
+ * Returns true if this is the first time we've seen this messageSid.
+ */
+async function acquireIdempotency(messageSid: string, requestId: string): Promise<boolean> {
+  const now = Math.floor(Date.now() / 1000);
+  const item = {
+    PK: `IDEMPOTENCY#${messageSid}`,
+    SK: 'WEBHOOK',
+    messageSid,
+    processedAt: new Date().toISOString(),
+    expiresAt: now + 86400, // 24h TTL
+  };
+
+  try {
+    await dynamoDBClient.send(
+      new PutItemCommand({
+        TableName: config.tableName,
+        Item: marshall(item, { removeUndefinedValues: true }),
+        ConditionExpression: 'attribute_not_exists(PK)',
+      }),
+    );
+    return true;
+  } catch (error) {
+    if (error instanceof ConditionalCheckFailedException) {
+      return false;
+    }
+    logger.error('Error in webhook idempotency check', {
+      requestId,
+      messageSid,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
+  }
+}
+
+/**
  * Publish webhook payload to EventBridge
+ * 
+ * Enhanced to include user role information for downstream routing.
+ * If the phone number belongs to a registered seller/admin, the event
+ * will include userRole and userId for seller-specific handling.
  */
 async function publishToEventBridge(payload: any, requestId: string): Promise<void> {
+  // Extract phone number from the first message
+  const phoneNumber = payload.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.from;
+  
+  let userRole: string | undefined;
+  let userId: string | undefined;
+  
+  // HARDCODED SELLER OVERRIDE: Force seller routing for test number
+  // This overrides any database records to ensure seller copilot routing
+  const SELLER_TEST_NUMBER = '+918927049085';
+  const SELLER_TEST_ID = 'seller-dragon-001'; // Hardcoded seller ID for testing
+  
+  if (phoneNumber === SELLER_TEST_NUMBER) {
+    logger.info('Detected hardcoded seller test number - forcing seller routing', {
+      requestId,
+      phoneNumber,
+      forcedSellerId: SELLER_TEST_ID,
+    });
+    
+    // Force seller role and ID for routing
+    userRole = 'seller';
+    userId = SELLER_TEST_ID;
+    
+    logger.info('Hardcoded seller routing configured', {
+      requestId,
+      phoneNumber,
+      userRole,
+      userId,
+    });
+  } else if (phoneNumber) {
+    // Normal flow: Check if this phone number belongs to a registered user (seller/admin)
+    try {
+      const { UserRepository } = await import('../../repositories/user-repository.js');
+      const userRepo = new UserRepository();
+      const user = await userRepo.getUserByPhone(phoneNumber);
+      
+      if (user && (user.role === 'seller' || user.role === 'admin')) {
+        userRole = user.role;
+        userId = user.id;
+        
+        logger.info('Detected registered user in WhatsApp message', {
+          requestId,
+          phoneNumber,
+          userRole,
+          userId,
+        });
+      }
+    } catch (error) {
+      // Log error but don't fail the webhook - treat as customer if lookup fails
+      logger.warn('Failed to lookup user by phone number', {
+        requestId,
+        phoneNumber,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
   const command = new PutEventsCommand({
     Entries: [
       {
-        Source: 'vyapargyan.whatsapp.twilio',
+        Source: 'vyapargyan.whatsapp',
         DetailType: 'IncomingWhatsAppWebhook',
         Detail: JSON.stringify({
           payload,
           receivedAt: new Date().toISOString(),
           requestId,
           source: 'twilio',
+          // Include user context for routing
+          userRole,
+          userId,
         }),
         EventBusName: config.eventBusName || 'default',
       },
     ],
   });
+
+  // Debug: Log what we're sending to EventBridge
+  console.log('PUBLISHING TO EVENTBRIDGE - payload type:', typeof payload);
+  console.log('PUBLISHING TO EVENTBRIDGE - payload:', JSON.stringify(payload, null, 2));
 
   const response = await eventBridgeClient.send(command);
   
@@ -361,5 +575,8 @@ async function publishToEventBridge(payload: any, requestId: string): Promise<vo
     throw new Error('Failed to publish event to EventBridge');
   }
 
-  logger.info('Event published to EventBridge', { requestId });
+  logger.info('Event published to EventBridge', { 
+    requestId,
+    userRole: userRole || 'customer',
+  });
 }

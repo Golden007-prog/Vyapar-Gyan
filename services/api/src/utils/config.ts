@@ -103,7 +103,24 @@ async function getSecret(secretId: string): Promise<string> {
       throw new Error(`Secret ${secretId} not found or has no value`);
     }
     
-    return response.SecretString;
+    // AWS Secrets Manager returns JSON when created via Key/value UI
+    // Try to parse as JSON first, if it fails, treat as plain string
+    try {
+      const parsed = JSON.parse(response.SecretString);
+      // If it's a JSON object with a single key matching the secretId, extract the value
+      if (typeof parsed === 'object' && parsed !== null) {
+        // Get the first value from the object (handles {"/dev/twilio/account-sid": "AC123..."})
+        const values = Object.values(parsed);
+        if (values.length > 0 && typeof values[0] === 'string') {
+          return values[0].trim();
+        }
+      }
+      // If parsed but not in expected format, return the stringified version
+      return String(parsed).trim();
+    } catch {
+      // Not JSON, return as-is (trimmed)
+      return response.SecretString.trim();
+    }
   } catch (error) {
     throw new Error(`Failed to get secret ${secretId}: ${error instanceof Error ? error.message : String(error)}`);
   }
@@ -149,20 +166,21 @@ export async function getConfig(): Promise<Config> {
       
       // Twilio configuration (from Secrets Manager)
       // Updated for Twilio integration
-      twilioAccountSid: await getSecret(`/${environment}/twilio/account-sid`),
-      twilioAuthToken: await getSecret(`/${environment}/twilio/auth-token`),
-      twilioPhoneNumber: await getParameter(`/${environment}/twilio/phone-number`),
+      // Trim whitespace and newlines from secrets to avoid initialization errors
+      twilioAccountSid: (await getSecret(`/${environment}/twilio/account-sid`)).trim(),
+      twilioAuthToken: (await getSecret(`/${environment}/twilio/auth-token`)).trim(),
+      twilioPhoneNumber: (await getParameter(`/${environment}/twilio/phone-number`)).trim(),
       
       // Razorpay configuration (mixed: key ID from SSM, secrets from Secrets Manager)
-      razorpayKeyId: await getParameter(`/${environment}/razorpay/key-id`),
-      razorpayKeySecret: await getSecret(`/${environment}/razorpay/key-secret`),
-      razorpayWebhookSecret: await getSecret(`/${environment}/razorpay/webhook-secret`),
+      razorpayKeyId: (await getParameter(`/${environment}/razorpay/key-id`)).trim(),
+      razorpayKeySecret: (await getSecret(`/${environment}/razorpay/key-secret`)).trim(),
+      razorpayWebhookSecret: (await getSecret(`/${environment}/razorpay/webhook-secret`)).trim(),
       
       // Gemini AI configuration (from Secrets Manager)
-      geminiApiKey: await getSecret('GEMINI_API_KEY'),
+      geminiApiKey: (await getSecret('GEMINI_API_KEY')).trim(),
       
       // Grok AI configuration (from Secrets Manager)
-      grokApiKey: await getSecret('GROK_API_KEY'),
+      grokApiKey: (await getSecret('GROK_API_KEY')).trim(),
     };
     
     // Validate configuration against schema

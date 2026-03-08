@@ -18,11 +18,33 @@ const TWILIO_PHONE_NUMBER = process.env.TWILIO_PHONE_NUMBER;
 if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN || !TWILIO_PHONE_NUMBER) {
   console.error('Error: Missing required Twilio environment variables');
   console.error('Required: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER');
+  console.error('Current values:');
+  console.error(`  TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID || '(not set)'}`);
+  console.error(`  TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN ? '***' : '(not set)'}`);
+  console.error(`  TWILIO_PHONE_NUMBER: ${TWILIO_PHONE_NUMBER || '(not set)'}`);
+  process.exit(1);
+}
+
+// Validate Account SID format
+if (!TWILIO_ACCOUNT_SID.startsWith('AC')) {
+  console.error('Error: Invalid TWILIO_ACCOUNT_SID format');
+  console.error('Account SID must start with "AC"');
+  console.error(`Current value: ${TWILIO_ACCOUNT_SID}`);
+  console.error('');
+  console.error('If you see "${TWILIO_ACCOUNT_SID}", the environment variable is not being expanded.');
+  console.error('Set the actual values in your MCP config or system environment variables.');
   process.exit(1);
 }
 
 // Initialize Twilio client
-const twilioClient = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
+let twilioClient: ReturnType<typeof twilio>;
+try {
+  twilioClient = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
+} catch (error) {
+  console.error('Error: Failed to initialize Twilio client');
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exit(1);
+}
 
 // Create MCP server
 const server = new Server(

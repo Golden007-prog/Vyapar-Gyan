@@ -1,8 +1,8 @@
 {
   "openapi": "3.0.3",
   "info": {
-    "title": "VyaparGyan Catalog API",
-    "description": "Public catalog API for browsing categories and products. Designed for Amazon Bedrock Agent action group integration.",
+    "title": "VyaparGyan Bedrock Action Group API",
+    "description": "Action Group API for Amazon Bedrock Agent to manage inventory, pricing, and customer communications. Supports catalog browsing, dynamic pricing updates, and WhatsApp messaging.",
     "version": "1.0.0"
   },
   "servers": [
@@ -187,6 +187,223 @@
           },
           "404": {
             "description": "Category not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/inventory": {
+      "get": {
+        "operationId": "getInventory",
+        "summary": "Get inventory stock levels for a product",
+        "description": "Retrieves current stock quantity, stock age, and availability status for a specific product. Used by AI to identify dead stock and make pricing recommendations.",
+        "parameters": [
+          {
+            "name": "productId",
+            "in": "query",
+            "required": true,
+            "description": "The unique identifier of the product",
+            "schema": {
+              "type": "string",
+              "example": "prod-123"
+            }
+          },
+          {
+            "name": "sellerId",
+            "in": "query",
+            "required": true,
+            "description": "The unique identifier of the seller",
+            "schema": {
+              "type": "string",
+              "example": "seller-456"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response with inventory data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["success", "data"],
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/InventoryData"
+                    },
+                    "error": {
+                      "type": "null"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ResponseMeta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Product not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/discount": {
+      "post": {
+        "operationId": "applyDiscount",
+        "summary": "Apply dynamic pricing discount to a product",
+        "description": "Updates product price based on AI recommendations for dead stock liquidation or market trends. Requires seller approval before execution.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiscountRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Discount applied successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["success", "data"],
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/DiscountResponse"
+                    },
+                    "error": {
+                      "type": "null"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ResponseMeta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request - invalid discount parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Product not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/whatsapp": {
+      "post": {
+        "operationId": "sendWhatsAppMessage",
+        "summary": "Send WhatsApp message to customer",
+        "description": "Triggers a WhatsApp message via Twilio for promotional campaigns, order updates, or customer engagement. Used for automated discount notifications.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WhatsAppMessageRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Message sent successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["success", "data"],
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/WhatsAppMessageResponse"
+                    },
+                    "error": {
+                      "type": "null"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ResponseMeta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request - invalid phone number or message",
             "content": {
               "application/json": {
                 "schema": {
@@ -584,6 +801,172 @@
           },
           "meta": {
             "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+      "InventoryData": {
+        "type": "object",
+        "required": ["productId", "sellerId", "stockQuantity", "stockAgeInDays", "isAvailable"],
+        "properties": {
+          "productId": {
+            "type": "string",
+            "description": "Product identifier",
+            "example": "prod-123"
+          },
+          "sellerId": {
+            "type": "string",
+            "description": "Seller identifier",
+            "example": "seller-456"
+          },
+          "productName": {
+            "type": "string",
+            "description": "Product name",
+            "example": "Silk Saree Red"
+          },
+          "stockQuantity": {
+            "type": "integer",
+            "description": "Current stock quantity",
+            "example": 10
+          },
+          "stockAgeInDays": {
+            "type": "integer",
+            "description": "Number of days since product was added",
+            "example": 45
+          },
+          "isAvailable": {
+            "type": "boolean",
+            "description": "Whether product is in stock and available",
+            "example": true
+          },
+          "currentPrice": {
+            "type": "number",
+            "format": "double",
+            "description": "Current product price in INR",
+            "example": 2500.00
+          },
+          "lastUpdated": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO 8601 timestamp of last inventory update",
+            "example": "2024-01-10T00:00:00.000Z"
+          }
+        }
+      },
+      "DiscountRequest": {
+        "type": "object",
+        "required": ["productId", "sellerId", "discountPercent"],
+        "properties": {
+          "productId": {
+            "type": "string",
+            "description": "Product identifier",
+            "example": "prod-123"
+          },
+          "sellerId": {
+            "type": "string",
+            "description": "Seller identifier",
+            "example": "seller-456"
+          },
+          "discountPercent": {
+            "type": "number",
+            "format": "double",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Discount percentage to apply (0-100)",
+            "example": 20.0
+          },
+          "reason": {
+            "type": "string",
+            "description": "Reason for discount (e.g., dead stock, market trend)",
+            "example": "Dead stock liquidation - 45 days old"
+          }
+        }
+      },
+      "DiscountResponse": {
+        "type": "object",
+        "required": ["productId", "originalPrice", "newPrice", "discountPercent", "appliedAt"],
+        "properties": {
+          "productId": {
+            "type": "string",
+            "description": "Product identifier",
+            "example": "prod-123"
+          },
+          "productName": {
+            "type": "string",
+            "description": "Product name",
+            "example": "Silk Saree Red"
+          },
+          "originalPrice": {
+            "type": "number",
+            "format": "double",
+            "description": "Original price before discount in INR",
+            "example": 2500.00
+          },
+          "newPrice": {
+            "type": "number",
+            "format": "double",
+            "description": "New price after discount in INR",
+            "example": 2000.00
+          },
+          "discountPercent": {
+            "type": "number",
+            "format": "double",
+            "description": "Applied discount percentage",
+            "example": 20.0
+          },
+          "appliedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO 8601 timestamp when discount was applied",
+            "example": "2024-01-15T10:30:00.000Z"
+          }
+        }
+      },
+      "WhatsAppMessageRequest": {
+        "type": "object",
+        "required": ["customerPhone", "message"],
+        "properties": {
+          "customerPhone": {
+            "type": "string",
+            "description": "Customer phone number in E.164 format (e.g., +919876543210)",
+            "example": "+919876543210"
+          },
+          "message": {
+            "type": "string",
+            "description": "Message text to send",
+            "example": "Special offer! 20% off on Silk Saree Red. Limited time only!"
+          },
+          "mediaUrl": {
+            "type": "string",
+            "nullable": true,
+            "description": "Optional media URL for image/video attachment",
+            "example": "https://vyapargyan-prod-media.s3.amazonaws.com/products/prod-123-1.jpg"
+          }
+        }
+      },
+      "WhatsAppMessageResponse": {
+        "type": "object",
+        "required": ["messageId", "status", "sentAt"],
+        "properties": {
+          "messageId": {
+            "type": "string",
+            "description": "Twilio message SID",
+            "example": "SM1234567890abcdef1234567890abcdef"
+          },
+          "status": {
+            "type": "string",
+            "description": "Message delivery status",
+            "example": "queued"
+          },
+          "sentAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO 8601 timestamp when message was sent",
+            "example": "2024-01-15T10:30:00.000Z"
+          },
+          "customerPhone": {
+            "type": "string",
+            "description": "Recipient phone number",
+            "example": "+919876543210"
           }
         }
       }

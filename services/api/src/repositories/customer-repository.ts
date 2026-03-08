@@ -110,7 +110,7 @@ export class CustomerRepository {
 
     const command = new PutItemCommand({
       TableName: tableName,
-      Item: marshall(item),
+      Item: marshall(item, { removeUndefinedValues: true }),
     });
 
     await dynamoDBClient.send(command);

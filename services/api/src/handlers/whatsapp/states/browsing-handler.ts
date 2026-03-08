@@ -1,10 +1,13 @@
 import { logger } from '../../../utils/logger';
 import { whatsappSender } from '../../../services/whatsapp-sender';
 import { MessageRepository } from '../../../repositories/message-repository';
+import { SessionRepository } from '../../../repositories/session-repository';
 import { CatalogRepository } from '../../../repositories/catalog-repository';
+import { checkoutHandler } from './checkout-handler';
 import type { MessageContext } from './router';
 
 const messageRepository = new MessageRepository();
+const sessionRepository = new SessionRepository();
 const catalogRepository = new CatalogRepository();
 
 /**
@@ -56,6 +59,18 @@ export async function browsingHandler(context: MessageContext): Promise<void> {
       await handleSearchProducts(context, intent.query);
       break;
 
+    case 'add_to_cart':
+      await handleAddToCart(context, intent.productId, intent.quantity);
+      break;
+
+    case 'view_cart':
+      await handleViewCart(context);
+      break;
+
+    case 'checkout':
+      await handleCheckout(context);
+      break;
+
     case 'help':
       await handleHelp(context);
       break;
@@ -82,6 +97,24 @@ function detectIntent(message: any): any {
       if (buttonId.startsWith('prod_')) {
         return { type: 'view_product', productId: buttonId.replace('prod_', '') };
       }
+      if (buttonId.startsWith('add_')) {
+        // Format: add_{productId}_{quantity}
+        const parts = buttonId.split('_');
+        return { 
+          type: 'add_to_cart', 
+          productId: parts[1], 
+          quantity: parseInt(parts[2] || '1', 10) 
+        };
+      }
+      if (buttonId === 'view_cart') {
+        return { type: 'view_cart' };
+      }
+      if (buttonId === 'checkout') {
+        return { type: 'checkout' };
+      }
+      if (buttonId === 'continue_shopping') {
+        return { type: 'show_categories' };
+      }
     }
     
     if (response.type === 'list_reply') {
@@ -103,6 +136,11 @@ function detectIntent(message: any): any {
     // Show categories
     if (text.match(/^(categories|menu|show categories|list|browse)$/i)) {
       return { type: 'show_categories' };
+    }
+
+    // View cart
+    if (text.match(/^(cart|view cart|my cart|show cart)$/i)) {
+      return { type: 'view_cart' };
     }
 
     // Help
@@ -333,6 +371,170 @@ async function handleSearchProducts(context: MessageContext, query: string): Pro
 }
 
 /**
+ * Handle adding product to cart
+ */
+async function handleAddToCart(context: MessageContext, productId: string, quantity: number): Promise<void> {
+  const { customer, session } = context;
+
+  // Fetch product details
+  const product = await catalogRepository.getProductById(productId);
+  if (!product) {
+    await whatsappSender.sendMessage(
+      customer.phoneNumber,
+      {
+        type: 'text',
+        text: 'Sorry, that product is not available.',
+      },
+      session.id
+    );
+    return;
+  }
+
+  // Check stock availability
+  if (product.stockQuantity < quantity) {
+    await whatsappSender.sendMessage(
+      customer.phoneNumber,
+      {
+        type: 'text',
+        text: `Sorry, only ${product.stockQuantity} units available for ${product.name}.`,
+      },
+      session.id
+    );
+    return;
+  }
+
+  // Add to cart
+  const updatedCart = await sessionRepository.addToCart(customer.id, customer.phoneNumber, {
+    productId: product.id,
+    name: product.name,
+    price: product.price,
+    quantity,
+    sellerId: product.sellerId,
+  });
+
+  // Calculate cart subtotal
+  const subtotal = sessionRepository.calculateCartSubtotal(updatedCart);
+  const itemCount = updatedCart.reduce((sum, item) => sum + item.quantity, 0);
+
+  await whatsappSender.sendMessage(
+    customer.phoneNumber,
+    {
+      type: 'interactive',
+      body: `✅ Added ${quantity}x ${product.name} to cart\n\n🛒 Cart: ${itemCount} items • ₹${subtotal.toFixed(2)}`,
+      buttons: [
+        { id: 'view_cart', title: 'View Cart' },
+        { id: 'continue_shopping', title: 'Continue Shopping' },
+      ],
+    },
+    session.id
+  );
+
+  logger.info('Product added to cart', {
+    sessionId: session.id,
+    productId,
+    quantity,
+    subtotal,
+  });
+}
+
+/**
+ * Handle viewing cart
+ */
+async function handleViewCart(context: MessageContext): Promise<void> {
+  const { customer, session } = context;
+
+  const cart = await sessionRepository.getCart(customer.id, customer.phoneNumber);
+
+  if (!cart || cart.length === 0) {
+    await whatsappSender.sendMessage(
+      customer.phoneNumber,
+      {
+        type: 'text',
+        text: '🛒 Your cart is empty.\n\nType "categories" to start shopping!',
+      },
+      session.id
+    );
+    return;
+  }
+
+  // Format cart items
+  const itemsList = cart.map((item, idx) => 
+    `${idx + 1}. ${item.name}\n   ${item.quantity}x ₹${item.price} = ₹${(item.quantity * item.price).toFixed(2)}`
+  ).join('\n\n');
+
+  const subtotal = sessionRepository.calculateCartSubtotal(cart);
+  const itemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
+
+  const cartMessage = [
+    `🛒 *Your Cart* (${itemCount} items)`,
+    '',
+    itemsList,
+    '',
+    `💰 *Subtotal: ₹${subtotal.toFixed(2)}*`,
+  ].join('\n');
+
+  await whatsappSender.sendMessage(
+    customer.phoneNumber,
+    {
+      type: 'interactive',
+      body: cartMessage,
+      buttons: [
+        { id: 'checkout', title: 'Checkout' },
+        { id: 'continue_shopping', title: 'Continue Shopping' },
+      ],
+    },
+    session.id
+  );
+
+  logger.info('Cart displayed', {
+    sessionId: session.id,
+    itemCount,
+    subtotal,
+  });
+}
+
+/**
+ * Handle checkout initiation
+ */
+async function handleCheckout(context: MessageContext): Promise<void> {
+  const { customer, session } = context;
+
+  const cart = await sessionRepository.getCart(customer.id, customer.phoneNumber);
+
+  if (!cart || cart.length === 0) {
+    await whatsappSender.sendMessage(
+      customer.phoneNumber,
+      {
+        type: 'text',
+        text: '🛒 Your cart is empty.\n\nType "categories" to start shopping!',
+      },
+      session.id
+    );
+    return;
+  }
+
+  // Transition to checkout state
+  await sessionRepository.updateState(session.id, customer.id, customer.phoneNumber, 'checkout');
+
+  // Trigger checkout handler by sending a checkout message
+  const checkoutContext = {
+    ...context,
+    session: {
+      ...session,
+      state: 'checkout',
+      cart,
+    },
+  };
+
+  await checkoutHandler(checkoutContext);
+
+  logger.info('Transitioned to checkout state', {
+    sessionId: session.id,
+    itemCount: cart.length,
+  });
+}
+
+/**
  * Handle help request
  */
 async function handleHelp(context: MessageContext): Promise<void> {
@@ -344,6 +546,7 @@ async function handleHelp(context: MessageContext): Promise<void> {
     '• Type "categories" to browse products',
     '• Type product name to search',
     '• Select from menu options',
+    '• Type "cart" to view your cart',
     '• Type "help" anytime for assistance',
   ].join('\n');
 

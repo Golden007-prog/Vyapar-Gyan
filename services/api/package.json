@@ -5,7 +5,7 @@
   "description": "VyaparGyan API Lambda functions",
   "main": "dist/index.js",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node build.js",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
@@ -13,6 +13,9 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
+    "@aws-sdk/client-bedrock-runtime": "^3.1004.0",
+    "@aws-sdk/client-cloudwatch": "^3.600.0",
+    "@aws-sdk/client-cognito-identity-provider": "^3.1004.0",
     "@aws-sdk/client-dynamodb": "^3.600.0",
     "@aws-sdk/client-eventbridge": "^3.600.0",
     "@aws-sdk/client-s3": "^3.600.0",
@@ -20,6 +23,7 @@
     "@aws-sdk/client-sqs": "^3.600.0",
     "@aws-sdk/client-ssm": "^3.600.0",
     "@aws-sdk/lib-dynamodb": "^3.600.0",
+    "@aws-sdk/s3-request-presigner": "^3.1003.0",
     "@aws-sdk/util-dynamodb": "^3.600.0",
     "@google/generative-ai": "^0.21.0",
     "axios": "^1.7.2",

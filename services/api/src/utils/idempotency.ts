@@ -58,7 +58,7 @@ export class IdempotencyService {
     try {
       const command = new PutItemCommand({
         TableName: tableName,
-        Item: marshall(item),
+        Item: marshall(item, { removeUndefinedValues: true }),
         ConditionExpression: 'attribute_not_exists(PK)',
       });
 

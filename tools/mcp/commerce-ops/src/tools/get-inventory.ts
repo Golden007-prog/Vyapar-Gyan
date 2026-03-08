@@ -20,7 +20,7 @@ export async function getInventory(args: unknown, env: Env) {
         TableName: env.DDB_TABLE_NAME,
         Key: {
           PK: `PRODUCT#${productId}`,
-          SK: `PRODUCT`,
+          SK: `METADATA`, // Changed from PRODUCT to METADATA to match actual schema
         },
       })
     );

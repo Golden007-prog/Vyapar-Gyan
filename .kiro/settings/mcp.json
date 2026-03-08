@@ -17,7 +17,7 @@
       "env": {
         "FASTMCP_LOG_LEVEL": "ERROR"
       },
-      "disabled": true,
+      "disabled": false,
       "autoApprove": []
     },
     "commerce-ops-mcp": {
@@ -27,9 +27,9 @@
       ],
       "env": {
         "AWS_REGION": "ap-south-1",
-        "AWS_PROFILE": "kiro-mcp",
+        "AWS_PROFILE": "default",
         "APP_ENV": "dev",
-        "DDB_TABLE_NAME": "CommerceCore-dev",
+        "DDB_TABLE_NAME": "dev-vyapargyan-main",
         "LOG_GROUP_PREFIX": "/aws/commerce"
       },
       "disabled": false,
@@ -39,7 +39,8 @@
         "get_payment",
         "get_inventory",
         "get_whatsapp_session",
-        "list_seller_orders"
+        "list_seller_orders",
+        "search_logs"
       ]
     },
     "commerce-catalog-mcp": {
@@ -49,8 +50,8 @@
       ],
       "env": {
         "AWS_REGION": "ap-south-1",
-        "AWS_PROFILE": "kiro-mcp",
-        "DYNAMODB_TABLE_NAME": "CommerceCore-dev",
+        "AWS_PROFILE": "default",
+        "DYNAMODB_TABLE_NAME": "dev-vyapargyan-main",
         "S3_MEDIA_BUCKET": "commerce-media-dev"
       },
       "disabled": false,
@@ -70,8 +71,8 @@
       ],
       "env": {
         "AWS_REGION": "ap-south-1",
-        "AWS_PROFILE": "kiro-mcp",
-        "DYNAMODB_TABLE_NAME": "CommerceCore-dev",
+        "AWS_PROFILE": "default",
+        "DYNAMODB_TABLE_NAME": "dev-vyapargyan-main",
         "S3_DOC_BUCKET": "commerce-docs-dev"
       },
       "disabled": false,
@@ -90,9 +91,9 @@
         "./tools/mcp/twilio-mcp/dist/index.js"
       ],
       "env": {
-        "TWILIO_ACCOUNT_SID": "${TWILIO_ACCOUNT_SID}",
-        "TWILIO_AUTH_TOKEN": "${TWILIO_AUTH_TOKEN}",
-        "TWILIO_PHONE_NUMBER": "${TWILIO_PHONE_NUMBER}"
+        "TWILIO_ACCOUNT_SID": "",
+        "TWILIO_AUTH_TOKEN": "",
+        "TWILIO_PHONE_NUMBER": ""
       },
       "disabled": false,
       "autoApprove": [
