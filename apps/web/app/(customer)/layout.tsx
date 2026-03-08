@@ -12,7 +12,10 @@ import {
   ChevronDown,
   X,
   LogOut,
+  ArrowLeftRight,
 } from 'lucide-react';
+import { signOut } from 'aws-amplify/auth';
+import { configureAmplify } from '@/lib/amplify-config';
 import {
   StoreContext,
   DEMO_STORES,
@@ -28,6 +31,7 @@ export default function CustomerLayout({ children }: { children: React.ReactNode
   const [showConfirm, setShowConfirm] = useState(false);
 
   useEffect(() => {
+    configureAmplify();
     try {
       const saved = sessionStorage.getItem(STORE_KEY);
       if (saved) {
@@ -58,9 +62,26 @@ export default function CustomerLayout({ children }: { children: React.ReactNode
     }
   };
 
-  const handleLogout = () => {
+  const clearAllState = () => {
     document.cookie = 'idToken=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT;';
-    sessionStorage.removeItem(STORE_KEY);
+    try { sessionStorage.clear(); } catch {}
+    try {
+      Object.keys(localStorage).forEach(k => {
+        if (k.startsWith('CognitoIdentityServiceProvider') || k.startsWith('vyapargyan')) localStorage.removeItem(k);
+      });
+    } catch {}
+  };
+
+  const handleLogout = async () => {
+    clearAllState();
+    try { await signOut({ global: true }); } catch {}
+    const base = process.env.NEXT_PUBLIC_BASE_PATH || '';
+    window.location.href = `${base}/login`;
+  };
+
+  const handleSwitchAccount = async () => {
+    clearAllState();
+    try { await signOut({ global: true }); } catch {}
     const base = process.env.NEXT_PUBLIC_BASE_PATH || '';
     window.location.href = `${base}/login`;
   };
@@ -114,8 +135,15 @@ export default function CustomerLayout({ children }: { children: React.ReactNode
                 );
               })}
               <button
+                onClick={handleSwitchAccount}
+                className="ml-1 flex items-center gap-1 rounded-lg px-2 py-1.5 text-sm text-gray-400 transition hover:text-indigo-500 hover:bg-indigo-50"
+                title="Switch Account"
+              >
+                <ArrowLeftRight className="h-4 w-4" />
+              </button>
+              <button
                 onClick={handleLogout}
-                className="ml-1 flex items-center gap-1 rounded-lg px-2 py-1.5 text-sm text-gray-400 transition hover:text-red-500 hover:bg-red-50"
+                className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-sm text-gray-400 transition hover:text-red-500 hover:bg-red-50"
                 title="Logout"
               >
                 <LogOut className="h-4 w-4" />

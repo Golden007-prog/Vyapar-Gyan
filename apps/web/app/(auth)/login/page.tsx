@@ -2,8 +2,8 @@
 
 import { useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { AlertCircle } from 'lucide-react';
-import { signIn, fetchAuthSession } from 'aws-amplify/auth';
+import { AlertCircle, ArrowLeftRight } from 'lucide-react';
+import { signIn, signOut, fetchAuthSession, getCurrentUser } from 'aws-amplify/auth';
 import Link from 'next/link';
 
 export default function LoginPage() {
@@ -32,7 +32,13 @@ function LoginContent() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [existingSession, setExistingSession] = useState(false);
   const isDemoMode = process.env.NEXT_PUBLIC_DEMO_MODE === 'true';
+
+  // Check for existing session on mount
+  useState(() => {
+    getCurrentUser().then(() => setExistingSession(true)).catch(() => {});
+  });
 
   const demoAccounts = [
     { role: 'Admin (Platform)', phone: '9000000001', password: 'DemoAdmin@123' },
@@ -45,12 +51,30 @@ function LoginContent() {
     setPassword(demoPassword);
   };
 
+  const handleClearSession = async () => {
+    try {
+      document.cookie = 'idToken=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT;';
+      try { sessionStorage.clear(); } catch {}
+      try {
+        Object.keys(localStorage).forEach(k => {
+          if (k.startsWith('CognitoIdentityServiceProvider') || k.startsWith('vyapargyan')) localStorage.removeItem(k);
+        });
+      } catch {}
+      await signOut({ global: true });
+    } catch {}
+    setExistingSession(false);
+    setError('');
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError('');
 
     try {
+      // Always sign out first to prevent session conflicts
+      try { await signOut(); } catch {}
+
       const username = phone.startsWith('+91') ? phone : `+91${phone.replace(/^0+/, '')}`;
 
       const signInResult = await signIn({
@@ -109,6 +133,19 @@ function LoginContent() {
       </p>
 
       <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+        {existingSession && (
+          <div className="flex items-start gap-2 rounded-lg bg-amber-50 border border-amber-200 p-3">
+            <ArrowLeftRight className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-600" />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-amber-800">Another account is signed in</p>
+              <p className="mt-0.5 text-xs text-amber-700">Sign in below to switch, or clear the session first.</p>
+              <button type="button" onClick={handleClearSession}
+                className="mt-1.5 rounded bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-800 hover:bg-amber-200 transition">
+                Clear Session & Switch
+              </button>
+            </div>
+          </div>
+        )}
         <div>
           <label htmlFor="phone" className="block text-sm font-medium text-gray-700">
             Phone number

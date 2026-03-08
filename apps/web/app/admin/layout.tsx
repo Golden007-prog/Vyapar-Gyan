@@ -12,7 +12,10 @@ import {
   X,
   LogOut,
   Sparkles,
+  ArrowLeftRight,
 } from 'lucide-react';
+import { signOut } from 'aws-amplify/auth';
+import { configureAmplify } from '@/lib/amplify-config';
 
 const navigation = [
   { name: 'Overview', href: '/admin', icon: LayoutDashboard },
@@ -25,8 +28,28 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const pathname = usePathname();
 
-  const handleLogout = () => {
+  useState(() => { configureAmplify(); });
+
+  const clearAllState = () => {
     document.cookie = 'idToken=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT;';
+    try { sessionStorage.clear(); } catch {}
+    try {
+      Object.keys(localStorage).forEach(k => {
+        if (k.startsWith('CognitoIdentityServiceProvider') || k.startsWith('vyapargyan')) localStorage.removeItem(k);
+      });
+    } catch {}
+  };
+
+  const handleLogout = async () => {
+    clearAllState();
+    try { await signOut({ global: true }); } catch {}
+    const base = process.env.NEXT_PUBLIC_BASE_PATH || '';
+    window.location.href = `${base}/login`;
+  };
+
+  const handleSwitchAccount = async () => {
+    clearAllState();
+    try { await signOut({ global: true }); } catch {}
     const base = process.env.NEXT_PUBLIC_BASE_PATH || '';
     window.location.href = `${base}/login`;
   };
@@ -70,7 +93,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           })}
         </nav>
 
-        <div className="border-t p-3">
+        <div className="border-t p-3 space-y-1">
+          <button onClick={handleSwitchAccount} className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-600 transition hover:bg-indigo-50 hover:text-indigo-600">
+            <ArrowLeftRight className="h-5 w-5 text-gray-400" />
+            Switch Account
+          </button>
           <button onClick={handleLogout} className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-600 transition hover:bg-red-50 hover:text-red-600">
             <LogOut className="h-5 w-5 text-gray-400" />
             Sign Out

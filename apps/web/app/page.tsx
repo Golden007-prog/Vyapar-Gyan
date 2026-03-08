@@ -33,9 +33,15 @@ export default function Home() {
           <div className="flex items-center gap-3">
             <Link
               href="/login"
-              className="rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-700"
+              className="rounded-lg border border-gray-200 px-5 py-2.5 text-sm font-semibold text-gray-700 transition hover:bg-gray-50"
             >
               Login
+            </Link>
+            <Link
+              href="/register"
+              className="rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-700"
+            >
+              Register
             </Link>
           </div>
         </div>
@@ -68,6 +74,12 @@ export default function Home() {
               >
                 Try the Demo
                 <ArrowRight className="h-5 w-5 transition-transform group-hover:translate-x-1" />
+              </Link>
+              <Link
+                href="/register"
+                className="flex items-center gap-2 rounded-lg border-2 border-indigo-200 bg-white px-8 py-4 text-lg font-semibold text-indigo-600 shadow transition-all hover:border-indigo-300 hover:bg-indigo-50"
+              >
+                Create Account
               </Link>
             </div>
 
@@ -277,6 +289,7 @@ export default function Home() {
             </div>
             <div className="flex gap-6 text-sm">
               <Link href="/login" className="transition hover:text-white">Login</Link>
+              <Link href="/register" className="transition hover:text-white">Register</Link>
             </div>
           </div>
           <div className="mt-8 border-t border-gray-800 pt-8 text-center text-xs text-gray-500">

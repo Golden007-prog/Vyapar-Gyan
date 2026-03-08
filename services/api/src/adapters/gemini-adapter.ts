@@ -38,10 +38,26 @@ export interface ProductImageAnalysis {
 }
 
 /**
+ * CSV column mapping result from Gemini
+ */
+export interface CsvColumnMapping {
+  name: number | null;
+  price: number | null;
+  quantity: number | null;
+  category: number | null;
+  sku: number | null;
+  brand: number | null;
+  variant: number | null;
+  confidence: number;
+  reasoning: string;
+}
+
+/**
  * GeminiAdapter
  * 
  * Adapter for Google Gemini AI API.
- * Provides OCR capabilities for extracting structured data from handwritten Khata books.
+ * Provides OCR capabilities for extracting structured data from handwritten Khata books,
+ * smart CSV column mapping, voice transcription, and product image analysis.
  */
 export class GeminiAdapter {
   private client: GoogleGenerativeAI | null = null;
@@ -57,6 +73,93 @@ export class GeminiAdapter {
     const config = await getConfig();
     this.client = new GoogleGenerativeAI(config.geminiApiKey);
     return this.client;
+  }
+
+  /**
+   * Smart CSV column mapping using Gemini
+   * 
+   * Sends CSV headers and sample rows to Gemini to infer column meanings,
+   * even when column names are messy, abbreviated, or in Hindi/Hinglish.
+   * 
+   * @param headers - CSV header row
+   * @param sampleRows - First 3-5 data rows for context
+   * @returns Column index mapping with confidence score
+   */
+  async mapCsvColumns(
+    headers: string[],
+    sampleRows: string[][]
+  ): Promise<CsvColumnMapping> {
+    try {
+      const client = await this.getClient();
+      const model = client.getGenerativeModel({ model: 'gemini-1.5-flash' });
+
+      const prompt = `You are an expert at understanding messy CSV files from Indian retailers.
+
+Given these CSV headers and sample data rows, identify which column index (0-based) maps to each inventory field.
+
+HEADERS: ${JSON.stringify(headers)}
+SAMPLE ROWS: ${JSON.stringify(sampleRows.slice(0, 3))}
+
+Map to these fields:
+- name: Product name / item name / description
+- price: Selling price / MRP / rate / cost (in INR)
+- quantity: Stock quantity / units / count / inventory level
+- category: Product category / type / department
+- sku: SKU code / barcode / product code
+- brand: Brand name / manufacturer
+- variant: Size / color / weight / pack size
+
+RULES:
+1. Return ONLY valid JSON, no other text
+2. Use column INDEX (0-based integer), not column name
+3. Use null if a field cannot be identified
+4. Consider Hindi/Hinglish column names (e.g. "daam" = price, "maal" = quantity, "saman" = product)
+5. Look at sample data to disambiguate (text columns = name, numeric columns = price/quantity)
+6. Provide a confidence score (0.0 to 1.0) and brief reasoning
+
+Return JSON:
+{
+  "name": 0,
+  "price": 2,
+  "quantity": 1,
+  "category": 3,
+  "sku": null,
+  "brand": null,
+  "variant": null,
+  "confidence": 0.92,
+  "reasoning": "Column 0 contains product names, column 2 has numeric prices..."
+}`;
+
+      const result = await model.generateContent(prompt);
+      const text = result.response.text();
+      const cleanText = this.cleanJsonText(text);
+      const parsed = JSON.parse(cleanText);
+
+      logger.info('Gemini CSV mapping completed', {
+        headerCount: headers.length,
+        confidence: parsed.confidence,
+      });
+
+      return {
+        name: typeof parsed.name === 'number' ? parsed.name : null,
+        price: typeof parsed.price === 'number' ? parsed.price : null,
+        quantity: typeof parsed.quantity === 'number' ? parsed.quantity : null,
+        category: typeof parsed.category === 'number' ? parsed.category : null,
+        sku: typeof parsed.sku === 'number' ? parsed.sku : null,
+        brand: typeof parsed.brand === 'number' ? parsed.brand : null,
+        variant: typeof parsed.variant === 'number' ? parsed.variant : null,
+        confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 0.5,
+        reasoning: typeof parsed.reasoning === 'string' ? parsed.reasoning : '',
+      };
+    } catch (error) {
+      logger.error('Failed to map CSV columns with Gemini', {
+        error: error instanceof Error ? error.message : String(error),
+        headerCount: headers.length,
+      });
+      throw new Error(
+        `CSV mapping failed: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
   }
 
   /**
