@@ -2040,19 +2040,8 @@ export class APIStack extends cdk.Stack {
    * Get allowed CORS origins based on environment
    */
   private getAllowedOrigins(config: EnvironmentConfig): string[] {
-    const origins: string[] = [];
-
-    if (config.environment === 'dev') {
-      origins.push('http://localhost:3000');
-      origins.push('http://localhost:3001');
-    } else if (config.environment === 'staging') {
-      origins.push('https://staging-admin.vyapargyan.com');
-      origins.push('https://staging-seller.vyapargyan.com');
-    } else {
-      origins.push('https://admin.vyapargyan.com');
-      origins.push('https://seller.vyapargyan.com');
-    }
-
-    return origins;
+    // Use origins from environment config (single source of truth)
+    // This ensures dev.ts / staging.ts / prod.ts control the allowed origins
+    return [...config.cors.allowedOrigins];
   }
 }

@@ -91,12 +91,13 @@ export function getDevConfig(account: string, region: string = 'us-east-1'): Env
       enabled: false,
     },
     
-    // CORS: Allow localhost for local development
+    // CORS: Allow localhost for local development + GitHub Pages deployment
     cors: {
       allowedOrigins: [
         'http://localhost:3000',
         'http://localhost:3001',
         'http://localhost:5173',
+        'https://golden007-prog.github.io',
       ],
       allowedMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
       allowedHeaders: ['*'],

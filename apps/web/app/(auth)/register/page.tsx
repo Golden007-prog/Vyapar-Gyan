@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { AlertCircle, ShoppingBag, Store, Info } from 'lucide-react';
+import { AlertCircle, ShoppingBag, Store, Info, CheckCircle2 } from 'lucide-react';
 import { signUp } from 'aws-amplify/auth';
 import Link from 'next/link';
 
@@ -26,6 +26,7 @@ export default function RegisterPage() {
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [demoSuccess, setDemoSuccess] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -54,6 +55,17 @@ export default function RegisterPage() {
 
     setLoading(true);
     setError('');
+
+    // Demo mode: skip Cognito entirely, show success and redirect to login
+    if (DEMO_MODE) {
+      await new Promise((r) => setTimeout(r, 800)); // simulate network delay
+      setLoading(false);
+      setDemoSuccess(true);
+      setTimeout(() => {
+        router.push('/login');
+      }, 2500);
+      return;
+    }
 
     try {
       const phoneE164 = `+91${phone}`;
@@ -117,12 +129,12 @@ export default function RegisterPage() {
     return (
       <div className="rounded-lg border bg-white p-8 shadow-lg">
         {DEMO_MODE && (
-          <div className="mb-6 flex items-start gap-3 rounded-lg bg-amber-50 border border-amber-200 p-4">
-            <Info className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-600" />
+          <div className="mb-6 flex items-start gap-3 rounded-lg bg-indigo-50 border border-indigo-200 p-4">
+            <Info className="mt-0.5 h-5 w-5 flex-shrink-0 text-indigo-600" />
             <div>
-              <p className="text-sm font-medium text-amber-800">Registration is disabled in demo mode</p>
-              <p className="mt-1 text-sm text-amber-700">
-                Please use the pre-configured demo accounts on the{' '}
+              <p className="text-sm font-medium text-indigo-800">Demo mode active</p>
+              <p className="mt-1 text-sm text-indigo-700">
+                You can register with any phone number, or use pre-configured demo accounts on the{' '}
                 <Link href="/login" className="font-semibold text-indigo-600 underline hover:text-indigo-500">
                   login page
                 </Link>.
@@ -136,8 +148,7 @@ export default function RegisterPage() {
         <div className="mt-6 space-y-3">
           <button
             onClick={() => setRole('customer')}
-            disabled={DEMO_MODE}
-            className="flex w-full items-center gap-4 rounded-lg border-2 border-gray-200 p-4 text-left transition hover:border-indigo-500 hover:bg-indigo-50 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:border-gray-200 disabled:hover:bg-white"
+            className="flex w-full items-center gap-4 rounded-lg border-2 border-gray-200 p-4 text-left transition hover:border-indigo-500 hover:bg-indigo-50"
           >
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-indigo-100">
               <ShoppingBag className="h-6 w-6 text-indigo-600" />
@@ -150,8 +161,7 @@ export default function RegisterPage() {
 
           <button
             onClick={() => setRole('seller')}
-            disabled={DEMO_MODE}
-            className="flex w-full items-center gap-4 rounded-lg border-2 border-gray-200 p-4 text-left transition hover:border-indigo-500 hover:bg-indigo-50 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:border-gray-200 disabled:hover:bg-white"
+            className="flex w-full items-center gap-4 rounded-lg border-2 border-gray-200 p-4 text-left transition hover:border-indigo-500 hover:bg-indigo-50"
           >
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100">
               <Store className="h-6 w-6 text-emerald-600" />
@@ -175,6 +185,27 @@ export default function RegisterPage() {
 
   return (
     <div className="rounded-lg border bg-white p-8 shadow-lg">
+      {demoSuccess ? (
+        <div className="text-center py-4">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-green-100">
+            <CheckCircle2 className="h-7 w-7 text-green-600" />
+          </div>
+          <h2 className="mt-4 text-xl font-semibold text-gray-900">Demo account created</h2>
+          <p className="mt-2 text-sm text-gray-600">
+            {displayName}, your {role} account has been registered locally for this demo environment.
+          </p>
+          <p className="mt-1 text-xs text-gray-400">Redirecting to login...</p>
+          <div className="mt-5 flex flex-col gap-2">
+            <Link
+              href="/login"
+              className="inline-flex justify-center rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 transition"
+            >
+              Go to Login Now
+            </Link>
+          </div>
+        </div>
+      ) : (
+      <>
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-semibold text-gray-900">
@@ -335,6 +366,8 @@ export default function RegisterPage() {
           Sign in
         </Link>
       </div>
+      </>
+      )}
     </div>
   );
 }

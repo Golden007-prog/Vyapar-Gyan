@@ -347,6 +347,8 @@ export class AuthStack extends cdk.Stack {
     if (config.environment === 'dev') {
       // Local development URLs
       urls.push(`http://localhost:3000/auth/callback`);
+      // GitHub Pages deployment
+      urls.push(`https://golden007-prog.github.io/Vyapar-Gyan/auth/callback`);
     } else if (config.environment === 'staging') {
       // Staging URLs
       urls.push(`https://staging-${appType}.vyapargyan.com/auth/callback`);
@@ -367,6 +369,8 @@ export class AuthStack extends cdk.Stack {
     if (config.environment === 'dev') {
       // Local development URLs
       urls.push(`http://localhost:3000/auth/logout`);
+      // GitHub Pages deployment
+      urls.push(`https://golden007-prog.github.io/Vyapar-Gyan/auth/logout`);
     } else if (config.environment === 'staging') {
       // Staging URLs
       urls.push(`https://staging-${appType}.vyapargyan.com/auth/logout`);

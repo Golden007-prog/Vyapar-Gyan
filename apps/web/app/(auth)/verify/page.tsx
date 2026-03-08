@@ -6,6 +6,7 @@ import { AlertCircle, CheckCircle2 } from 'lucide-react';
 import { confirmSignUp, resendSignUpCode } from 'aws-amplify/auth';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://api.vyapargyan.com';
+const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === 'true';
 const COOLDOWN_SECONDS = 60;
 const OTP_LENGTH = 6;
 
@@ -157,6 +158,23 @@ function VerifyContent() {
         <p className="text-gray-600">No phone number provided.</p>
         <a href="/register" className="mt-4 inline-block text-sm font-medium text-indigo-600 hover:text-indigo-500">
           Go to registration
+        </a>
+      </div>
+    );
+  }
+
+  if (DEMO_MODE) {
+    return (
+      <div className="rounded-lg border bg-white p-8 shadow-lg text-center">
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-indigo-100">
+          <CheckCircle2 className="h-6 w-6 text-indigo-600" />
+        </div>
+        <h2 className="mt-4 text-xl font-semibold text-gray-900">Demo Mode</h2>
+        <p className="mt-2 text-sm text-gray-600">
+          Phone verification is skipped in demo mode. Please use the pre-configured demo accounts to sign in.
+        </p>
+        <a href="/login" className="mt-4 inline-flex justify-center rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 transition">
+          Go to Login
         </a>
       </div>
     );
