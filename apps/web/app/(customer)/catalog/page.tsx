@@ -2,11 +2,13 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
-import { Search, SlidersHorizontal, X, ChevronDown, Loader2, ShoppingBag } from 'lucide-react';
+import { Search, SlidersHorizontal, X, ChevronDown, Loader2, ShoppingBag, ShoppingCart, CheckCircle2 } from 'lucide-react';
 import { listProducts, listCategories, type CatalogProduct, type Category, type ListProductsParams } from '@/lib/api-catalog';
 import { ProductCardSkeleton } from '@/components/ui/Skeleton';
 import EmptyState from '@/components/ui/EmptyState';
 import { useStore } from '@/lib/store-context';
+import { addItem as apiAddItem } from '@/lib/api-cart';
+import { addDemoItem } from '@/lib/demo-cart';
 
 type SortOption = 'popularity' | 'price_asc' | 'price_desc' | 'newest';
 
@@ -198,7 +200,7 @@ export default function CatalogPage() {
       ) : (
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
           {displayProducts.map((product) => (
-            <ProductCard key={product.productId} product={product} />
+            <ProductCard key={product.productId} product={product} sellerId={selectedStore?.sellerId || 'seller-dragon-001'} />
           ))}
         </div>
       )}
@@ -206,7 +208,10 @@ export default function CatalogPage() {
   );
 }
 
-function ProductCard({ product }: { product: CatalogProduct }) {
+function ProductCard({ product, sellerId }: { product: CatalogProduct; sellerId: string }) {
+  const [adding, setAdding] = useState(false);
+  const [added, setAdded] = useState(false);
+
   const hasDiscount = product.originalPrice && product.originalPrice > product.price;
   const discountPct = hasDiscount
     ? Math.round(((product.originalPrice! - product.price) / product.originalPrice!) * 100)
@@ -216,8 +221,26 @@ function ProductCard({ product }: { product: CatalogProduct }) {
   const colors = ['bg-indigo-100', 'bg-emerald-100', 'bg-amber-100', 'bg-rose-100', 'bg-sky-100', 'bg-violet-100'];
   const colorIdx = product.productId.split('').reduce((a, c) => a + c.charCodeAt(0), 0) % colors.length;
 
-  // Next.js <Link> automatically prepends basePath from next.config.js
-  // Do NOT manually add basePath — it causes double-prefixing on GitHub Pages
+  const handleAddToCart = async (e: React.MouseEvent) => {
+    e.preventDefault(); // Prevent Link navigation
+    e.stopPropagation();
+    if (product.stockStatus === 'out_of_stock') return;
+    setAdding(true);
+    try {
+      await apiAddItem({ productId: product.productId, quantity: 1 });
+    } catch {
+      addDemoItem(sellerId, {
+        productId: product.productId,
+        sellerId,
+        name: product.name,
+        price: product.price,
+        quantity: 1,
+      });
+    }
+    setAdding(false);
+    setAdded(true);
+    setTimeout(() => setAdded(false), 1500);
+  };
 
   return (
     <Link
@@ -259,6 +282,22 @@ function ProductCard({ product }: { product: CatalogProduct }) {
             <span className="text-xs text-gray-400 line-through">₹{product.originalPrice}</span>
           )}
         </div>
+        {product.stockStatus !== 'out_of_stock' && (
+          <button
+            onClick={handleAddToCart}
+            disabled={adding}
+            className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-indigo-700 disabled:opacity-50"
+          >
+            {adding ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : added ? (
+              <CheckCircle2 className="h-3.5 w-3.5" />
+            ) : (
+              <ShoppingCart className="h-3.5 w-3.5" />
+            )}
+            {added ? 'Added!' : 'Add to Cart'}
+          </button>
+        )}
       </div>
     </Link>
   );

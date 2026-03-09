@@ -61,7 +61,10 @@ export interface CartConflictError {
 async function getAuthToken(): Promise<string | null> {
   try {
     const { fetchAuthSession } = await import('aws-amplify/auth');
-    const session = await fetchAuthSession();
+    const session = await Promise.race([
+      fetchAuthSession(),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Auth timeout')), 2000)),
+    ]);
     return session.tokens?.accessToken?.toString() ?? null;
   } catch {
     return null;
@@ -75,22 +78,29 @@ async function cartFetch<T>(endpoint: string, options?: RequestInit): Promise<T>
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
-  const res = await fetch(url, { ...options, headers: { ...headers, ...options?.headers } });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 5000);
 
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    const error = new Error(err.error || `Cart request failed: ${res.status}`) as Error & {
-      status: number;
-      currentVersion?: number;
-    };
-    error.status = res.status;
-    if (res.status === 409 && err.currentVersion) {
-      error.currentVersion = err.currentVersion;
+  try {
+    const res = await fetch(url, { ...options, headers: { ...headers, ...options?.headers }, signal: controller.signal });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      const error = new Error(err.error || `Cart request failed: ${res.status}`) as Error & {
+        status: number;
+        currentVersion?: number;
+      };
+      error.status = res.status;
+      if (res.status === 409 && err.currentVersion) {
+        error.currentVersion = err.currentVersion;
+      }
+      throw error;
     }
-    throw error;
-  }
 
-  return res.json();
+    return res.json();
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 // --- Optimistic Update Helpers ---

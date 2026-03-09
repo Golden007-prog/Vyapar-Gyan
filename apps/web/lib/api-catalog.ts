@@ -63,7 +63,11 @@ export interface ListProductsParams {
 async function getOptionalToken(): Promise<string | null> {
   try {
     const { fetchAuthSession } = await import('aws-amplify/auth');
-    const session = await fetchAuthSession();
+    // Race against a 2-second timeout so demo mode doesn't hang
+    const session = await Promise.race([
+      fetchAuthSession(),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Auth timeout')), 2000)),
+    ]);
     return session.tokens?.accessToken?.toString() ?? null;
   } catch {
     return null;
@@ -81,14 +85,23 @@ async function catalogFetch<T>(endpoint: string): Promise<T> {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const res = await fetch(url, { headers });
+  // Use AbortController to enforce a 5-second timeout so demo mode
+  // doesn't hang when the API is unreachable (e.g. GitHub Pages)
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 5000);
 
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || `Request failed: ${res.status}`);
+  try {
+    const res = await fetch(url, { headers, signal: controller.signal });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Request failed: ${res.status}`);
+    }
+
+    return res.json();
+  } finally {
+    clearTimeout(timeoutId);
   }
-
-  return res.json();
 }
 
 // --- API Functions ---
