@@ -56,23 +56,34 @@ export default function ProductDetailClient() {
 
   useEffect(() => {
     if (!productId) return;
-    setLoading(true);
+
+    // Load demo product immediately so the page always renders content
+    const demo = DEMO_PRODUCT_MAP[productId];
+    if (demo) {
+      setProduct(demo);
+      setLoading(false);
+    }
+
+    // Then try API in background (will update if successful)
     getProduct(productId)
-      .then((res) => setProduct(res.product))
+      .then((res) => {
+        if (res.product) setProduct(res.product);
+      })
       .catch(() => {
-        // Use demo product map for known demo IDs, fallback for unknown
-        const demo = DEMO_PRODUCT_MAP[productId];
-        setProduct(demo ?? {
-          productId,
-          name: 'Demo Product',
-          description: 'This is a demo product. In production, product details are loaded from the API.',
-          price: 199,
-          originalPrice: 249,
-          stockStatus: 'in_stock',
-          imageUrls: [],
-          seller: { sellerId: 'seller-dragon-001', businessName: 'Dragon Store' },
-          createdAt: new Date().toISOString(),
-        });
+        // If no demo product was set, use generic fallback
+        if (!demo) {
+          setProduct({
+            productId,
+            name: 'Demo Product',
+            description: 'This is a demo product. In production, product details are loaded from the API.',
+            price: 199,
+            originalPrice: 249,
+            stockStatus: 'in_stock',
+            imageUrls: [],
+            seller: { sellerId: 'seller-dragon-001', businessName: 'Dragon Store' },
+            createdAt: new Date().toISOString(),
+          });
+        }
       })
       .finally(() => setLoading(false));
   }, [productId]);

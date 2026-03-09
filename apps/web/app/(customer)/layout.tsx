@@ -15,7 +15,6 @@ import {
   LogOut,
   ArrowLeftRight,
 } from 'lucide-react';
-import { signOut } from 'aws-amplify/auth';
 import { configureAmplify } from '@/lib/amplify-config';
 import {
   StoreContext,
@@ -34,7 +33,7 @@ export default function CustomerLayout({ children }: { children: React.ReactNode
   const [cartCount, setCartCount] = useState(0);
 
   useEffect(() => {
-    configureAmplify();
+    try { configureAmplify(); } catch {}
     try {
       const saved = sessionStorage.getItem(STORE_KEY);
       if (saved) {
@@ -77,7 +76,10 @@ export default function CustomerLayout({ children }: { children: React.ReactNode
 
   const handleLogout = async () => {
     clearAllState();
-    try { await signOut({ global: true }); } catch {}
+    try {
+      const { signOut } = await import('aws-amplify/auth');
+      await signOut({ global: true });
+    } catch {}
     // window.location needs full basePath since it's not a Next.js <Link>
     const base = process.env.NEXT_PUBLIC_BASE_PATH || '';
     window.location.href = `${base}/login`;
@@ -85,7 +87,10 @@ export default function CustomerLayout({ children }: { children: React.ReactNode
 
   const handleSwitchAccount = async () => {
     clearAllState();
-    try { await signOut({ global: true }); } catch {}
+    try {
+      const { signOut } = await import('aws-amplify/auth');
+      await signOut({ global: true });
+    } catch {}
     const base = process.env.NEXT_PUBLIC_BASE_PATH || '';
     window.location.href = `${base}/login`;
   };
