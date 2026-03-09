@@ -37,6 +37,8 @@ export default function CheckoutPage() {
   const [orderId, setOrderId] = useState('');
   const [error, setError] = useState('');
 
+  const basePath = process.env.NEXT_PUBLIC_BASE_PATH || '';
+
   // Customer details for demo
   const [name, setName] = useState('Demo Customer');
   const [phone, setPhone] = useState('+91 7001124396');
@@ -160,8 +162,6 @@ export default function CheckoutPage() {
       </div>
     );
   }
-
-  const basePath = process.env.NEXT_PUBLIC_BASE_PATH || '';
 
   // Empty cart redirect
   if (cart && items.length === 0) {
