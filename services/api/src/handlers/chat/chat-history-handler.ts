@@ -49,7 +49,7 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
       userId,
       limit,
       scanForward: false,
-      exclusiveStartKey,
+      ...(exclusiveStartKey ? { exclusiveStartKey } : {}),
     });
 
     let messages: MessageThread[] = result.messages;
@@ -63,7 +63,7 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
           userId, // The adapter uses THREAD#{userId} — legacy data would need
           limit,  // to have been partially migrated to this key pattern already.
           scanForward: false,
-          exclusiveStartKey,
+          ...(exclusiveStartKey ? { exclusiveStartKey } : {}),
         });
 
         // Merge and deduplicate by messageId, sort by createdAt descending

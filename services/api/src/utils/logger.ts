@@ -87,9 +87,17 @@ function formatError(error: Error | unknown): { message: string; stack?: string;
     return formatted;
   }
   
+  // For non-Error objects (e.g. Gemini SDK errors), try JSON.stringify for full details
+  let message: string;
+  if (typeof error === 'string') {
+    message = error;
+  } else {
+    try { message = JSON.stringify(error); } catch { message = String(error); }
+  }
+  
   return {
-    name: 'UnknownError',
-    message: String(error),
+    name: (error as any)?.constructor?.name || 'UnknownError',
+    message,
   };
 }
 

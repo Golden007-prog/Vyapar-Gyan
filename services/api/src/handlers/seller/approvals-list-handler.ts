@@ -27,7 +27,7 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
 
     const { status, limit, cursor } = parsed.data;
 
-    const result = await getApprovalsBySeller({ sellerId, status, limit, cursor });
+    const result = await getApprovalsBySeller({ sellerId, status, limit, ...(cursor ? { cursor } : {}) });
 
     // Sort by priorityScore descending (GSI1 sorts by status+timestamp, not priority)
     result.approvals.sort((a, b) => (b.priorityScore ?? 0) - (a.priorityScore ?? 0));

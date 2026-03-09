@@ -21,6 +21,7 @@ module.exports = {
     '^@services/(.*)$': '<rootDir>/src/services/$1',
     '^@integrations/(.*)$': '<rootDir>/src/integrations/$1',
     '^@utils/(.*)$': '<rootDir>/src/utils/$1',
+    '^(.*)\\.js$': '$1',
   },
   setupFilesAfterEnv: [],
   testTimeout: 10000,

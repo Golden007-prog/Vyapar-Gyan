@@ -86,6 +86,26 @@ jest.mock('../states/router', () => ({
   routeMessage: jest.fn().mockResolvedValue(undefined),
 }));
 
+// Mock Gemini adapter for voice pipeline transcription and TTS
+const mockTranscribeVoiceNote = jest.fn().mockResolvedValue({
+  transcript: 'Hello I want to buy something',
+  detectedLanguage: 'English',
+  confidence: 85,
+  products: [],
+});
+const mockTextToSpeech = jest.fn().mockResolvedValue(Buffer.from('fake-tts-audio'));
+jest.mock('../../../adapters/gemini-adapter', () => ({
+  GeminiAdapter: jest.fn().mockImplementation(() => ({
+    transcribeVoiceNote: (...args: any[]) => mockTranscribeVoiceNote(...args),
+    textToSpeech: (...args: any[]) => mockTextToSpeech(...args),
+  })),
+}));
+
+// Mock @aws-sdk/s3-request-presigner for pre-signed URL generation
+jest.mock('@aws-sdk/s3-request-presigner', () => ({
+  getSignedUrl: jest.fn().mockResolvedValue('https://s3.amazonaws.com/test-media-bucket/voice/outbound/presigned-url'),
+}));
+
 // Mock global fetch for Twilio media download
 const mockFetch = jest.fn();
 global.fetch = mockFetch as any;
@@ -150,8 +170,8 @@ describe('WhatsApp Worker — Media Integration', () => {
     sqsMock.on(SendMessageCommand).resolves({ MessageId: 'sqs-out-1' });
   });
 
-  describe('Voice Note Detection (Task 17.1)', () => {
-    it('should download audio, store in S3, and publish VoiceNoteReceived to SQS', async () => {
+  describe('Voice Note Detection — Inline Pipeline', () => {
+    it('should download audio, store inbound in S3, transcribe, and route through voice pipeline', async () => {
       const audioBuffer = Buffer.from('fake-ogg-audio-data');
       mockFetch.mockResolvedValueOnce({
         ok: true,
@@ -164,51 +184,32 @@ describe('WhatsApp Worker — Media Integration', () => {
         from: '919876543210',
         type: 'audio',
         timestamp: '1700000000',
-        audio: { id: 'media-audio-id', url: 'https://api.twilio.com/media/audio-123' },
+        audio: { id: 'media-audio-id', url: 'https://api.twilio.com/media/audio-123', mime_type: 'audio/ogg' },
       });
 
-      // Spy on console.error to catch any swallowed errors
-      const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
-      await handler(event);
-      
-      // Check if there were any errors
-      if (errorSpy.mock.calls.length > 0) {
-        console.log('ERRORS CAUGHT:', JSON.stringify(errorSpy.mock.calls.map(c => c[0])));
-      }
-      
-      // Debug: check all mockSendMessage calls
-      console.log('mockSendMessage calls:', mockSendMessage.mock.calls.length);
-      console.log('mockFetch calls:', mockFetch.mock.calls.length);
-      console.log('getUserByPhone calls:', mockGetUserByPhone.mock.calls.length);
-      
-      errorSpy.mockRestore();
-
       await handler(event);
 
-      // Should send processing acknowledgment
-      expect(mockSendMessage).toHaveBeenCalledWith(
-        '919876543210',
-        { type: 'text', text: '🔄 Processing your voice note...' },
-        expect.stringContaining('media-ack-'),
+      // Should download audio from Twilio
+      expect(mockFetch).toHaveBeenCalled();
+
+      // Should store inbound audio in S3 under voice/inbound/ prefix
+      const s3Calls = s3Mock.commandCalls(PutObjectCommand);
+      expect(s3Calls.length).toBeGreaterThanOrEqual(1);
+      const inboundCall = s3Calls.find(c => c.args[0].input.Key?.startsWith('voice/inbound/'));
+      expect(inboundCall).toBeTruthy();
+      expect(inboundCall!.args[0].input.Bucket).toBe('test-media-bucket');
+      expect(inboundCall!.args[0].input.Key).toMatch(/^voice\/inbound\/user-123\/\d+\.ogg$/);
+      expect(inboundCall!.args[0].input.ContentType).toBe('audio/ogg');
+
+      // Should call Gemini transcription
+      expect(mockTranscribeVoiceNote).toHaveBeenCalledWith(
+        expect.any(Buffer),
+        'auto',
+        [],
       );
 
-      // Should upload to S3 with correct key pattern
-      const s3Calls = s3Mock.commandCalls(PutObjectCommand);
-      expect(s3Calls).toHaveLength(1);
-      const s3Input = s3Calls[0].args[0].input;
-      expect(s3Input.Bucket).toBe('test-media-bucket');
-      expect(s3Input.Key).toMatch(/^voice\/user-123\/\d+\.ogg$/);
-      expect(s3Input.ContentType).toBe('audio/ogg');
-
-      // Should publish to SQS media queue
-      const sqsCalls = sqsMock.commandCalls(SendMessageCommand);
-      expect(sqsCalls).toHaveLength(1);
-      const sqsBody = JSON.parse(sqsCalls[0].args[0].input.MessageBody!);
-      expect(sqsBody.mediaType).toBe('voice_note');
-      expect(sqsBody.userId).toBe('user-123');
-      expect(sqsBody.s3Key).toMatch(/^voice\/user-123\/\d+\.ogg$/);
-      expect(sqsBody.mimeType).toBe('audio/ogg');
-      expect(sqsBody.channel).toBe('whatsapp');
+      // Should NOT publish to SQS media queue (inline processing, no offload)
+      expect(sqsMock.commandCalls(SendMessageCommand)).toHaveLength(0);
     });
 
     it('should send fallback message when media download fails', async () => {
@@ -228,15 +229,15 @@ describe('WhatsApp Worker — Media Integration', () => {
 
       await handler(event);
 
-      // Should send fallback message (after ack)
+      // Should send download-failure fallback
       const fallbackCall = mockSendMessage.mock.calls.find(
         (call: any[]) => typeof call[1]?.text === 'string' && call[1].text.includes("couldn't process that voice note")
       );
       expect(fallbackCall).toBeTruthy();
 
-      // Should NOT upload to S3 or publish to SQS
+      // Should NOT upload to S3 or call transcription
       expect(s3Mock.commandCalls(PutObjectCommand)).toHaveLength(0);
-      expect(sqsMock.commandCalls(SendMessageCommand)).toHaveLength(0);
+      expect(mockTranscribeVoiceNote).not.toHaveBeenCalled();
     });
   });
 

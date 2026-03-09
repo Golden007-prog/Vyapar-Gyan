@@ -207,8 +207,16 @@ let _tableName: string;
 
 async function tableName(): Promise<string> {
   if (!_tableName) {
-    const cfg = await getConfig();
-    _tableName = cfg.tableName;
+    // Read directly from env var — avoids loading full getConfig() which
+    // requires ALL secrets (gemini, grok, razorpay) even when only DynamoDB is needed.
+    const envTable = process.env.TABLE_NAME;
+    if (envTable) {
+      _tableName = envTable;
+    } else {
+      // Fallback to full config for local dev where env var may not be set
+      const cfg = await getConfig();
+      _tableName = cfg.tableName;
+    }
   }
   return _tableName;
 }

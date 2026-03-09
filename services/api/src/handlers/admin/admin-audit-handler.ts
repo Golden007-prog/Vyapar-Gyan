@@ -38,7 +38,7 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
   const requestId = event.requestContext.requestId;
 
   try {
-    const userId = extractUserId(event);
+    extractUserId(event); // validate auth token
     const role = extractUserRole(event);
 
     if (role !== 'admin') {

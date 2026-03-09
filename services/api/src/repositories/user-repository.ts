@@ -33,8 +33,13 @@ let tableName: string;
 export class UserRepository {
   private async getTableName(): Promise<string> {
     if (!tableName) {
-      const config = await getConfig();
-      tableName = config.tableName;
+      const envTable = process.env.TABLE_NAME;
+      if (envTable) {
+        tableName = envTable;
+      } else {
+        const config = await getConfig();
+        tableName = config.tableName;
+      }
     }
     return tableName;
   }

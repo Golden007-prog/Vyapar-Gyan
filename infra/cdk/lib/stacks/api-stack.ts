@@ -174,8 +174,9 @@ export class APIStack extends cdk.Stack {
     table.grantReadWriteData(this.whatsappWebhookFunction);
     eventBus.grantPutEventsTo(this.whatsappWebhookFunction);
     
-    // Grant Secrets Manager permissions for Twilio credentials
+    // Grant Secrets Manager permissions for Twilio credentials and AI API keys
     // Note: Secrets Manager ARNs require wildcard suffix for the random 6-character suffix
+    // getConfig() loads ALL secrets in parallel — missing any causes full config failure
     this.whatsappWebhookFunction.addToRolePolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,
@@ -183,6 +184,8 @@ export class APIStack extends cdk.Stack {
         resources: [
           `arn:aws:secretsmanager:${config.region}:${config.account}:secret:/${config.environment}/twilio/*`,
           `arn:aws:secretsmanager:${config.region}:${config.account}:secret:/${config.environment}/razorpay/*`,
+          `arn:aws:secretsmanager:${config.region}:${config.account}:secret:/${config.environment}/gemini/*`,
+          `arn:aws:secretsmanager:${config.region}:${config.account}:secret:/${config.environment}/grok/*`,
           `arn:aws:secretsmanager:${config.region}:${config.account}:secret:GEMINI_API_KEY-*`,
           `arn:aws:secretsmanager:${config.region}:${config.account}:secret:GROK_API_KEY-*`,
         ],

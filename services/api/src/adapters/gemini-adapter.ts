@@ -1,6 +1,13 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { logger } from '../utils/logger';
-import { getConfig } from '../utils/config';
+import { getConfig, getVoicePipelineConfig } from '../utils/config';
+
+/** Safely serialize any thrown value into a readable string */
+function serializeError(err: unknown): string {
+  if (err instanceof Error) return `${err.name}: ${err.message}`;
+  if (typeof err === 'string') return err;
+  try { return JSON.stringify(err); } catch { return String(err); }
+}
 
 /** Supported languages for voice transcription */
 const SUPPORTED_LANGUAGES = [
@@ -23,6 +30,8 @@ export interface VoiceTranscription {
   transcript: string;
   products: Array<{ name: string; quantity: number; confidence: number }>;
   detectedLanguage: string;
+  /** Overall transcription confidence score (0-100) */
+  confidence: number;
 }
 
 /**
@@ -61,19 +70,45 @@ export interface CsvColumnMapping {
  */
 export class GeminiAdapter {
   private client: GoogleGenerativeAI | null = null;
+  private apiKey: string | undefined;
 
   /**
-   * Initialize Gemini client with API key from config
+   * @param apiKey Optional direct API key. When provided the adapter skips
+   *              config loading entirely — useful for the voice pipeline where
+   *              we resolve the Gemini key independently.
+   */
+  constructor(apiKey?: string) {
+    this.apiKey = apiKey;
+  }
+
+  /**
+   * Initialize Gemini client.
+   * If an apiKey was provided at construction time, use it directly.
+   * Otherwise fall back to the voice pipeline config (isolated from full config).
    */
   private async getClient(): Promise<GoogleGenerativeAI> {
     if (this.client) {
       return this.client;
     }
 
-    const config = await getConfig();
-    this.client = new GoogleGenerativeAI(config.geminiApiKey);
-    return this.client;
+    if (this.apiKey) {
+      this.client = new GoogleGenerativeAI(this.apiKey);
+      return this.client;
+    }
+
+    // Use voice pipeline config to avoid full-config dependency
+    try {
+      const voiceConfig = await getVoicePipelineConfig();
+      this.client = new GoogleGenerativeAI(voiceConfig.geminiApiKey);
+      return this.client;
+    } catch {
+      // Final fallback: full config
+      const config = await getConfig();
+      this.client = new GoogleGenerativeAI(config.geminiApiKey);
+      return this.client;
+    }
   }
+
 
   /**
    * Smart CSV column mapping using Gemini
@@ -91,7 +126,7 @@ export class GeminiAdapter {
   ): Promise<CsvColumnMapping> {
     try {
       const client = await this.getClient();
-      const model = client.getGenerativeModel({ model: 'gemini-1.5-flash' });
+      const model = client.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
       const prompt = `You are an expert at understanding messy CSV files from Indian retailers.
 
@@ -152,12 +187,12 @@ Return JSON:
         reasoning: typeof parsed.reasoning === 'string' ? parsed.reasoning : '',
       };
     } catch (error) {
-      logger.error('Failed to map CSV columns with Gemini', {
-        error: error instanceof Error ? error.message : String(error),
+      logger.error('Failed to map CSV columns with Gemini', error, {
+        errorSerialized: serializeError(error),
         headerCount: headers.length,
       });
       throw new Error(
-        `CSV mapping failed: ${error instanceof Error ? error.message : String(error)}`
+        `CSV mapping failed: ${serializeError(error)}`
       );
     }
   }
@@ -175,7 +210,7 @@ Return JSON:
   ): Promise<KhataBookProduct[]> {
     try {
       const client = await this.getClient();
-      const model = client.getGenerativeModel({ model: 'gemini-1.5-flash' });
+      const model = client.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
       // Convert buffer to base64
       const base64Image = imageBuffer.toString('base64');
@@ -233,12 +268,12 @@ Now extract the products from this Khata book image:`;
 
       return products;
     } catch (error) {
-      logger.error('Failed to parse Khata book image', {
-        error: error instanceof Error ? error.message : String(error),
+      logger.error('Failed to parse Khata book image', error, {
+        errorSerialized: serializeError(error),
         mimeType,
       });
       throw new Error(
-        `Gemini OCR failed: ${error instanceof Error ? error.message : String(error)}`
+        `Gemini OCR failed: ${serializeError(error)}`
       );
     }
   }
@@ -290,7 +325,7 @@ Now extract the products from this Khata book image:`;
       return products;
     } catch (error) {
       logger.error('Failed to parse Gemini JSON response', {
-        error: error instanceof Error ? error.message : String(error),
+        error: serializeError(error),
         responseText: text.substring(0, 500), // Log first 500 chars
       });
       throw new Error('Invalid JSON response from Gemini');
@@ -328,7 +363,7 @@ Now extract the products from this Khata book image:`;
   ): Promise<VoiceTranscription> {
     try {
       const client = await this.getClient();
-      const model = client.getGenerativeModel({ model: 'gemini-1.5-flash' });
+      const model = client.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
       const base64Audio = audioBuffer.toString('base64');
 
@@ -347,10 +382,12 @@ IMPORTANT RULES:
 5. Use browsing context to disambiguate similar product names
 6. If no products are mentioned, return an empty products array
 7. Detect the spoken language and return it in the detectedLanguage field
+8. Assign an overall confidence score (0-100) for the transcription quality — how confident you are in the accuracy of the full transcript
 
 Return JSON in this exact format:
 {
   "transcript": "full transcription text",
+  "confidence": 85,
   "products": [
     { "name": "product name", "quantity": 1, "confidence": 85 }
   ],
@@ -384,6 +421,9 @@ Return JSON in this exact format:
         detectedLanguage: typeof parsed.detectedLanguage === 'string'
           ? parsed.detectedLanguage
           : languageHint,
+        confidence: typeof parsed.confidence === 'number'
+          ? Math.max(0, Math.min(100, parsed.confidence))
+          : 80,
         products: [],
       };
 
@@ -403,19 +443,95 @@ Return JSON in this exact format:
 
       logger.info('Voice note transcribed successfully', {
         detectedLanguage: transcription.detectedLanguage,
+        confidence: transcription.confidence,
         productCount: transcription.products.length,
         transcriptLength: transcription.transcript.length,
       });
 
       return transcription;
     } catch (error) {
-      logger.error('Failed to transcribe voice note', {
-        error: error instanceof Error ? error.message : String(error),
+      logger.error('Failed to transcribe voice note', error, {
+        errorSerialized: serializeError(error),
+        errorType: typeof error,
+        errorConstructor: (error as any)?.constructor?.name,
         languageHint,
         browsingContextCount: browsingContext.length,
       });
       throw new Error(
-        `Voice transcription failed: ${error instanceof Error ? error.message : String(error)}`
+        `Voice transcription failed: ${serializeError(error)}`
+      );
+    }
+  }
+
+  /**
+   * Convert text to speech audio via Gemini TTS
+   *
+   * Uses the Gemini 2.5 Flash TTS model with multimodal generation to produce
+   * spoken audio from text input. Returns raw audio bytes as a Buffer.
+   *
+   * @param text - Text to convert to speech
+   * @param language - Language of the text (e.g. 'Hindi', 'English')
+   * @param voiceStyle - Voice style hint (default: 'conversational')
+   * @returns Buffer containing audio data (caller wraps as OGG/Opus for WhatsApp)
+   * @throws Error if TTS generation fails (caller handles fallback)
+   */
+  async textToSpeech(
+    text: string,
+    language: string,
+    voiceStyle: 'conversational' = 'conversational',
+  ): Promise<Buffer> {
+    try {
+      const client = await this.getClient();
+
+      // Use the TTS-specific model with speech generation config.
+      // The @google/generative-ai SDK v0.21 doesn't have typed TTS support,
+      // so we pass the TTS config fields via generationConfig cast.
+      const model = client.getGenerativeModel({
+        model: 'gemini-2.5-flash-preview-tts',
+        generationConfig: {
+          responseModalities: ['AUDIO'],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: {
+                voiceName: 'Kore',
+              },
+            },
+          },
+        } as any,
+      });
+
+      const prompt = `Say in a ${voiceStyle} tone in ${language}:\n${text}`;
+
+      const result = await model.generateContent(prompt);
+      const response = result.response;
+
+      // Extract audio data from the response inline data
+      const candidate = response.candidates?.[0];
+      const part = candidate?.content?.parts?.[0];
+      const inlineData = (part as any)?.inlineData;
+
+      if (!inlineData?.data) {
+        throw new Error('No audio data in Gemini TTS response');
+      }
+
+      const audioBuffer = Buffer.from(inlineData.data, 'base64');
+
+      logger.info('TTS audio generated successfully', {
+        language,
+        voiceStyle,
+        textLength: text.length,
+        audioSizeBytes: audioBuffer.length,
+      });
+
+      return audioBuffer;
+    } catch (error) {
+      logger.error('Failed to generate TTS audio', error, {
+        errorSerialized: serializeError(error),
+        language,
+        textLength: text.length,
+      });
+      throw new Error(
+        `TTS generation failed: ${serializeError(error)}`
       );
     }
   }
@@ -436,7 +552,7 @@ Return JSON in this exact format:
   ): Promise<ProductImageAnalysis> {
     try {
       const client = await this.getClient();
-      const model = client.getGenerativeModel({ model: 'gemini-1.5-flash' });
+      const model = client.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
       const base64Image = imageBuffer.toString('base64');
 
@@ -501,12 +617,12 @@ Return JSON in this exact format:
 
       return analysis;
     } catch (error) {
-      logger.error('Failed to analyze product image', {
-        error: error instanceof Error ? error.message : String(error),
+      logger.error('Failed to analyze product image', error, {
+        errorSerialized: serializeError(error),
         mimeType,
       });
       throw new Error(
-        `Image analysis failed: ${error instanceof Error ? error.message : String(error)}`
+        `Image analysis failed: ${serializeError(error)}`
       );
     }
   }

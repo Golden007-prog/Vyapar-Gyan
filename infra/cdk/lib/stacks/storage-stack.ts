@@ -292,6 +292,14 @@ export class StorageStack extends cdk.Stack {
       });
     }
 
+    // Expire voice media files after 24 hours (voice notes are temporary)
+    rules.push({
+      id: 'expire-voice-media',
+      enabled: true,
+      prefix: 'voice/',
+      expiration: cdk.Duration.days(1),
+    });
+
     // Clean up incomplete multipart uploads after 7 days
     rules.push({
       id: 'abort-incomplete-multipart-uploads',

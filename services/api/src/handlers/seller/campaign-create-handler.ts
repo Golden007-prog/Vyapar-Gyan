@@ -14,6 +14,7 @@ import { logger } from '../../utils/logger';
 import { extractUserId, UnauthorizedError } from '../../core/auth';
 import { CreateCampaignSchema } from '../../shared/schemas';
 import { createCampaign } from '../../services/campaign-service';
+import type { AudienceFilters } from '../../adapters/dynamodb-adapter';
 import { logAction } from '../../services/audit-service';
 
 export async function handler(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResultV2> {
@@ -34,14 +35,20 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
 
     const input = parsed.data;
 
+    // Strip undefined values from audienceFilters to satisfy exactOptionalPropertyTypes
+    const cleanFilters: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(input.audienceFilters)) {
+      if (v !== undefined) cleanFilters[k] = v;
+    }
+
     // Create campaign via service
     const campaign = await createCampaign({
       sellerId,
-      approvalId: input.approvalId,
       messageText: input.messageText,
-      templateSid: input.templateSid,
-      audienceFilters: input.audienceFilters,
-      scheduledAt: input.scheduledAt,
+      audienceFilters: cleanFilters as AudienceFilters,
+      ...(input.approvalId ? { approvalId: input.approvalId } : {}),
+      ...(input.templateSid ? { templateSid: input.templateSid } : {}),
+      ...(input.scheduledAt ? { scheduledAt: input.scheduledAt } : {}),
     });
 
     // Audit log (fire-and-forget)

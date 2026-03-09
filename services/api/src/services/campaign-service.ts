@@ -99,19 +99,19 @@ export async function createCampaign(params: CreateCampaignParams): Promise<Camp
   const campaign: CampaignRecord = {
     campaignId,
     sellerId: params.sellerId,
-    approvalId: params.approvalId,
     status: 'draft',
     messageText: params.messageText,
-    templateSid: params.templateSid,
     audienceFilters: params.audienceFilters,
     estimatedReach,
     sentCount: 0,
     deliveredCount: 0,
     readCount: 0,
     conversionCount: 0,
-    scheduledAt: params.scheduledAt,
     createdAt: now,
     updatedAt: now,
+    ...(params.approvalId ? { approvalId: params.approvalId } : {}),
+    ...(params.templateSid ? { templateSid: params.templateSid } : {}),
+    ...(params.scheduledAt ? { scheduledAt: params.scheduledAt } : {}),
   };
 
   await putCampaign(campaign);

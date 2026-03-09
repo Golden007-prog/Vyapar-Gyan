@@ -34,6 +34,7 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     const { content, messageType, sellerId, productContext } = parsed.data;
     const messageId = randomUUID();
     const createdAt = new Date().toISOString();
+    const MESSAGE_TTL_SECONDS = 30 * 24 * 60 * 60; // 30 days
 
     // Store message in THREAD#{userId}
     await putMessage({
@@ -48,6 +49,7 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
         : { text: content },
       deliveryStatus: 'sent',
       createdAt,
+      expiresAt: Math.floor(Date.now() / 1000) + MESSAGE_TTL_SECONDS,
     });
 
     // Publish CustomerMessageSent event for cross-channel routing

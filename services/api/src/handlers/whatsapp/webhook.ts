@@ -4,12 +4,12 @@ import { DynamoDBClient, PutItemCommand, ConditionalCheckFailedException } from 
 import { marshall } from '@aws-sdk/util-dynamodb';
 import { validateRequest } from 'twilio';
 import { logger } from '../../utils/logger';
-import { getConfig, type Config } from '../../utils/config';
+import { getWebhookConfig, type WebhookConfig } from '../../utils/config';
 import { publishLatencyMetric, publishCountMetric } from '../../core/metrics';
 
 const eventBridgeClient = new EventBridgeClient({});
 const dynamoDBClient = new DynamoDBClient({});
-let config: Config;
+let config: WebhookConfig;
 
 /**
  * WhatsApp Webhook Handler
@@ -40,12 +40,15 @@ export const handler = async (
     if (!config) {
       logger.info('Loading configuration from Secrets Manager and SSM', { requestId });
       try {
-        config = await getConfig();
-        logger.info('Configuration loaded successfully', { requestId });
+        config = await getWebhookConfig();
+        logger.info('Configuration loaded successfully (webhook-only config)', { requestId });
       } catch (configError) {
+        const cfgErrMsg = configError instanceof Error
+          ? configError.message
+          : (typeof configError === 'object' ? JSON.stringify(configError) : String(configError));
         logger.error('FATAL: Failed to load configuration', {
           requestId,
-          error: configError instanceof Error ? configError.message : String(configError),
+          error: cfgErrMsg,
           stack: configError instanceof Error ? configError.stack : undefined,
         });
         throw configError;
@@ -68,18 +71,23 @@ export const handler = async (
 
     return await handleIncomingWebhook(event, requestId);
   } catch (error) {
+    const errMsg = error instanceof Error
+      ? error.message
+      : (typeof error === 'object' ? JSON.stringify(error) : String(error));
     logger.error('FATAL: Error processing Twilio webhook', {
       requestId,
-      error: error instanceof Error ? error.message : String(error),
+      error: errMsg,
       stack: error instanceof Error ? error.stack : undefined,
       errorName: error instanceof Error ? error.name : 'Unknown',
     });
 
     // Return 200 to prevent Twilio from retrying
     // Errors are logged and can be investigated via CloudWatch
+    // IMPORTANT: Return empty TwiML, never JSON — Twilio can echo JSON as a message
     return {
       statusCode: 200,
-      body: JSON.stringify({ status: 'error_logged' }),
+      headers: { 'Content-Type': 'text/xml' },
+      body: '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
     };
   } finally {
     publishLatencyMetric('WhatsAppWebhookLatency', Date.now() - startTime, { Channel: 'whatsapp' });
@@ -107,7 +115,8 @@ async function handleIncomingWebhook(
     logger.warn('Empty webhook body received', { requestId });
     return {
       statusCode: 200,
-      body: JSON.stringify({ status: 'ignored' }),
+      headers: { 'Content-Type': 'text/xml' },
+      body: '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
     };
   }
 
@@ -130,10 +139,13 @@ async function handleIncomingWebhook(
     });
     return {
       statusCode: 200,
-      body: JSON.stringify({ status: 'invalid_body' }),
+      headers: { 'Content-Type': 'text/xml' },
+      body: '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
     };
   }
 
+  // ── Forensic logging: capture ALL Twilio fields relevant to voice/media detection ──
+  const numMedia = parseInt(twilioPayload.NumMedia || '0', 10);
   logger.info('Twilio webhook payload parsed successfully', {
     requestId,
     from: twilioPayload.From,
@@ -141,7 +153,25 @@ async function handleIncomingWebhook(
     messageSid: twilioPayload.SmsMessageSid || twilioPayload.MessageSid,
     messageStatus: twilioPayload.SmsStatus || twilioPayload.MessageStatus,
     bodyPreview: twilioPayload.Body?.substring(0, 50),
+    // Voice/media forensic fields
+    numMedia,
+    mediaContentType0: twilioPayload.MediaContentType0 || null,
+    mediaUrl0: twilioPayload.MediaUrl0?.substring(0, 80) || null,
+    messageType: twilioPayload.MessageType || null,
+    profileName: twilioPayload.ProfileName || null,
+    waId: twilioPayload.WaId || null,
   });
+
+  // Classify message type for logging
+  let classifiedType = 'text';
+  if (numMedia > 0) {
+    const ct = twilioPayload.MediaContentType0 || '';
+    if (ct.startsWith('audio/')) classifiedType = 'audio/voice';
+    else if (ct.startsWith('image/')) classifiedType = 'image';
+    else if (ct.startsWith('video/')) classifiedType = 'video';
+    else classifiedType = 'unsupported_media';
+  }
+  logger.info('Webhook message classified', { requestId, classifiedType, numMedia });
 
   // Verify Twilio webhook signature using parsed params
   const signature = event.headers['x-twilio-signature'] || event.headers['X-Twilio-Signature'];
@@ -326,7 +356,7 @@ function parseFormData(body: string): Record<string, string> | null {
  * - ProfileName: Sender's WhatsApp profile name
  * - SmsStatus or MessageStatus: Message status (received, sent, delivered, read, failed)
  */
-function transformTwilioToWhatsAppFormat(twilioPayload: Record<string, string>, requestId: string): any {
+export function transformTwilioToWhatsAppFormat(twilioPayload: Record<string, string>, requestId: string): any {
   // Extract phone number from whatsapp:+1234567890 format
   // IMPORTANT: Keep the + prefix to match database format (+918927049085)
   const fromNumber = twilioPayload.From?.replace('whatsapp:', '') || '';
@@ -388,6 +418,12 @@ function transformTwilioToWhatsAppFormat(twilioPayload: Record<string, string>, 
       mime_type: twilioPayload.MediaContentType0,
       url: twilioPayload.MediaUrl0,
     };
+    logger.info('Audio message transformed', {
+      requestId,
+      hasMediaUrl0: !!twilioPayload.MediaUrl0,
+      mediaContentType: twilioPayload.MediaContentType0,
+      mediaUrl0Preview: twilioPayload.MediaUrl0?.substring(0, 60),
+    });
   } else if (messageType === 'document') {
     message.document = {
       id: messageSid,
@@ -491,29 +527,9 @@ async function publishToEventBridge(payload: any, requestId: string): Promise<vo
   let userRole: string | undefined;
   let userId: string | undefined;
   
-  // HARDCODED SELLER OVERRIDE: Force seller routing for test number
-  // This overrides any database records to ensure seller copilot routing
-  const SELLER_TEST_NUMBER = '+918927049085';
-  const SELLER_TEST_ID = 'seller-dragon-001'; // Hardcoded seller ID for testing
-  
-  if (phoneNumber === SELLER_TEST_NUMBER) {
-    logger.info('Detected hardcoded seller test number - forcing seller routing', {
-      requestId,
-      phoneNumber,
-      forcedSellerId: SELLER_TEST_ID,
-    });
-    
-    // Force seller role and ID for routing
-    userRole = 'seller';
-    userId = SELLER_TEST_ID;
-    
-    logger.info('Hardcoded seller routing configured', {
-      requestId,
-      phoneNumber,
-      userRole,
-      userId,
-    });
-  } else if (phoneNumber) {
+  // Unified role resolution: always use DB lookup (no hardcoded overrides)
+  // The worker also does getUserByPhone — both must agree on the same source of truth
+  if (phoneNumber) {
     // Normal flow: Check if this phone number belongs to a registered user (seller/admin)
     try {
       const { UserRepository } = await import('../../repositories/user-repository.js');
@@ -559,10 +575,6 @@ async function publishToEventBridge(payload: any, requestId: string): Promise<vo
       },
     ],
   });
-
-  // Debug: Log what we're sending to EventBridge
-  console.log('PUBLISHING TO EVENTBRIDGE - payload type:', typeof payload);
-  console.log('PUBLISHING TO EVENTBRIDGE - payload:', JSON.stringify(payload, null, 2));
 
   const response = await eventBridgeClient.send(command);
   

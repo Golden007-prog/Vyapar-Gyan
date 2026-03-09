@@ -24,7 +24,6 @@ import { logger } from '../../utils/logger';
 import { getUserProfile, putMessage } from '../../adapters/dynamodb-adapter';
 import { checkSendPermission } from '../../services/consent-service';
 import { twilioAdapter } from '../../adapters/twilio-adapter';
-import { randomUUID } from 'crypto';
 
 // ---------------------------------------------------------------------------
 // Types

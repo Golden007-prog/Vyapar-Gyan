@@ -122,7 +122,7 @@ export async function resolveOrCreateSession(params: {
     hasRestoredCart: !!restoredCart,
   });
 
-  return { session: newSession, isNew: true, restoredCart };
+  return { session: newSession, isNew: true, ...(restoredCart ? { restoredCart } : {}) };
 }
 
 /**

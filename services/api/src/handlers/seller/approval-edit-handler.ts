@@ -57,7 +57,7 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     const originalPayload = existing.payload;
 
     // Transition status to edited_approved
-    const updated = await transitionStatus({
+    await transitionStatus({
       approvalId,
       sellerId,
       newStatus: 'edited_approved',

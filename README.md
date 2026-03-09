@@ -31,9 +31,10 @@ pnpm --filter @vyapargyan/web dev
 VyaparGyan bridges the gap between traditional retail and digital commerce by providing:
 
 - **Omnichannel Commerce**: Customers shop via web chat and WhatsApp (Twilio), sellers manage everything from one unified inbox
+- **Voice-First Shopping**: Multilingual voice note support (Hindi, English, Tamil, Telugu, Marathi, Bengali, Gujarati, Kannada) with automatic transcription and product intent extraction via Gemini 2.0
 - **AI Business Manager**: Proactive insights for dead stock detection, dynamic pricing, and automated WhatsApp marketing campaigns (Bedrock + Gemini + Grok)
 - **Khata Book OCR**: Sellers photograph handwritten ledgers; Gemini Vision digitizes inventory automatically
-- **CSV Stock Ingestion**: Bulk inventory upload with column validation and error feedback
+- **CSV Stock Ingestion**: Bulk inventory upload with smart column mapping and error feedback
 - **Smart Payments**: Razorpay Route handles commission splitting and direct seller payouts
 - **Full Admin Control**: Platform moderation, seller approval/rejection, system health monitoring, audit trails
 - **Event-driven workflows**: Automated order processing, AI campaign execution, notifications, and audit trails
@@ -51,7 +52,7 @@ Modern AWS serverless architecture built for scale and operational simplicity:
 - **Messaging**: Twilio SDK for omnichannel messaging (WhatsApp, SMS, in-app chat routing)
 - **Payments**: Razorpay Route (Transfers) for automated commission splitting and seller payouts
 - **AI — Orchestration**: Amazon Bedrock for dead-stock detection and discount campaign generation
-- **AI — Analysis**: Google Gemini for OCR, voice transcription, and market analysis
+- **AI — Analysis**: Google Gemini 2.0 Flash for OCR, multilingual voice transcription, product intent extraction, and market analysis
 - **AI — Trends**: xAI Grok for live market trend research and dynamic pricing
 - **Frontend**: Next.js 14 with Tailwind CSS (22 pages, 14 components)
 - **Observability**: CloudWatch Logs, Metrics, Alarms, and X-Ray tracing
@@ -211,12 +212,13 @@ cd tools/mcp/commerce-admin && pnpm install && pnpm build
 - Seller onboarding with document verification and admin approval
 - Product catalog management with image uploads and inventory tracking
 - Omnichannel messaging: customers and sellers communicate via web chat and WhatsApp (Twilio)
-- Automated stock ingestion: CSV upload and Khata book OCR via Gemini Vision
+- Voice-first shopping: send voice notes in any Indian language (Hindi, English, Tamil, Telugu, Marathi, Bengali, Gujarati, Kannada) — Gemini 2.0 transcribes, extracts product intents, and matches catalog automatically
+- Automated stock ingestion: CSV upload with smart column mapping and Khata book OCR via Gemini Vision
 - Proactive AI insights: dead stock detection, dynamic pricing, restock alerts (Bedrock + Gemini + Grok)
 - Automated WhatsApp campaigns: seller-approved discounts sent to past customers
 - Order lifecycle management with commission-based payment splitting (Razorpay Route)
 - Admin controls for seller moderation, platform analytics, system health, and audit trails
-- AI assistance for catalog extraction, voice transcription, and multilingual support
+- AI assistance for catalog extraction, voice transcription, multilingual support, and product intent extraction
 
 ## Development Workflow
 
@@ -414,6 +416,7 @@ All core documentation lives in the [`docs/`](docs/) directory.
 - [Authentication & RBAC](docs/auth_rbac.md) — Cognito integration and role-based access control
 - [WhatsApp Orchestration](docs/whatsapp_orchestration.md) — Conversation flows and state management
 - [WhatsApp Seller Routing](docs/whatsapp-seller-routing.md) — Seller message routing design
+- [WhatsApp Voice Pipeline](.kiro/specs/whatsapp-voice-pipeline/design.md) — Multilingual voice note transcription and product intent extraction
 - [Order Lifecycle](docs/order_lifecycle.md) — Order state machine and transitions
 - [Payment Integration](docs/payment_integration.md) — Razorpay webhook handling and reconciliation
 - [Razorpay Integration Reference](docs/RAZORPAY_INTEGRATION_REFERENCE.md) — Razorpay Route setup and configuration

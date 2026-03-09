@@ -114,13 +114,14 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
       status: 'active',
       createdAt: now,
       updatedAt: now,
-      ...(role === 'seller' && {
-        businessName,
-        businessAddress,
-        gstNumber,
-        sellerStatus: 'pending_approval' as const,
-      }),
     };
+
+    if (role === 'seller') {
+      (profile as any).businessName = businessName;
+      (profile as any).businessAddress = businessAddress;
+      (profile as any).gstNumber = gstNumber;
+      (profile as any).sellerStatus = 'pending_approval';
+    }
 
     await createUserProfile(profile);
     logger.info('User profile created in DynamoDB', { userId: cognitoSub, role });

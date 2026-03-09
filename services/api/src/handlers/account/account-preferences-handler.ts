@@ -59,7 +59,7 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
       updates.displayName = displayName;
     }
     if (language) {
-      oldValues.language = (profile as Record<string, unknown>).language;
+      oldValues.language = (profile as unknown as Record<string, unknown>).language;
       updates.language = language;
     }
 

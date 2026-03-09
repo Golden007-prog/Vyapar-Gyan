@@ -110,7 +110,7 @@ export class EventsStack extends cdk.Stack {
       encryption: config.environment === 'prod' 
         ? QueueEncryption.KMS_MANAGED 
         : QueueEncryption.UNENCRYPTED,
-      visibilityTimeout: Duration.seconds(180), // 3x Lambda timeout
+      visibilityTimeout: Duration.seconds(360), // 3x Lambda timeout (120s)
       retentionPeriod: Duration.days(4),
       deadLetterQueue: {
         queue: this.whatsappMessagesDLQ,
@@ -141,7 +141,7 @@ export class EventsStack extends cdk.Stack {
       architecture: Architecture.ARM_64,
       handler: 'handlers/whatsapp/worker.handler',
       code: Code.fromAsset('../../services/api/dist'),
-      timeout: Duration.seconds(60),
+      timeout: Duration.seconds(120),
       memorySize: 1024,
       environment: {
         ENVIRONMENT: config.environment,
@@ -156,7 +156,7 @@ export class EventsStack extends cdk.Stack {
         TWILIO_ACCOUNT_SID: twilioSecret.secretValueFromJson('accountSid').unsafeUnwrap(),
         TWILIO_AUTH_TOKEN: twilioSecret.secretValueFromJson('authToken').unsafeUnwrap(),
         TWILIO_PHONE_NUMBER: twilioSecret.secretValueFromJson('phoneNumber').unsafeUnwrap(),
-        FORCE_DEPLOY_TIME: '2026-03-08T02:05:00.000Z',
+        FORCE_DEPLOY_TIME: '2026-03-10T00:30:00.000Z',
       },
       ...(config.environment === 'prod' && { reservedConcurrentExecutions: 10 }),
     });
@@ -164,6 +164,9 @@ export class EventsStack extends cdk.Stack {
     // Grant permissions to worker function
     table.grantReadWriteData(this.whatsappWorkerFunction);
     this.eventBus.grantPutEventsTo(this.whatsappWorkerFunction);
+    // S3: voice pipeline stores inbound/outbound audio, image handler stores uploads
+    productImagesBucket.grantReadWrite(this.whatsappWorkerFunction);
+    documentsBucket.grantRead(this.whatsappWorkerFunction);
     
     // Grant Secrets Manager permissions for Twilio, Razorpay, and AI API keys
     // Note: Using wildcard suffix because Secrets Manager appends random 6-character suffix to ARNs
@@ -172,8 +175,10 @@ export class EventsStack extends cdk.Stack {
         effect: Effect.ALLOW,
         actions: ['secretsmanager:GetSecretValue'],
         resources: [
-          `arn:aws:secretsmanager:${config.region}:${config.account}:secret:/dev/twilio/*`,
-          `arn:aws:secretsmanager:${config.region}:${config.account}:secret:/dev/razorpay/*`,
+          `arn:aws:secretsmanager:${config.region}:${config.account}:secret:/${config.environment}/twilio/*`,
+          `arn:aws:secretsmanager:${config.region}:${config.account}:secret:/${config.environment}/razorpay/*`,
+          `arn:aws:secretsmanager:${config.region}:${config.account}:secret:/${config.environment}/gemini/*`,
+          `arn:aws:secretsmanager:${config.region}:${config.account}:secret:/${config.environment}/grok/*`,
           `arn:aws:secretsmanager:${config.region}:${config.account}:secret:GEMINI_API_KEY*`,
           `arn:aws:secretsmanager:${config.region}:${config.account}:secret:GROK_API_KEY*`,
         ],
@@ -186,8 +191,10 @@ export class EventsStack extends cdk.Stack {
         effect: Effect.ALLOW,
         actions: ['ssm:GetParameter', 'ssm:GetParametersByPath'],
         resources: [
-          `arn:aws:ssm:${config.region}:${config.account}:parameter/dev/twilio/*`,
-          `arn:aws:ssm:${config.region}:${config.account}:parameter/dev/razorpay/*`,
+          `arn:aws:ssm:${config.region}:${config.account}:parameter/${config.environment}/twilio/*`,
+          `arn:aws:ssm:${config.region}:${config.account}:parameter/${config.environment}/razorpay/*`,
+          `arn:aws:ssm:${config.region}:${config.account}:parameter/${config.environment}/gemini/*`,
+          `arn:aws:ssm:${config.region}:${config.account}:parameter/${config.environment}/grok/*`,
         ],
       })
     );
@@ -533,6 +540,10 @@ export class EventsStack extends cdk.Stack {
     cdk.Tags.of(this.mediaProcessingDLQ).add('Service', 'media-processing');
     cdk.Tags.of(this.mediaProcessingQueue).add('Name', `${config.resourcePrefix}-media-processing-retry`);
     cdk.Tags.of(this.mediaProcessingQueue).add('Service', 'media-processing');
+
+    // Wire media processing queue URL into WhatsApp worker (queue created after worker)
+    this.whatsappWorkerFunction.addEnvironment('MEDIA_PROCESSING_QUEUE_URL', this.mediaProcessingQueue.queueUrl);
+    this.mediaProcessingQueue.grantSendMessages(this.whatsappWorkerFunction);
 
     // -----------------------------------------------------------------------
     // Media Processing Worker — voice transcription + image analysis via Gemini

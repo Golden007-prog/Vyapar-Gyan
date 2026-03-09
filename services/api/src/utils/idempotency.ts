@@ -29,8 +29,13 @@ export class IdempotencyService {
     if (this.tableName) {
       return this.tableName;
     }
-    const config = await getConfig();
-    this.tableName = config.tableName;
+    const envTable = process.env.TABLE_NAME;
+    if (envTable) {
+      this.tableName = envTable;
+    } else {
+      const config = await getConfig();
+      this.tableName = config.tableName;
+    }
     return this.tableName;
   }
 

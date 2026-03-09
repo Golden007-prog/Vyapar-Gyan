@@ -1,4 +1,4 @@
-import { getConfig, clearConfigCache, Config } from './config';
+import { getConfig, clearConfigCache, Config, getVoicePipelineConfig } from './config';
 import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm';
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
 import { mockClient } from 'aws-sdk-client-mock';
@@ -84,6 +84,12 @@ describe('Configuration Loader', () => {
       }).resolves({
         SecretString: 'gemini-api-key-secret'
       });
+      
+      secretsMock.on(GetSecretValueCommand, {
+        SecretId: '/dev/grok/api-key'
+      }).resolves({
+        SecretString: 'grok-api-key-secret'
+      });
     });
     
     it('should load and validate configuration successfully', async () => {
@@ -101,6 +107,7 @@ describe('Configuration Loader', () => {
       expect(config.razorpayKeyId).toBe('rzp_test_key123');
       expect(config.razorpayKeySecret).toBe('razorpay-secret-key');
       expect(config.geminiApiKey).toBe('gemini-api-key-secret');
+      expect(config.grokApiKey).toBe('grok-api-key-secret');
     });
     
     it('should cache configuration after first load', async () => {
@@ -114,7 +121,7 @@ describe('Configuration Loader', () => {
       
       // Verify AWS clients were only called once
       expect(ssmMock.calls().length).toBe(2); // Two SSM parameters
-      expect(secretsMock.calls().length).toBe(5); // Five secrets
+      expect(secretsMock.calls().length).toBe(6); // Six secrets
     });
     
     it('should use default log level if not specified', async () => {
@@ -207,6 +214,15 @@ describe('Configuration Loader', () => {
     });
     
     it('should throw error if SSM parameter is not found', async () => {
+      // Mock secrets to succeed so we reach the SSM call
+      secretsMock.on(GetSecretValueCommand).resolves({
+        SecretString: 'test-secret'
+      });
+      
+      // Default SSM succeeds, but phone-number specifically fails
+      ssmMock.on(GetParameterCommand).resolves({
+        Parameter: { Value: 'test-value' }
+      });
       ssmMock.on(GetParameterCommand, {
         Name: '/dev/twilio/phone-number'
       }).rejects(new Error('ParameterNotFound'));
@@ -215,6 +231,15 @@ describe('Configuration Loader', () => {
     });
     
     it('should throw error if SSM parameter has no value', async () => {
+      // Mock secrets to succeed so we reach the SSM call
+      secretsMock.on(GetSecretValueCommand).resolves({
+        SecretString: 'test-secret'
+      });
+      
+      // Default SSM succeeds, but phone-number specifically returns empty
+      ssmMock.on(GetParameterCommand).resolves({
+        Parameter: { Value: 'test-value' }
+      });
       ssmMock.on(GetParameterCommand, {
         Name: '/dev/twilio/phone-number'
       }).resolves({
@@ -276,7 +301,7 @@ describe('Configuration Loader', () => {
       
       // Verify AWS clients were called twice
       expect(ssmMock.calls().length).toBe(4); // 2 parameters × 2 loads
-      expect(secretsMock.calls().length).toBe(10); // 5 secrets × 2 loads
+      expect(secretsMock.calls().length).toBe(12); // 6 secrets × 2 loads
     });
   });
   
@@ -308,6 +333,9 @@ describe('Configuration Loader', () => {
       expect(secretCalls.some(call => 
         call.args[0].input.SecretId === '/dev/gemini/api-key'
       )).toBe(true);
+      expect(secretCalls.some(call => 
+        call.args[0].input.SecretId === '/dev/grok/api-key'
+      )).toBe(true);
     });
     
     it('should use correct secret paths for staging environment', async () => {
@@ -333,6 +361,12 @@ describe('Configuration Loader', () => {
       )).toBe(true);
       expect(secretCalls.some(call => 
         call.args[0].input.SecretId === '/staging/razorpay/key-secret'
+      )).toBe(true);
+      expect(secretCalls.some(call => 
+        call.args[0].input.SecretId === '/staging/gemini/api-key'
+      )).toBe(true);
+      expect(secretCalls.some(call => 
+        call.args[0].input.SecretId === '/staging/grok/api-key'
       )).toBe(true);
     });
     
@@ -360,6 +394,140 @@ describe('Configuration Loader', () => {
       expect(secretCalls.some(call => 
         call.args[0].input.SecretId === '/prod/razorpay/key-secret'
       )).toBe(true);
+      expect(secretCalls.some(call => 
+        call.args[0].input.SecretId === '/prod/gemini/api-key'
+      )).toBe(true);
+      expect(secretCalls.some(call => 
+        call.args[0].input.SecretId === '/prod/grok/api-key'
+      )).toBe(true);
+    });
+  });
+
+  describe('Environment variable fallback (local dev)', () => {
+    it('should use env vars instead of AWS when available', async () => {
+      // Set all secrets as env vars — no AWS calls needed for secrets
+      process.env.TWILIO_ACCOUNT_SID = 'AC-env-sid';
+      process.env.TWILIO_AUTH_TOKEN = 'env-auth-token';
+      process.env.TWILIO_PHONE_NUMBER = '+19999999999';
+      process.env.RAZORPAY_KEY_ID = 'rzp_env_key';
+      process.env.RAZORPAY_KEY_SECRET = 'rzp_env_secret';
+      process.env.RAZORPAY_WEBHOOK_SECRET = 'rzp_env_webhook';
+      process.env.GEMINI_API_KEY = 'gemini-env-key';
+      process.env.GROK_API_KEY = 'grok-env-key';
+
+      const config = await getConfig();
+
+      expect(config.twilioAccountSid).toBe('AC-env-sid');
+      expect(config.twilioAuthToken).toBe('env-auth-token');
+      expect(config.twilioPhoneNumber).toBe('+19999999999');
+      expect(config.geminiApiKey).toBe('gemini-env-key');
+      expect(config.grokApiKey).toBe('grok-env-key');
+
+      // No AWS calls should have been made
+      expect(ssmMock.calls().length).toBe(0);
+      expect(secretsMock.calls().length).toBe(0);
+    });
+
+    it('should mix env vars and AWS fallback', async () => {
+      // Only Gemini and Grok from env, rest from AWS
+      process.env.GEMINI_API_KEY = 'gemini-local';
+      process.env.GROK_API_KEY = 'grok-local';
+
+      ssmMock.on(GetParameterCommand).resolves({
+        Parameter: { Value: 'ssm-value' }
+      });
+      secretsMock.on(GetSecretValueCommand).resolves({
+        SecretString: 'aws-secret'
+      });
+
+      const config = await getConfig();
+
+      expect(config.geminiApiKey).toBe('gemini-local');
+      expect(config.grokApiKey).toBe('grok-local');
+      expect(config.twilioAccountSid).toBe('aws-secret');
+
+      // Gemini and Grok should NOT have triggered AWS calls
+      const secretCalls = secretsMock.calls();
+      expect(secretCalls.some(call =>
+        call.args[0].input.SecretId === '/dev/gemini/api-key'
+      )).toBe(false);
+      expect(secretCalls.some(call =>
+        call.args[0].input.SecretId === '/dev/grok/api-key'
+      )).toBe(false);
+    });
+
+    it('should not let Twilio failure block Gemini when using env vars', async () => {
+      // Gemini from env, Twilio from AWS but AWS fails
+      process.env.GEMINI_API_KEY = 'gemini-local';
+      process.env.GROK_API_KEY = 'grok-local';
+      process.env.TWILIO_ACCOUNT_SID = 'AC-local';
+      process.env.TWILIO_AUTH_TOKEN = 'local-token';
+      process.env.TWILIO_PHONE_NUMBER = '+10000000000';
+      process.env.RAZORPAY_KEY_ID = 'rzp_local';
+      process.env.RAZORPAY_KEY_SECRET = 'rzp_local_secret';
+      process.env.RAZORPAY_WEBHOOK_SECRET = 'rzp_local_webhook';
+
+      // No AWS mocks needed — all from env
+      const config = await getConfig();
+
+      expect(config.geminiApiKey).toBe('gemini-local');
+      expect(config.twilioAccountSid).toBe('AC-local');
+    });
+  });
+
+  describe('getVoicePipelineConfig', () => {
+    it('should return voice-relevant keys from cached full config', async () => {
+      // Set all env vars so full config loads without AWS
+      process.env.TWILIO_ACCOUNT_SID = 'AC-voice-sid';
+      process.env.TWILIO_AUTH_TOKEN = 'voice-auth';
+      process.env.TWILIO_PHONE_NUMBER = '+18888888888';
+      process.env.RAZORPAY_KEY_ID = 'rzp_v';
+      process.env.RAZORPAY_KEY_SECRET = 'rzp_vs';
+      process.env.RAZORPAY_WEBHOOK_SECRET = 'rzp_vw';
+      process.env.GEMINI_API_KEY = 'gemini-voice';
+      process.env.GROK_API_KEY = 'grok-voice';
+
+      // Prime the cache
+      await getConfig();
+
+      const voiceConfig = await getVoicePipelineConfig();
+
+      expect(voiceConfig.geminiApiKey).toBe('gemini-voice');
+      expect(voiceConfig.twilioAccountSid).toBe('AC-voice-sid');
+      expect(voiceConfig.twilioAuthToken).toBe('voice-auth');
+      expect(voiceConfig.twilioPhoneNumber).toBe('+18888888888');
+      expect(voiceConfig.productImagesBucket).toBe('vyapargyan-dev-images');
+    });
+
+    it('should load only voice keys when full config is not cached', async () => {
+      // Only voice-relevant env vars — Razorpay/Grok missing
+      process.env.GEMINI_API_KEY = 'gemini-isolated';
+      process.env.TWILIO_ACCOUNT_SID = 'AC-isolated';
+      process.env.TWILIO_AUTH_TOKEN = 'isolated-auth';
+      process.env.TWILIO_PHONE_NUMBER = '+17777777777';
+
+      // Do NOT call getConfig() — cache is empty
+      const voiceConfig = await getVoicePipelineConfig();
+
+      expect(voiceConfig.geminiApiKey).toBe('gemini-isolated');
+      expect(voiceConfig.twilioAccountSid).toBe('AC-isolated');
+
+      // No AWS calls should have been made
+      expect(ssmMock.calls().length).toBe(0);
+      expect(secretsMock.calls().length).toBe(0);
+    });
+
+    it('should fail with clear error when Gemini key is missing', async () => {
+      // No GEMINI_API_KEY env var, and AWS fails
+      process.env.TWILIO_ACCOUNT_SID = 'AC-ok';
+      process.env.TWILIO_AUTH_TOKEN = 'ok-auth';
+      process.env.TWILIO_PHONE_NUMBER = '+16666666666';
+
+      secretsMock.on(GetSecretValueCommand, {
+        SecretId: '/dev/gemini/api-key'
+      }).rejects(new Error('ResourceNotFoundException'));
+
+      await expect(getVoicePipelineConfig()).rejects.toThrow('geminiApiKey');
     });
   });
 });

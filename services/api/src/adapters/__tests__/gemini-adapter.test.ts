@@ -50,6 +50,7 @@ describe('GeminiAdapter', () => {
         response: {
           text: () => JSON.stringify({
             transcript: 'Mujhe 2 kilo Basmati Rice chahiye aur 1 kilo Toor Dal',
+            confidence: 92,
             products: [
               { name: 'Basmati Rice', quantity: 2, confidence: 95 },
               { name: 'Toor Dal', quantity: 1, confidence: 90 },
@@ -63,6 +64,7 @@ describe('GeminiAdapter', () => {
 
       expect(result.transcript).toBe('Mujhe 2 kilo Basmati Rice chahiye aur 1 kilo Toor Dal');
       expect(result.detectedLanguage).toBe('Hindi');
+      expect(result.confidence).toBe(92);
       expect(result.products).toHaveLength(2);
       expect(result.products[0]).toEqual({ name: 'Basmati Rice', quantity: 2, confidence: 95 });
       expect(result.products[1]).toEqual({ name: 'Toor Dal', quantity: 1, confidence: 90 });
@@ -157,6 +159,69 @@ describe('GeminiAdapter', () => {
       expect(result.detectedLanguage).toBe('Tamil');
     });
 
+    it('should default overall confidence to 80 when not provided by Gemini', async () => {
+      mockGenerateContent.mockResolvedValue({
+        response: {
+          text: () => JSON.stringify({
+            transcript: 'some text',
+            products: [],
+            detectedLanguage: 'English',
+          }),
+        },
+      });
+
+      const result = await adapter.transcribeVoiceNote(audioBuffer, 'English', []);
+
+      expect(result.confidence).toBe(80);
+    });
+
+    it('should clamp overall confidence to 0-100 range', async () => {
+      mockGenerateContent.mockResolvedValue({
+        response: {
+          text: () => JSON.stringify({
+            transcript: 'test',
+            confidence: 150,
+            products: [],
+            detectedLanguage: 'English',
+          }),
+        },
+      });
+
+      const result = await adapter.transcribeVoiceNote(audioBuffer, 'English', []);
+      expect(result.confidence).toBe(100);
+
+      mockGenerateContent.mockResolvedValue({
+        response: {
+          text: () => JSON.stringify({
+            transcript: 'test',
+            confidence: -20,
+            products: [],
+            detectedLanguage: 'English',
+          }),
+        },
+      });
+
+      const result2 = await adapter.transcribeVoiceNote(audioBuffer, 'English', []);
+      expect(result2.confidence).toBe(0);
+    });
+
+    it('should parse overall confidence from Gemini response', async () => {
+      mockGenerateContent.mockResolvedValue({
+        response: {
+          text: () => JSON.stringify({
+            transcript: 'I want rice',
+            confidence: 75,
+            products: [{ name: 'Rice', quantity: 1, confidence: 90 }],
+            detectedLanguage: 'English',
+          }),
+        },
+      });
+
+      const result = await adapter.transcribeVoiceNote(audioBuffer, 'English', []);
+
+      expect(result.confidence).toBe(75);
+    });
+
     it('should throw on Gemini API failure', async () => {
       mockGenerateContent.mockRejectedValue(new Error('API quota exceeded'));
 
@@ -181,6 +246,139 @@ describe('GeminiAdapter', () => {
           mimeType: 'audio/ogg',
         },
       });
+    });
+  });
+
+  describe('textToSpeech', () => {
+    it('should generate audio buffer from text', async () => {
+      const fakeAudioBase64 = Buffer.from('fake-audio-pcm-data').toString('base64');
+      mockGenerateContent.mockResolvedValue({
+        response: {
+          candidates: [{
+            content: {
+              parts: [{
+                inlineData: {
+                  mimeType: 'audio/L16;rate=24000',
+                  data: fakeAudioBase64,
+                },
+              }],
+            },
+          }],
+        },
+      });
+
+      const result = await adapter.textToSpeech('Hello world', 'English');
+
+      expect(result).toBeInstanceOf(Buffer);
+      expect(result.toString()).toBe('fake-audio-pcm-data');
+    });
+
+    it('should use gemini-2.5-flash-preview-tts model with speech config', async () => {
+      const fakeAudioBase64 = Buffer.from('audio').toString('base64');
+      mockGenerateContent.mockResolvedValue({
+        response: {
+          candidates: [{
+            content: {
+              parts: [{
+                inlineData: { mimeType: 'audio/L16', data: fakeAudioBase64 },
+              }],
+            },
+          }],
+        },
+      });
+
+      await adapter.textToSpeech('Test', 'Hindi');
+
+      expect(mockGetGenerativeModel).toHaveBeenCalledWith({
+        model: 'gemini-2.5-flash-preview-tts',
+        generationConfig: {
+          responseModalities: ['AUDIO'],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: {
+                voiceName: 'Kore',
+              },
+            },
+          },
+        },
+      });
+    });
+
+    it('should pass language in the prompt', async () => {
+      const fakeAudioBase64 = Buffer.from('audio').toString('base64');
+      mockGenerateContent.mockResolvedValue({
+        response: {
+          candidates: [{
+            content: {
+              parts: [{
+                inlineData: { mimeType: 'audio/L16', data: fakeAudioBase64 },
+              }],
+            },
+          }],
+        },
+      });
+
+      await adapter.textToSpeech('Namaste', 'Hindi');
+
+      const callArgs = mockGenerateContent.mock.calls[0][0];
+      expect(callArgs).toContain('Hindi');
+      expect(callArgs).toContain('Namaste');
+    });
+
+    it('should throw when no audio data in response', async () => {
+      mockGenerateContent.mockResolvedValue({
+        response: {
+          candidates: [{
+            content: {
+              parts: [{ text: 'unexpected text response' }],
+            },
+          }],
+        },
+      });
+
+      await expect(
+        adapter.textToSpeech('Hello', 'English')
+      ).rejects.toThrow('TTS generation failed: No audio data in Gemini TTS response');
+    });
+
+    it('should throw when candidates are empty', async () => {
+      mockGenerateContent.mockResolvedValue({
+        response: {
+          candidates: [],
+        },
+      });
+
+      await expect(
+        adapter.textToSpeech('Hello', 'English')
+      ).rejects.toThrow('TTS generation failed: No audio data in Gemini TTS response');
+    });
+
+    it('should throw on Gemini API failure', async () => {
+      mockGenerateContent.mockRejectedValue(new Error('TTS quota exceeded'));
+
+      await expect(
+        adapter.textToSpeech('Hello', 'English')
+      ).rejects.toThrow('TTS generation failed: TTS quota exceeded');
+    });
+
+    it('should default voiceStyle to conversational', async () => {
+      const fakeAudioBase64 = Buffer.from('audio').toString('base64');
+      mockGenerateContent.mockResolvedValue({
+        response: {
+          candidates: [{
+            content: {
+              parts: [{
+                inlineData: { mimeType: 'audio/L16', data: fakeAudioBase64 },
+              }],
+            },
+          }],
+        },
+      });
+
+      await adapter.textToSpeech('Test', 'English');
+
+      const callArgs = mockGenerateContent.mock.calls[0][0];
+      expect(callArgs).toContain('conversational');
     });
   });
 
@@ -290,7 +488,7 @@ describe('GeminiAdapter', () => {
       });
     });
 
-    it('should use gemini-1.5-flash model', async () => {
+    it('should use gemini-2.0-flash model', async () => {
       mockGenerateContent.mockResolvedValue({
         response: {
           text: () => JSON.stringify({
@@ -302,7 +500,7 @@ describe('GeminiAdapter', () => {
 
       await adapter.analyzeProductImage(imageBuffer, mimeType);
 
-      expect(mockGetGenerativeModel).toHaveBeenCalledWith({ model: 'gemini-1.5-flash' });
+      expect(mockGetGenerativeModel).toHaveBeenCalledWith({ model: 'gemini-2.0-flash' });
     });
   });
 });

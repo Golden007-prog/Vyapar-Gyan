@@ -141,10 +141,8 @@ apiStack.addDependency(eventsStack);
 apiStack.addDependency(storageStack);
 console.log(`APIStack instantiated: ${apiStack.stackName}`);
 
-// Add API_BASE_URL to events-stack workers that send Twilio messages
-// (cross-stack reference — events-stack is created before api-stack)
-eventsStack.whatsappWorkerFunction.addEnvironment('API_BASE_URL', apiStack.httpApi.apiEndpoint);
-eventsStack.campaignWorkerFunction.addEnvironment('API_BASE_URL', apiStack.httpApi.apiEndpoint);
+// API_BASE_URL is now injected via APIStack props (eventsWorkerFunctions)
+// to avoid cyclic cross-stack references
 
 // 6. Bedrock Stack (depends on Database, Events, and Storage)
 const bedrockStack = new BedrockStack(app, `${config.resourcePrefix}-bedrock`, {
@@ -164,8 +162,9 @@ bedrockStack.addDependency(eventsStack);
 bedrockStack.addDependency(storageStack);
 console.log(`BedrockStack instantiated: ${bedrockStack.stackName}`);
 
-// Add API_BASE_URL to Bedrock action group function (sends Twilio messages)
-bedrockStack.actionGroupFunction.addEnvironment('API_BASE_URL', apiStack.httpApi.apiEndpoint);
+// API_BASE_URL for Bedrock action group — optional, used for status callbacks
+// Removed cross-stack reference to avoid potential cyclic dependencies
+// Workers will function without it (status callbacks are optional)
 
 // Add tags to all resources from configuration
 Object.entries(config.tags).forEach(([key, value]) => {

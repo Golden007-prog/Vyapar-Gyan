@@ -55,11 +55,11 @@ export async function logAction(params: LogActionParams): Promise<string> {
     actionType: params.actionType,
     resourceType: params.resourceType,
     resourceId: params.resourceId,
-    oldValues: params.oldValues,
-    newValues: params.newValues,
-    approvalId: params.approvalId,
-    metadata: params.metadata,
     createdAt: now,
+    ...(params.oldValues ? { oldValues: params.oldValues } : {}),
+    ...(params.newValues ? { newValues: params.newValues } : {}),
+    ...(params.approvalId ? { approvalId: params.approvalId } : {}),
+    ...(params.metadata ? { metadata: params.metadata } : {}),
   };
 
   try {

@@ -2,6 +2,7 @@ import twilio, { Twilio } from 'twilio';
 import { logger } from '../utils/logger';
 import { getConfig } from '../utils/config';
 import { MessageRepository } from '../repositories/message-repository';
+import { sanitizeForWhatsApp, type MessageAudience } from '../utils/whatsapp-sanitizer';
 
 const messageRepository = new MessageRepository();
 
@@ -33,7 +34,13 @@ export interface InteractiveListMessage {
   }>;
 }
 
-export type OutboundMessage = TextMessage | InteractiveButtonMessage | InteractiveListMessage;
+export interface AudioMessage {
+  type: 'audio';
+  mediaUrl: string; // Pre-signed S3 URL
+  fallbackText: string; // Text to send if media delivery fails
+}
+
+export type OutboundMessage = TextMessage | InteractiveButtonMessage | InteractiveListMessage | AudioMessage;
 
 /**
  * WhatsAppSender
@@ -53,9 +60,22 @@ export class WhatsAppSender {
       return;
     }
     
-    const config = await getConfig();
-    this.fromNumber = config.twilioPhoneNumber;
-    this.client = twilio(config.twilioAccountSid, config.twilioAuthToken);
+    // Read Twilio credentials directly from env vars (set on all Lambda functions
+    // that need to send WhatsApp messages). Avoids loading full getConfig() which
+    // requires ALL secrets (gemini, grok, razorpay) even when only Twilio is needed.
+    const sid = process.env.TWILIO_ACCOUNT_SID;
+    const token = process.env.TWILIO_AUTH_TOKEN;
+    const phone = process.env.TWILIO_PHONE_NUMBER;
+    
+    if (sid && token && phone) {
+      this.fromNumber = phone;
+      this.client = twilio(sid, token);
+    } else {
+      // Fallback for local dev or Lambdas without Twilio env vars
+      const config = await getConfig();
+      this.fromNumber = config.twilioPhoneNumber;
+      this.client = twilio(config.twilioAccountSid, config.twilioAuthToken);
+    }
     
     logger.info('WhatsAppSender initialized', {
       fromNumber: this.fromNumber,
@@ -63,14 +83,19 @@ export class WhatsAppSender {
   }
 
   /**
-   * Send a message to a WhatsApp user
+   * Send a message to a WhatsApp user.
+   * All text content is sanitized before sending to prevent raw system output.
    */
   async sendMessage(
     phoneNumber: string,
     message: OutboundMessage,
-    sessionId: string
+    sessionId: string,
+    audience: MessageAudience = 'customer',
   ): Promise<string> {
     await this.initialize();
+
+    // Sanitize text content before sending
+    message = this.sanitizeOutbound(message, audience);
     
     logger.info('Sending WhatsApp message', {
       sessionId,
@@ -152,11 +177,18 @@ export class WhatsAppSender {
           bodyLength: body.length,
         });
         
-        const response = await this.client.messages.create({
+        const createParams: any = {
           from,
           to,
           body,
-        });
+        };
+
+        // Attach mediaUrl for audio messages
+        if (message.type === 'audio') {
+          createParams.mediaUrl = [message.mediaUrl];
+        }
+
+        const response = await this.client.messages.create(createParams);
         
         logger.debug('Twilio message created', {
           sid: response.sid,
@@ -188,6 +220,22 @@ export class WhatsAppSender {
   }
 
   /**
+   * Sanitize outbound message content to prevent raw system output.
+   */
+  private sanitizeOutbound(message: OutboundMessage, audience: MessageAudience): OutboundMessage {
+    if (message.type === 'text') {
+      return { ...message, text: sanitizeForWhatsApp(message.text, audience) };
+    }
+    if (message.type === 'interactive') {
+      return { ...message, body: sanitizeForWhatsApp(message.body, audience) };
+    }
+    if (message.type === 'audio') {
+      return { ...message, fallbackText: sanitizeForWhatsApp(message.fallbackText, audience) };
+    }
+    return message;
+  }
+
+  /**
    * Format message body for Twilio
    * 
    * Twilio's WhatsApp API primarily supports text messages.
@@ -201,6 +249,10 @@ export class WhatsAppSender {
   private formatMessageBody(message: OutboundMessage): string {
     if (message.type === 'text') {
       return message.text;
+    }
+
+    if (message.type === 'audio') {
+      return message.fallbackText;
     }
 
     if (message.type === 'interactive') {

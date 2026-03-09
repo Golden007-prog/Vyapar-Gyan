@@ -10,6 +10,16 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { logger } from '../../utils/logger';
 import { getConfig } from '../../utils/config';
+import { sanitizeForWhatsApp } from '../../utils/whatsapp-sanitizer';
+
+/** Resolve table name from env var first, fallback to full config */
+async function resolveTableName(): Promise<string> {
+  const envTable = process.env.TABLE_NAME;
+  if (envTable) return envTable;
+  const config = await getConfig();
+  return config.tableName;
+}
+import { findBestMatch, formatClarificationMessage, formatNotFoundMessage, type ProductCandidate } from '../../utils/product-matcher';
 import {
   getApprovalsBySeller,
   transitionStatus,
@@ -43,31 +53,41 @@ const docClient = DynamoDBDocumentClient.from(dynamoClient);
 const MODEL_ID = 'amazon.nova-lite-v1:0';
 
 // System prompt for the seller copilot
-const SYSTEM_PROMPT = `You are the VyaparGyan Admin Assistant. You help sellers manage their store, review AI recommendations, handle orders, and communicate with customers — all via WhatsApp.
+const SYSTEM_PROMPT = `You are the VyaparGyan Store Assistant for WhatsApp. You help sellers manage their store quickly and naturally — like a smart shop assistant who knows the inventory.
 
-Always be concise and friendly. Use emojis sparingly. When a user asks to perform an action, use the appropriate tool.
+## Personality
+- Be concise. WhatsApp messages should be 1-4 lines max.
+- Be warm but efficient. Use ₹ for prices, emojis sparingly.
+- Never output JSON, XML, code, or debug info.
+- Never wrap your response in tags like <response> or <answer>.
+- Always reply in plain conversational text.
 
-## Message Classification
-You MUST classify every seller message into one of two categories:
-1. **Store management command** — Use tools like updateProductPrice, checkInventory, viewPendingApprovals, approveAction, rejectAction, or viewRecentOrders.
-2. **Customer-directed message** — When the seller wants to send a message to a customer, ALWAYS use the replyToCustomer tool. Look for phrases like "reply to", "tell", "message", "send to", or any message clearly intended for a customer.
+## Understanding Seller Messages
+Sellers type short messages on WhatsApp. Understand these patterns:
+- "check stock" → ask which product
+- "tata salt qty" or "tata salt stock" → checkInventory for Tata Salt
+- "price amul butter" → checkInventory for Amul Butter
+- "update tata salt 26" → updateProductPrice for Tata Salt to ₹26
+- "orders" or "recent orders" → viewRecentOrders
+- "approvals" or "pending" → viewPendingApprovals
+- "approve APR-001" → approveAction
+- "reject APR-001 too expensive" → rejectAction
+- "tell Ramesh order is ready" → replyToCustomer
 
-## Tool Usage Guidelines
-- **viewPendingApprovals**: When the seller asks about pending approvals, recommendations, or AI suggestions.
-- **approveAction**: When the seller wants to approve a specific recommendation. Requires the approvalId.
-- **rejectAction**: When the seller wants to reject a recommendation. Requires approvalId and a reason.
-- **viewRecentOrders**: When the seller asks about orders, sales, or recent transactions.
-- **replyToCustomer**: When the seller wants to send a message to a customer. Provide the customer name and the message content.
-- **updateProductPrice**: When the seller wants to change a product's price.
-- **checkInventory**: When the seller asks about stock levels or product details.
+## Tool Usage
+1. **checkInventory**: When seller asks about stock, quantity, price, or product details. Pass the product name as the seller typed it — the system handles fuzzy matching.
+2. **updateProductPrice**: When seller wants to change price. Confirm before executing.
+3. **viewPendingApprovals**: When seller asks about AI recommendations or pending items.
+4. **approveAction / rejectAction**: For approval decisions.
+5. **viewRecentOrders**: For order queries.
+6. **replyToCustomer**: When seller wants to message a customer. Look for "tell", "reply to", "message", "send to".
 
-## Important Guidelines
-- Always confirm destructive actions (price changes, approvals) before executing
-- Use Indian Rupee symbol (₹) for prices
-- Be conversational and helpful
-- If you need more information, ask clarifying questions
-- After using a tool, provide a clear summary of what was done
-- Never confuse a customer reply with a system command — if in doubt, ask the seller to clarify`;
+## Response Style
+- Direct answers first, details second
+- Stock response example: "Tata Salt 1kg: 100 units in stock at ₹25 each"
+- Price update example: "Updated Tata Salt from ₹25 to ₹26 ✅"
+- If product not found, say so naturally and suggest checking the name
+- Never expose internal errors, tool names, or system details`;
 
 /**
  * Seller WhatsApp Copilot
@@ -256,10 +276,6 @@ export async function handleSellerWhatsAppCommand(
 
     return response;
   } catch (error) {
-    // Print full error object for debugging
-    console.error('FULL AI ERROR:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
-    console.error('Error in handleSellerWhatsAppCommand - requestId:', requestId, 'sellerId:', user.id);
-    
     logger.error('Error processing seller command with Bedrock', {
       requestId,
       sellerId: user.id,
@@ -268,7 +284,7 @@ export async function handleSellerWhatsAppCommand(
     });
 
     // Fallback to friendly error message
-    return `Sorry, I encountered an error processing your request. Please try again or contact support if the issue persists.`;
+    return `Sorry, I couldn't process that right now. Please try again or rephrase your request.`;
   }
 }
 
@@ -334,13 +350,19 @@ async function converseWithTools(
       );
       
       if (textContent && 'text' in textContent) {
-        // Strip <thinking> tags from Amazon Nova responses
-        const cleanedText = textContent.text.replace(/<thinking>[\s\S]*?<\/thinking>/g, '').trim();
+        // Strip all XML-like model artifacts from Nova responses
+        let cleanedText = textContent.text
+          .replace(/<thinking>[\s\S]*?<\/thinking>/gi, '')
+          .replace(/<\/?(?:response|answer|result|output|system|tool_result|function_call|invoke|xml|data|json|code|pre)[^>]*>/gi, '')
+          .trim();
+
+        // Final sanitization pass for WhatsApp
+        cleanedText = sanitizeForWhatsApp(cleanedText, 'seller');
         
         logger.info('Bedrock returned final text response', {
           requestId,
           responseLength: cleanedText.length,
-          hadThinkingTags: cleanedText.length !== textContent.text.length,
+          rawLength: textContent.text.length,
         });
         return cleanedText;
       }
@@ -438,8 +460,10 @@ async function converseWithTools(
           toolName,
           error: error instanceof Error ? error.message : String(error),
         });
+        // Return a clean error to Bedrock — never expose raw stack traces
         toolResult = {
-          error: error instanceof Error ? error.message : 'Tool execution failed',
+          success: false,
+          message: 'This action could not be completed right now. Please try again.',
         };
       }
 
@@ -496,6 +520,37 @@ async function converseWithTools(
 }
 
 /**
+ * Fetch all active products for a seller (for fuzzy matching).
+ * Queries GSI1 with SELLER#{sellerId} partition.
+ */
+async function fetchSellerProducts(sellerId: string): Promise<ProductCandidate[]> {
+  const tableName = await resolveTableName();
+
+  const queryResult = await docClient.send(
+    new QueryCommand({
+      TableName: tableName,
+      IndexName: 'GSI1',
+      KeyConditionExpression: 'GSI1PK = :pk',
+      FilterExpression: 'isActive = :active',
+      ExpressionAttributeValues: {
+        ':pk': `SELLER#${sellerId}`,
+        ':active': true,
+      },
+      Limit: 200,
+    })
+  );
+
+  return (queryResult.Items || []).map(item => ({
+    id: item.id as string,
+    name: item.name as string,
+    price: item.price as number,
+    stockQuantity: item.stockQuantity as number,
+    categoryId: item.categoryId as string,
+    PK: item.PK as string,
+  }));
+}
+
+/**
  * Handle updateProductPrice tool invocation
  */
 async function handleUpdatePrice(
@@ -503,50 +558,32 @@ async function handleUpdatePrice(
   productName: string,
   newPrice: number
 ): Promise<any> {
-  const config = await getConfig();
-  const tableName = config.tableName;
+  const tableName = await resolveTableName();
 
-  logger.info('Updating product price', {
-    sellerId,
-    productName,
-    newPrice,
-  });
+  logger.info('Updating product price', { sellerId, productName, newPrice });
 
   try {
-    // Query products by seller using GSI1
-    const queryResult = await docClient.send(
-      new QueryCommand({
-        TableName: tableName,
-        IndexName: 'GSI1',
-        KeyConditionExpression: 'GSI1PK = :pk',
-        FilterExpression: 'contains(#name, :productName) AND isActive = :active',
-        ExpressionAttributeNames: {
-          '#name': 'name',
-        },
-        ExpressionAttributeValues: {
-          ':pk': `SELLER#${sellerId}`,
-          ':productName': productName,
-          ':active': true,
-        },
-        Limit: 1,
-      })
-    );
+    // Fetch all seller products and use fuzzy matching
+    const products = await fetchSellerProducts(sellerId);
+    const match = findBestMatch(productName, products);
 
-    if (!queryResult.Items || queryResult.Items.length === 0) {
+    if (match.type === 'none') {
+      // Get top 3 products as suggestions
+      const suggestions = products.slice(0, 3);
       return {
         success: false,
-        message: `Product "${productName}" not found in your inventory. Please check the product name and try again.`,
+        message: formatNotFoundMessage(productName, suggestions),
       };
     }
 
-    const product = queryResult.Items[0];
-    if (!product) {
+    if (match.type === 'multiple' && match.candidates) {
       return {
         success: false,
-        message: `Product "${productName}" not found in your inventory.`,
+        message: formatClarificationMessage(productName, match.candidates),
       };
     }
 
+    const product = match.product!;
     const productId = product.id;
     const oldPrice = product.price;
 
@@ -579,7 +616,7 @@ async function handleUpdatePrice(
       productName: product.name,
       oldPrice,
       newPrice,
-      message: `Successfully updated ${product.name} price from ₹${oldPrice} to ₹${newPrice}`,
+      message: `Updated ${product.name} from ₹${oldPrice} to ₹${newPrice} ✅`,
     };
   } catch (error) {
     logger.error('Failed to update product price', {
@@ -590,8 +627,7 @@ async function handleUpdatePrice(
 
     return {
       success: false,
-      message: 'Failed to update product price. Please try again.',
-      error: error instanceof Error ? error.message : String(error),
+      message: 'Could not update the price right now. Please try again.',
     };
   }
 }
@@ -603,48 +639,29 @@ async function handleCheckInventory(
   sellerId: string,
   productName: string
 ): Promise<any> {
-  const config = await getConfig();
-  const tableName = config.tableName;
-
-  logger.info('Checking inventory', {
-    sellerId,
-    productName,
-  });
+  logger.info('Checking inventory', { sellerId, productName });
 
   try {
-    // Query products by seller using GSI1
-    const queryResult = await docClient.send(
-      new QueryCommand({
-        TableName: tableName,
-        IndexName: 'GSI1',
-        KeyConditionExpression: 'GSI1PK = :pk',
-        FilterExpression: 'contains(#name, :productName) AND isActive = :active',
-        ExpressionAttributeNames: {
-          '#name': 'name',
-        },
-        ExpressionAttributeValues: {
-          ':pk': `SELLER#${sellerId}`,
-          ':productName': productName,
-          ':active': true,
-        },
-        Limit: 1,
-      })
-    );
+    // Fetch all seller products and use fuzzy matching
+    const products = await fetchSellerProducts(sellerId);
+    const match = findBestMatch(productName, products);
 
-    if (!queryResult.Items || queryResult.Items.length === 0) {
+    if (match.type === 'none') {
+      const suggestions = products.slice(0, 3);
       return {
         success: false,
-        message: `Product "${productName}" not found in your inventory.`,
+        message: formatNotFoundMessage(productName, suggestions),
       };
     }
 
-    const product = queryResult.Items[0];
-    if (!product) {
+    if (match.type === 'multiple' && match.candidates) {
       return {
         success: false,
-        message: `Product "${productName}" not found in your inventory.`,
+        message: formatClarificationMessage(productName, match.candidates),
       };
     }
+
+    const product = match.product!;
 
     logger.info('Inventory checked successfully', {
       sellerId,
@@ -652,6 +669,8 @@ async function handleCheckInventory(
       productName: product.name,
       stockQuantity: product.stockQuantity,
       price: product.price,
+      matchType: match.type,
+      matchScore: match.score,
     });
 
     return {
@@ -670,8 +689,7 @@ async function handleCheckInventory(
 
     return {
       success: false,
-      message: 'Failed to check inventory. Please try again.',
-      error: error instanceof Error ? error.message : String(error),
+      message: 'Could not check inventory right now. Please try again.',
     };
   }
 }
@@ -777,9 +795,10 @@ async function handleApproveAction(
     });
 
     const errMsg = error instanceof Error ? error.message : 'Unknown error';
+    logger.error('Approve action failed detail', { sellerId, approvalId, errMsg });
     return {
       success: false,
-      message: `Failed to approve: ${errMsg}`,
+      message: 'Could not approve this item right now. Please try again.',
     };
   }
 }
@@ -835,9 +854,10 @@ async function handleRejectAction(
     });
 
     const errMsg = error instanceof Error ? error.message : 'Unknown error';
+    logger.error('Reject action failed detail', { sellerId, approvalId, errMsg });
     return {
       success: false,
-      message: `Failed to reject: ${errMsg}`,
+      message: 'Could not reject this item right now. Please try again.',
     };
   }
 }
@@ -851,7 +871,7 @@ async function handleViewRecentOrders(
   limit?: number,
   status?: string,
 ): Promise<any> {
-  const config = await getConfig();
+  const tableName = await resolveTableName();
 
   logger.info('Viewing recent orders', { sellerId, limit, status });
 
@@ -873,7 +893,7 @@ async function handleViewRecentOrders(
 
     const result = await docClient.send(
       new QueryCommand({
-        TableName: config.tableName,
+        TableName: tableName,
         IndexName: 'SellerOrdersIndex',
         KeyConditionExpression: 'sellerId = :sellerId',
         ...(filterExpression && { FilterExpression: filterExpression }),
@@ -953,13 +973,13 @@ async function handleReplyToCustomer(
 
     // Also try to find customers by querying the seller's thread for distinct senders
     // Fall back to searching by name across user profiles
-    const config = await getConfig();
+    const tableName = await resolveTableName();
     const nameSearch = customerName.toLowerCase();
 
     // Search for customer by name using a scan with filter (limited scope)
     const searchResult = await docClient.send(
       new QueryCommand({
-        TableName: config.tableName,
+        TableName: tableName,
         IndexName: 'GSI2',
         KeyConditionExpression: 'GSI2PK = :role',
         FilterExpression: 'contains(#displayName, :name)',

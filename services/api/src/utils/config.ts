@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm';
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
+import { logger } from './logger';
 
 /**
  * Configuration schema with Zod validation
@@ -46,6 +47,39 @@ const configSchema = z.object({
 });
 
 export type Config = z.infer<typeof configSchema>;
+
+/**
+ * Lightweight config for the WhatsApp webhook handler.
+ * Only loads Twilio credentials needed for signature verification.
+ * Does NOT load gemini/grok/razorpay — those are irrelevant to the webhook.
+ */
+export interface WebhookConfig {
+  environment: 'dev' | 'staging' | 'prod';
+  region: string;
+  tableName: string;
+  eventBusName: string;
+  userPoolId: string;
+  userPoolClientId: string;
+  productImagesBucket: string;
+  documentsBucket: string;
+  twilioAccountSid: string;
+  twilioAuthToken: string;
+  twilioPhoneNumber: string;
+  logLevel: string;
+}
+
+/**
+ * Lightweight config subset for the voice pipeline.
+ * Only the keys needed to download media, transcribe, generate TTS, and reply.
+ */
+export interface VoicePipelineConfig {
+  geminiApiKey: string;
+  twilioAccountSid: string;
+  twilioAuthToken: string;
+  twilioPhoneNumber: string;
+  productImagesBucket: string;
+  region: string;
+}
 
 /**
  * Cached configuration to avoid repeated AWS API calls
@@ -102,7 +136,7 @@ async function getSecret(secretId: string): Promise<string> {
     if (!response.SecretString) {
       throw new Error(`Secret ${secretId} not found or has no value`);
     }
-    
+
     // AWS Secrets Manager returns JSON when created via Key/value UI
     // Try to parse as JSON first, if it fails, treat as plain string
     try {
@@ -112,7 +146,7 @@ async function getSecret(secretId: string): Promise<string> {
         // Get the first value from the object (handles {"/dev/twilio/account-sid": "AC123..."})
         const values = Object.values(parsed);
         if (values.length > 0 && typeof values[0] === 'string') {
-          return values[0].trim();
+          return (values[0] as string).trim();
         }
       }
       // If parsed but not in expected format, return the stringified version
@@ -127,8 +161,34 @@ async function getSecret(secretId: string): Promise<string> {
 }
 
 /**
- * Load configuration from environment variables and AWS services
- * Configuration is cached after first load to avoid repeated AWS API calls
+ * Resolve a config value: prefer local env var, fall back to AWS secret/parameter.
+ * Logs which source was used for debugging config issues.
+ */
+async function resolveSecret(envVar: string, awsFetcher: () => Promise<string>, label: string): Promise<string> {
+  const envValue = process.env[envVar];
+  if (envValue) {
+    logger.debug(`Config: ${label} resolved from env var ${envVar}`);
+    return envValue.trim();
+  }
+  try {
+    const value = await awsFetcher();
+    logger.debug(`Config: ${label} resolved from AWS`);
+    return value.trim();
+  } catch (error) {
+    throw new Error(`Failed to resolve ${label} (env: ${envVar}, AWS fallback failed): ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+/**
+ * Load configuration from environment variables and AWS services.
+ * Configuration is cached after first load to avoid repeated AWS API calls.
+ * 
+ * Resolution order for secrets:
+ *   1. process.env.<KEY> (local dev / Lambda env)
+ *   2. AWS Secrets Manager or SSM Parameter Store (deployed environments)
+ * 
+ * All secret fetches run in parallel via Promise.all so one failing key
+ * does not prevent other keys from resolving.
  * 
  * @returns Validated configuration object
  * @throws Error if required configuration is missing or invalid
@@ -151,9 +211,29 @@ export async function getConfig(): Promise<Config> {
   }
   
   try {
-    // Load configuration from environment variables and AWS services
+    // Resolve all secrets/parameters in parallel — env var first, AWS fallback second.
+    const [
+      twilioAccountSid,
+      twilioAuthToken,
+      twilioPhoneNumber,
+      razorpayKeyId,
+      razorpayKeySecret,
+      razorpayWebhookSecret,
+      geminiApiKey,
+      grokApiKey,
+    ] = await Promise.all([
+      resolveSecret('TWILIO_ACCOUNT_SID', () => getSecret(`/${environment}/twilio/account-sid`), 'twilioAccountSid'),
+      resolveSecret('TWILIO_AUTH_TOKEN', () => getSecret(`/${environment}/twilio/auth-token`), 'twilioAuthToken'),
+      resolveSecret('TWILIO_PHONE_NUMBER', () => getParameter(`/${environment}/twilio/phone-number`), 'twilioPhoneNumber'),
+      resolveSecret('RAZORPAY_KEY_ID', () => getParameter(`/${environment}/razorpay/key-id`), 'razorpayKeyId'),
+      resolveSecret('RAZORPAY_KEY_SECRET', () => getSecret(`/${environment}/razorpay/key-secret`), 'razorpayKeySecret'),
+      resolveSecret('RAZORPAY_WEBHOOK_SECRET', () => getSecret(`/${environment}/razorpay/webhook-secret`), 'razorpayWebhookSecret'),
+      resolveSecret('GEMINI_API_KEY', () => getSecret(`/${environment}/gemini/api-key`), 'geminiApiKey'),
+      resolveSecret('GROK_API_KEY', () => getSecret(`/${environment}/grok/api-key`), 'grokApiKey'),
+    ]);
+
+    // Build config object from pre-resolved values (no inline awaits)
     const config = {
-      // Environment variables (always available)
       environment: environment as 'dev' | 'staging' | 'prod',
       region: process.env.AWS_REGION || 'us-east-1',
       tableName: process.env.TABLE_NAME!,
@@ -163,24 +243,14 @@ export async function getConfig(): Promise<Config> {
       productImagesBucket: process.env.PRODUCT_IMAGES_BUCKET!,
       documentsBucket: process.env.DOCUMENTS_BUCKET!,
       logLevel: (process.env.LOG_LEVEL as 'debug' | 'info' | 'warn' | 'error') || 'info',
-      
-      // Twilio configuration (from Secrets Manager)
-      // Updated for Twilio integration
-      // Trim whitespace and newlines from secrets to avoid initialization errors
-      twilioAccountSid: (await getSecret(`/${environment}/twilio/account-sid`)).trim(),
-      twilioAuthToken: (await getSecret(`/${environment}/twilio/auth-token`)).trim(),
-      twilioPhoneNumber: (await getParameter(`/${environment}/twilio/phone-number`)).trim(),
-      
-      // Razorpay configuration (mixed: key ID from SSM, secrets from Secrets Manager)
-      razorpayKeyId: (await getParameter(`/${environment}/razorpay/key-id`)).trim(),
-      razorpayKeySecret: (await getSecret(`/${environment}/razorpay/key-secret`)).trim(),
-      razorpayWebhookSecret: (await getSecret(`/${environment}/razorpay/webhook-secret`)).trim(),
-      
-      // Gemini AI configuration (from Secrets Manager)
-      geminiApiKey: (await getSecret('GEMINI_API_KEY')).trim(),
-      
-      // Grok AI configuration (from Secrets Manager)
-      grokApiKey: (await getSecret('GROK_API_KEY')).trim(),
+      twilioAccountSid,
+      twilioAuthToken,
+      twilioPhoneNumber,
+      razorpayKeyId,
+      razorpayKeySecret,
+      razorpayWebhookSecret,
+      geminiApiKey,
+      grokApiKey,
     };
     
     // Validate configuration against schema
@@ -196,9 +266,104 @@ export async function getConfig(): Promise<Config> {
       throw new Error(`Configuration validation failed: ${errorMessages}`);
     }
     
-    // Re-throw other errors
+    // Re-throw other errors (includes resolveSecret failures with clear key names)
     throw error;
   }
+}
+
+/**
+ * Cached webhook config to avoid repeated AWS API calls
+ */
+let cachedWebhookConfig: WebhookConfig | null = null;
+
+/**
+ * Load only the config keys needed by the WhatsApp webhook handler.
+ * 
+ * This avoids loading gemini/grok/razorpay secrets which the webhook
+ * does not need, preventing config load failures when those secrets
+ * are missing or inaccessible.
+ * 
+ * @returns Validated webhook configuration object
+ */
+export async function getWebhookConfig(): Promise<WebhookConfig> {
+  if (cachedWebhookConfig) {
+    return cachedWebhookConfig;
+  }
+
+  const environment = process.env.ENVIRONMENT;
+  if (!environment) {
+    throw new Error('ENVIRONMENT environment variable is required');
+  }
+  if (!['dev', 'staging', 'prod'].includes(environment)) {
+    throw new Error(`Invalid ENVIRONMENT value: ${environment}. Must be dev, staging, or prod`);
+  }
+
+  // Only resolve Twilio secrets — the only secrets the webhook needs
+  const [twilioAccountSid, twilioAuthToken, twilioPhoneNumber] = await Promise.all([
+    resolveSecret('TWILIO_ACCOUNT_SID', () => getSecret(`/${environment}/twilio/account-sid`), 'twilioAccountSid'),
+    resolveSecret('TWILIO_AUTH_TOKEN', () => getSecret(`/${environment}/twilio/auth-token`), 'twilioAuthToken'),
+    resolveSecret('TWILIO_PHONE_NUMBER', () => getParameter(`/${environment}/twilio/phone-number`), 'twilioPhoneNumber'),
+  ]);
+
+  cachedWebhookConfig = {
+    environment: environment as 'dev' | 'staging' | 'prod',
+    region: process.env.AWS_REGION || 'us-east-1',
+    tableName: process.env.TABLE_NAME!,
+    eventBusName: process.env.EVENT_BUS_NAME!,
+    userPoolId: process.env.USER_POOL_ID!,
+    userPoolClientId: process.env.USER_POOL_CLIENT_ID!,
+    productImagesBucket: process.env.PRODUCT_IMAGES_BUCKET || '',
+    documentsBucket: process.env.DOCUMENTS_BUCKET || '',
+    twilioAccountSid,
+    twilioAuthToken,
+    twilioPhoneNumber,
+    logLevel: process.env.LOG_LEVEL || 'info',
+  };
+
+  return cachedWebhookConfig;
+}
+
+/**
+ * Load only the config keys needed by the voice pipeline.
+ * 
+ * If the full config is already cached, extracts from it.
+ * Otherwise resolves only Gemini + Twilio keys independently,
+ * so an unrelated Razorpay/Grok failure cannot block voice processing.
+ */
+export async function getVoicePipelineConfig(): Promise<VoicePipelineConfig> {
+  // Fast path: full config already cached
+  if (cachedConfig) {
+    return {
+      geminiApiKey: cachedConfig.geminiApiKey,
+      twilioAccountSid: cachedConfig.twilioAccountSid,
+      twilioAuthToken: cachedConfig.twilioAuthToken,
+      twilioPhoneNumber: cachedConfig.twilioPhoneNumber,
+      productImagesBucket: cachedConfig.productImagesBucket,
+      region: cachedConfig.region,
+    };
+  }
+
+  const environment = process.env.ENVIRONMENT;
+  if (!environment) {
+    throw new Error('ENVIRONMENT environment variable is required');
+  }
+
+  // Resolve only voice-relevant keys in parallel
+  const [geminiApiKey, twilioAccountSid, twilioAuthToken, twilioPhoneNumber] = await Promise.all([
+    resolveSecret('GEMINI_API_KEY', () => getSecret(`/${environment}/gemini/api-key`), 'geminiApiKey'),
+    resolveSecret('TWILIO_ACCOUNT_SID', () => getSecret(`/${environment}/twilio/account-sid`), 'twilioAccountSid'),
+    resolveSecret('TWILIO_AUTH_TOKEN', () => getSecret(`/${environment}/twilio/auth-token`), 'twilioAuthToken'),
+    resolveSecret('TWILIO_PHONE_NUMBER', () => getParameter(`/${environment}/twilio/phone-number`), 'twilioPhoneNumber'),
+  ]);
+
+  return {
+    geminiApiKey,
+    twilioAccountSid,
+    twilioAuthToken,
+    twilioPhoneNumber,
+    productImagesBucket: process.env.PRODUCT_IMAGES_BUCKET || '',
+    region: process.env.AWS_REGION || 'us-east-1',
+  };
 }
 
 /**
@@ -206,4 +371,5 @@ export async function getConfig(): Promise<Config> {
  */
 export function clearConfigCache(): void {
   cachedConfig = null;
+  cachedWebhookConfig = null;
 }

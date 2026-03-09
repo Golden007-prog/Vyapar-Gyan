@@ -65,7 +65,7 @@ function makeEvent(overrides: DetailOverrides = {}): EventBridgeEvent<'CustomerM
     source: 'vyapargyan.chat',
     account: '123456789012',
     time: '2025-01-15T10:00:00Z',
-    region: 'us-east-1',
+    region: 'ap-south-1',
     resources: [],
     'detail-type': 'CustomerMessageSent',
     detail: {

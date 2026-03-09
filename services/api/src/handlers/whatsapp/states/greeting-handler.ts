@@ -1,11 +1,11 @@
 import { logger } from '../../../utils/logger';
 import { whatsappSender } from '../../../services/whatsapp-sender';
-import { SessionRepository } from '../../../repositories/session-repository';
 import { MessageRepository } from '../../../repositories/message-repository';
 import { CatalogRepository } from '../../../repositories/catalog-repository';
+import { updateSessionState } from '../../../adapters/dynamodb-adapter';
+import { safeName } from '../../../utils/safe-name';
 import type { MessageContext } from './router';
 
-const sessionRepository = new SessionRepository();
 const messageRepository = new MessageRepository();
 const catalogRepository = new CatalogRepository();
 
@@ -14,6 +14,9 @@ const catalogRepository = new CatalogRepository();
  * 
  * Handles initial customer interactions and welcome messages.
  * Transitions to browsing state after greeting.
+ * 
+ * Uses the unified session system (SESSION#{userId} ACTIVE) for state
+ * transitions instead of the legacy SessionRepository.
  */
 export async function greetingHandler(context: MessageContext): Promise<void> {
   const { message, customer, session } = context;
@@ -33,44 +36,47 @@ export async function greetingHandler(context: MessageContext): Promise<void> {
     content: message,
   });
 
+  // Resolve display name safely — never allow "undefined" or "null"
+  const displayName = safeName(customer.profileName);
+
   // Get categories for welcome message
   const categories = await catalogRepository.getCategories();
 
   if (categories.length === 0) {
-    // No categories available
     await whatsappSender.sendMessage(
       customer.phoneNumber,
       {
         type: 'text',
-        text: `Namaste ${customer.profileName}! 🙏\n\nWelcome to VyaparGyan! We're setting up our catalog. Please check back soon!`,
+        text: `Namaste${displayName ? ` ${displayName}` : ''}! 🙏\n\nWelcome to VyaparGyan! We're setting up our catalog. Please check back soon!`,
       },
       session.id
     );
     return;
   }
 
+  // Build category menu text
+  const greetingText = `Namaste${displayName ? ` ${displayName}` : ''}! 🙏\n\nWelcome to VyaparGyan! Browse our products by category:`;
+
   // Send welcome message with category options
   if (categories.length <= 3) {
-    // Use button message for 3 or fewer categories
     await whatsappSender.sendMessage(
       customer.phoneNumber,
       {
         type: 'interactive',
-        body: `Namaste ${customer.profileName}! 🙏\n\nWelcome to VyaparGyan! Browse our products by category:`,
+        body: greetingText,
         buttons: categories.slice(0, 3).map(cat => ({
           id: `cat_${cat.id}`,
-          title: cat.name.substring(0, 20), // WhatsApp limit
+          title: cat.name.substring(0, 20),
         })),
       },
       session.id
     );
   } else {
-    // Use list message for more categories
     await whatsappSender.sendMessage(
       customer.phoneNumber,
       {
         type: 'interactive',
-        body: `Namaste ${customer.profileName}! 🙏\n\nWelcome to VyaparGyan! Browse our products by category:`,
+        body: greetingText,
         buttonText: 'View Categories',
         sections: [
           {
@@ -78,10 +84,10 @@ export async function greetingHandler(context: MessageContext): Promise<void> {
             rows: categories.map(cat => {
               const row: { id: string; title: string; description?: string } = {
                 id: `cat_${cat.id}`,
-                title: cat.name.substring(0, 24), // WhatsApp limit
+                title: cat.name.substring(0, 24),
               };
               if (cat.description) {
-                row.description = cat.description.substring(0, 72); // WhatsApp limit
+                row.description = cat.description.substring(0, 72);
               }
               return row;
             }),
@@ -92,13 +98,38 @@ export async function greetingHandler(context: MessageContext): Promise<void> {
     );
   }
 
-  // Transition to browsing state
-  await sessionRepository.updateState(
-    session.id,
-    session.customerId,
-    session.phoneNumber,
-    'browsing'
-  );
+  // Store the sent menu in session context so numeric replies can be resolved
+  const menuContext = {
+    lastMenu: 'categories',
+    menuOptions: categories.map((cat, idx) => ({
+      index: idx + 1,
+      id: cat.id,
+      name: cat.name,
+      type: 'category' as const,
+    })),
+    menuSentAt: new Date().toISOString(),
+  };
+
+  // Transition to browsing state using the unified session system
+  // and store menu context for numeric reply resolution
+  await updateSessionState(session.id, 'browsing', 'whatsapp');
+
+  // Also store menu context in the legacy session for the browsing handler
+  try {
+    const { SessionRepository } = await import('../../../repositories/session-repository.js');
+    const sessionRepo = new SessionRepository();
+    await sessionRepo.updateContext(
+      session.id,
+      customer.id,
+      customer.phoneNumber,
+      menuContext,
+    );
+  } catch (err) {
+    // Non-fatal — browsing will still work, just without numeric reply support
+    logger.warn('Failed to store menu context', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
 
   logger.info('Greeting completed, transitioned to browsing', {
     sessionId: session.id,
