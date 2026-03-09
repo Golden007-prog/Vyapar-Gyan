@@ -106,7 +106,8 @@ export default function ProductDetailClient() {
   };
 
   const handleAskSeller = () => {
-    router.push(`/chat?product=${productId}`);
+    const basePath = process.env.NEXT_PUBLIC_BASE_PATH || '';
+    router.push(`${basePath}/chat?product=${productId}`);
   };
 
   if (loading) {
@@ -118,11 +119,12 @@ export default function ProductDetailClient() {
   }
 
   if (error || !product) {
+    const basePath = process.env.NEXT_PUBLIC_BASE_PATH || '';
     return (
       <div className="mx-auto max-w-2xl px-4 py-16 text-center">
         <p className="text-lg font-medium text-gray-700">{error || 'Product not found'}</p>
         <Link
-          href="/catalog"
+          href={`${basePath}/catalog`}
           className="mt-4 inline-flex items-center gap-1 text-sm text-indigo-600 hover:underline"
         >
           <ArrowLeft className="h-4 w-4" /> Back to catalog
@@ -138,10 +140,12 @@ export default function ProductDetailClient() {
     ? Math.round(((product.originalPrice! - product.price) / product.originalPrice!) * 100)
     : 0;
 
+  const basePath = process.env.NEXT_PUBLIC_BASE_PATH || '';
+
   return (
     <div className="mx-auto max-w-5xl px-4 py-6">
       <Link
-        href="/catalog"
+        href={`${basePath}/catalog`}
         className="mb-4 inline-flex items-center gap-1 text-sm text-gray-500 hover:text-indigo-600"
       >
         <ArrowLeft className="h-4 w-4" /> Back to catalog

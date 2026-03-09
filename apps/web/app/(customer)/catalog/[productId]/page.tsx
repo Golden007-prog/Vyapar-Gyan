@@ -20,6 +20,9 @@ export function generateStaticParams() {
   ];
 }
 
+// Enable dynamic params for GitHub Pages
+export const dynamicParams = true;
+
 export default function ProductDetailPage({ params }: { params: { productId: string } }) {
   return <ProductDetailClient />;
 }

@@ -145,13 +145,13 @@ export default function CheckoutPage() {
         </div>
         <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">
           <Link
-            href="/orders"
+            href={`${basePath}/orders`}
             className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-indigo-700"
           >
             View Orders
           </Link>
           <Link
-            href="/catalog"
+            href={`${basePath}/catalog`}
             className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-300 px-6 py-3 text-sm font-semibold text-gray-700 transition hover:bg-gray-50"
           >
             Continue Shopping
@@ -161,6 +161,8 @@ export default function CheckoutPage() {
     );
   }
 
+  const basePath = process.env.NEXT_PUBLIC_BASE_PATH || '';
+
   // Empty cart redirect
   if (cart && items.length === 0) {
     return (
@@ -168,7 +170,7 @@ export default function CheckoutPage() {
         <ShoppingBag className="mx-auto h-16 w-16 text-gray-300" />
         <p className="mt-4 text-lg font-medium text-gray-600">Your cart is empty</p>
         <Link
-          href="/catalog"
+          href={`${basePath}/catalog`}
           className="mt-6 inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-indigo-700"
         >
           Browse Catalog
@@ -179,7 +181,7 @@ export default function CheckoutPage() {
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-6">
-      <Link href="/cart" className="mb-4 inline-flex items-center gap-1 text-sm text-gray-500 hover:text-indigo-600">
+      <Link href={`${basePath}/cart`} className="mb-4 inline-flex items-center gap-1 text-sm text-gray-500 hover:text-indigo-600">
         <ArrowLeft className="h-4 w-4" /> Back to Cart
       </Link>
 
