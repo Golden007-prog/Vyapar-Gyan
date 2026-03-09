@@ -6,8 +6,6 @@ import { ShoppingCart, Store } from 'lucide-react';
 import MessageList from '@/components/Chat/MessageList';
 import ChatComposer from '@/components/Chat/ChatComposer';
 import CartSidePanel from '@/components/Chat/CartSidePanel';
-import { createSyncClient, type SyncClient } from '@/lib/sync-client';
-import { sendMessage, sendTyping, getHistory, type ChatMessage } from '@/lib/api-chat';
 import {
   getCart,
   updateItem as apiUpdateItem,
@@ -17,74 +15,51 @@ import {
   optimisticRemoveItem,
   type Cart,
 } from '@/lib/api-cart';
+import type { ChatMessage } from '@/lib/api-chat';
 import { useStore } from '@/lib/store-context';
+import { getDemoCart, updateDemoItem, removeDemoItem, clearDemoCart } from '@/lib/demo-cart';
+import {
+  getSessionMessages,
+  appendMessage,
+  setSessionMessages,
+  DEMO_SESSION_ID,
+  type BridgeMessage,
+} from '@/lib/chat-bridge';
 
-// ── Demo identity ──
-const DEMO_SESSION_ID = 'session-demo-customer';
-const INBOX_STORE_KEY = 'vyapargyan_inbox_messages';
-
-// Demo welcome messages
-function getDemoMessages(storeName: string): ChatMessage[] {
+// Demo welcome messages (in bridge format — seller perspective)
+function seedBridge(storeName: string): BridgeMessage[] {
   const now = Date.now();
   return [
     {
-      messageId: 'demo-1',
-      direction: 'inbound',
+      id: 'demo-1',
+      direction: 'outbound', // seller sent (system welcome)
+      text: `Welcome to ${storeName}! How can we help you today?`,
+      timestamp: new Date(now - 300000).toISOString(),
       channel: 'web',
-      senderRole: 'system',
-      messageType: 'system',
-      content: { body: `Welcome to ${storeName}! How can we help you today?` },
-      deliveryStatus: 'delivered',
-      createdAt: new Date(now - 300000).toISOString(),
     },
     {
-      messageId: 'demo-2',
-      direction: 'inbound',
+      id: 'demo-2',
+      direction: 'outbound', // seller sent
+      text: `Namaste! 🙏 Welcome to ${storeName}. We have fresh stock available today. Browse our catalog or ask me anything!`,
+      timestamp: new Date(now - 240000).toISOString(),
       channel: 'web',
-      senderRole: 'seller',
-      messageType: 'text',
-      content: { body: `Namaste! 🙏 Welcome to ${storeName}. We have fresh stock available today. Browse our catalog or ask me anything!` },
-      deliveryStatus: 'delivered',
-      createdAt: new Date(now - 240000).toISOString(),
     },
   ];
 }
 
-/** Read seller replies from shared sessionStorage (written by seller inbox) */
-function readInboxMessages(): ChatMessage[] {
-  try {
-    const store = JSON.parse(sessionStorage.getItem(INBOX_STORE_KEY) || '{}');
-    const raw = store[DEMO_SESSION_ID];
-    if (!Array.isArray(raw)) return [];
-    // Convert inbox Message format → ChatMessage format
-    return raw.map((m: any) => ({
-      messageId: m.id,
-      direction: m.direction === 'inbound' ? 'outbound' : 'inbound', // flip: customer's outbound = seller's inbound
-      channel: 'web' as const,
-      senderRole: m.direction === 'inbound' ? 'customer' : 'seller',
-      messageType: m.messageType || 'text',
-      content: { body: m.content?.text || '' },
-      deliveryStatus: (m.status || 'delivered') as any,
-      createdAt: m.createdAt,
-    }));
-  } catch { return []; }
-}
-
-/** Write customer messages to shared sessionStorage so seller inbox can see them */
-function writeToInbox(msgs: ChatMessage[]) {
-  try {
-    const store = JSON.parse(sessionStorage.getItem(INBOX_STORE_KEY) || '{}');
-    // Convert ChatMessage → inbox Message format
-    store[DEMO_SESSION_ID] = msgs.map(m => ({
-      id: m.messageId,
-      direction: m.direction === 'outbound' ? 'inbound' : 'outbound', // flip for seller perspective
-      messageType: m.messageType === 'system' ? 'text' : m.messageType,
-      content: { text: m.content?.body || '' },
-      status: m.deliveryStatus,
-      createdAt: m.createdAt,
-    }));
-    sessionStorage.setItem(INBOX_STORE_KEY, JSON.stringify(store));
-  } catch { /* ignore */ }
+/** Convert bridge messages (seller perspective) → customer ChatMessage[] */
+function bridgeToCustomer(msgs: BridgeMessage[]): ChatMessage[] {
+  return msgs.map(m => ({
+    messageId: m.id,
+    // Flip direction: bridge inbound (customer→seller) = customer outbound
+    direction: m.direction === 'inbound' ? 'outbound' : 'inbound',
+    channel: m.channel as any,
+    senderRole: m.direction === 'inbound' ? 'customer' : 'seller',
+    messageType: 'text',
+    content: { body: m.text },
+    deliveryStatus: 'delivered' as const,
+    createdAt: m.timestamp,
+  }));
 }
 
 export default function ChatPage() {
@@ -97,77 +72,65 @@ export default function ChatPage() {
 
 function ChatContent() {
   const searchParams = useSearchParams();
-  const _productId = searchParams.get('product');
   const { selectedStore } = useStore();
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [cart, setCart] = useState<Cart | null>(null);
   const [cartOpen, setCartOpen] = useState(false);
-  const [isTyping, setIsTyping] = useState(false);
+  const [isTyping] = useState(false);
   const [checkingOut, setCheckingOut] = useState(false);
   const [error, setError] = useState('');
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
   const storeName = selectedStore?.businessName || 'Dragon Store';
+  const sellerId = selectedStore?.sellerId || 'seller-dragon-001';
 
-  // Load initial messages — try inbox shared store first, then demo seed
+  // Load initial messages from bridge, seed if empty
   useEffect(() => {
-    const inboxMsgs = readInboxMessages();
-    if (inboxMsgs.length > 0) {
-      setMessages(inboxMsgs);
-    } else {
-      const seed = getDemoMessages(storeName);
-      setMessages(seed);
-      writeToInbox(seed);
+    let bridgeMsgs = getSessionMessages(DEMO_SESSION_ID);
+    if (bridgeMsgs.length === 0) {
+      bridgeMsgs = seedBridge(storeName);
+      setSessionMessages(DEMO_SESSION_ID, bridgeMsgs);
     }
+    setMessages(bridgeToCustomer(bridgeMsgs));
 
+    // Load cart — try API, fallback to demo
     getCart()
       .then((res) => setCart(res.cart))
-      .catch(() => {});
-  }, [storeName]);
+      .catch(() => setCart(getDemoCart(sellerId)));
+  }, [storeName, sellerId]);
 
-  // Poll for seller replies from sessionStorage every 2s
+  // Poll bridge for seller replies every 1.5s
   useEffect(() => {
     pollRef.current = setInterval(() => {
-      const inboxMsgs = readInboxMessages();
-      if (inboxMsgs.length > messages.length) {
-        setMessages(inboxMsgs);
+      const bridgeMsgs = getSessionMessages(DEMO_SESSION_ID);
+      const converted = bridgeToCustomer(bridgeMsgs);
+      if (converted.length !== messages.length) {
+        setMessages(converted);
       }
-    }, 2000);
+    }, 1500);
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [messages.length]);
 
   const handleSend = useCallback(async (text: string) => {
-    const optimistic: ChatMessage = {
-      messageId: `cust-${Date.now()}`,
-      direction: 'outbound',
+    const msgId = `cust-${Date.now()}`;
+    const timestamp = new Date().toISOString();
+
+    // Write to bridge (seller perspective: inbound = from customer)
+    appendMessage(DEMO_SESSION_ID, {
+      id: msgId,
+      direction: 'inbound',
+      text,
+      timestamp,
       channel: 'web',
-      senderRole: 'customer',
-      messageType: 'text',
-      content: { body: text },
-      deliveryStatus: 'queued',
-      createdAt: new Date().toISOString(),
-    };
-    const updated = [...messages, optimistic];
-    setMessages(updated);
-    writeToInbox(updated);
+    });
 
-    // Simulate delivery
-    setTimeout(() => {
-      setMessages((prev) => {
-        const next = prev.map((m) =>
-          m.messageId === optimistic.messageId ? { ...m, deliveryStatus: 'delivered' as const } : m
-        );
-        writeToInbox(next);
-        return next;
-      });
-    }, 500);
-  }, [messages]);
-
-  const handleTyping = useCallback(() => {
-    // no-op in demo mode
+    // Update local state immediately
+    const bridgeMsgs = getSessionMessages(DEMO_SESSION_ID);
+    setMessages(bridgeToCustomer(bridgeMsgs));
   }, []);
+
+  const handleTyping = useCallback(() => {}, []);
 
   const handleUpdateQuantity = useCallback(async (pid: string, quantity: number) => {
     if (!cart) return;
@@ -176,9 +139,9 @@ function ChatContent() {
       const res = await apiUpdateItem(pid, quantity);
       setCart(res.cart);
     } catch {
-      getCart().then((r) => setCart(r.cart)).catch(() => {});
+      setCart(updateDemoItem(sellerId, pid, quantity));
     }
-  }, [cart]);
+  }, [cart, sellerId]);
 
   const handleRemoveItem = useCallback(async (pid: string) => {
     if (!cart) return;
@@ -187,9 +150,9 @@ function ChatContent() {
       const res = await apiRemoveItem(pid);
       setCart(res.cart);
     } catch {
-      getCart().then((r) => setCart(r.cart)).catch(() => {});
+      setCart(removeDemoItem(sellerId, pid));
     }
-  }, [cart]);
+  }, [cart, sellerId]);
 
   const handleCheckout = useCallback(async () => {
     setCheckingOut(true);
@@ -198,23 +161,32 @@ function ChatContent() {
       const res = await apiCheckout();
       setCart(null);
       setCartOpen(false);
-      const sysMsg: ChatMessage = {
-        messageId: `sys-${Date.now()}`,
-        direction: 'inbound',
+      appendMessage(DEMO_SESSION_ID, {
+        id: `sys-${Date.now()}`,
+        direction: 'outbound',
+        text: `✅ Order placed! Order ID: ${res.orderId}. Total: ₹${res.total.toLocaleString('en-IN')}`,
+        timestamp: new Date().toISOString(),
         channel: 'web',
-        senderRole: 'system',
-        messageType: 'system',
-        content: { body: `✅ Order placed! Order ID: ${res.orderId}. Total: ₹${res.total.toLocaleString('en-IN')}` },
-        deliveryStatus: 'delivered',
-        createdAt: new Date().toISOString(),
-      };
-      setMessages((prev) => [...prev, sysMsg]);
-    } catch (err: any) {
-      setError(err.message || 'Checkout failed. Please try again.');
+      });
+      setMessages(bridgeToCustomer(getSessionMessages(DEMO_SESSION_ID)));
+    } catch {
+      // Demo fallback checkout
+      clearDemoCart(sellerId);
+      setCart(getDemoCart(sellerId));
+      setCartOpen(false);
+      const orderId = `VG-${Date.now().toString(36).toUpperCase()}`;
+      appendMessage(DEMO_SESSION_ID, {
+        id: `sys-${Date.now()}`,
+        direction: 'outbound',
+        text: `✅ Order placed! Order ID: ${orderId}`,
+        timestamp: new Date().toISOString(),
+        channel: 'web',
+      });
+      setMessages(bridgeToCustomer(getSessionMessages(DEMO_SESSION_ID)));
     } finally {
       setCheckingOut(false);
     }
-  }, []);
+  }, [sellerId]);
 
   const itemCount = cart?.itemCount ?? 0;
 

@@ -21,18 +21,18 @@ const PAGE_SIZE = 20;
 
 // Demo products for when API is unavailable
 const DEMO_PRODUCTS: CatalogProduct[] = [
-  { productId: 'demo-p1', name: 'Tata Salt 1kg', description: 'Iodized salt for daily cooking', price: 25, sellerId: 'SELLER#demo-seller-001', stockStatus: 'in_stock', imageUrls: [], createdAt: '2025-01-15T10:00:00Z' },
-  { productId: 'demo-p2', name: 'Amul Butter 500g', description: 'Fresh pasteurized butter', price: 280, originalPrice: 300, sellerId: 'SELLER#demo-seller-001', stockStatus: 'in_stock', imageUrls: [], createdAt: '2025-01-14T10:00:00Z' },
-  { productId: 'demo-p3', name: 'Parle-G Biscuits 800g', description: 'India\'s favorite glucose biscuit', price: 55, sellerId: 'SELLER#demo-seller-001', stockStatus: 'in_stock', imageUrls: [], createdAt: '2025-01-13T10:00:00Z' },
-  { productId: 'demo-p4', name: 'Fortune Sunflower Oil 1L', description: 'Refined sunflower cooking oil', price: 180, originalPrice: 195, sellerId: 'SELLER#demo-seller-001', stockStatus: 'in_stock', imageUrls: [], createdAt: '2025-01-12T10:00:00Z' },
-  { productId: 'demo-p5', name: 'Maggi 2-Minute Noodles (Pack of 12)', description: 'Masala instant noodles', price: 144, sellerId: 'SELLER#demo-seller-001', stockStatus: 'in_stock', imageUrls: [], createdAt: '2025-01-11T10:00:00Z' },
-  { productId: 'demo-p6', name: 'Colgate MaxFresh Toothpaste 150g', description: 'Cooling crystals toothpaste', price: 95, sellerId: 'SELLER#demo-seller-001', stockStatus: 'low_stock', imageUrls: [], createdAt: '2025-01-10T10:00:00Z' },
-  { productId: 'demo-p7', name: 'Surf Excel Matic 2kg', description: 'Front load washing powder', price: 420, originalPrice: 460, sellerId: 'SELLER#demo-seller-001', stockStatus: 'in_stock', imageUrls: [], createdAt: '2025-01-09T10:00:00Z' },
-  { productId: 'demo-p8', name: 'Dettol Handwash 200ml', description: 'Original antibacterial handwash', price: 65, sellerId: 'SELLER#demo-seller-001', stockStatus: 'in_stock', imageUrls: [], createdAt: '2025-01-08T10:00:00Z' },
-  { productId: 'demo-p9', name: 'Aashirvaad Atta 5kg', description: 'Whole wheat flour', price: 295, sellerId: 'SELLER#demo-seller-001', stockStatus: 'in_stock', imageUrls: [], createdAt: '2025-01-07T10:00:00Z' },
-  { productId: 'demo-p10', name: 'Red Label Tea 500g', description: 'Premium Assam tea', price: 230, originalPrice: 250, sellerId: 'SELLER#demo-seller-001', stockStatus: 'low_stock', imageUrls: [], createdAt: '2025-01-06T10:00:00Z' },
-  { productId: 'demo-p11', name: 'Vim Dishwash Bar 500g', description: 'Lemon fresh dishwash bar', price: 35, sellerId: 'SELLER#demo-seller-001', stockStatus: 'in_stock', imageUrls: [], createdAt: '2025-01-05T10:00:00Z' },
-  { productId: 'demo-p12', name: 'Cadbury Dairy Milk Silk', description: 'Smooth chocolate bar', price: 85, sellerId: 'SELLER#demo-seller-001', stockStatus: 'in_stock', imageUrls: [], createdAt: '2025-01-04T10:00:00Z' },
+  { productId: 'demo-p1', name: 'Tata Salt 1kg', description: 'Iodized salt for daily cooking', price: 25, sellerId: 'seller-dragon-001', stockStatus: 'in_stock', imageUrls: [], createdAt: '2025-01-15T10:00:00Z' },
+  { productId: 'demo-p2', name: 'Amul Butter 500g', description: 'Fresh pasteurized butter', price: 280, originalPrice: 300, sellerId: 'seller-dragon-001', stockStatus: 'in_stock', imageUrls: [], createdAt: '2025-01-14T10:00:00Z' },
+  { productId: 'demo-p3', name: 'Parle-G Biscuits 800g', description: 'India\'s favorite glucose biscuit', price: 55, sellerId: 'seller-dragon-001', stockStatus: 'in_stock', imageUrls: [], createdAt: '2025-01-13T10:00:00Z' },
+  { productId: 'demo-p4', name: 'Fortune Sunflower Oil 1L', description: 'Refined sunflower cooking oil', price: 180, originalPrice: 195, sellerId: 'seller-dragon-001', stockStatus: 'in_stock', imageUrls: [], createdAt: '2025-01-12T10:00:00Z' },
+  { productId: 'demo-p5', name: 'Maggi 2-Minute Noodles (Pack of 12)', description: 'Masala instant noodles', price: 144, sellerId: 'seller-dragon-001', stockStatus: 'in_stock', imageUrls: [], createdAt: '2025-01-11T10:00:00Z' },
+  { productId: 'demo-p6', name: 'Colgate MaxFresh Toothpaste 150g', description: 'Cooling crystals toothpaste', price: 95, sellerId: 'seller-dragon-001', stockStatus: 'low_stock', imageUrls: [], createdAt: '2025-01-10T10:00:00Z' },
+  { productId: 'demo-p7', name: 'Surf Excel Matic 2kg', description: 'Front load washing powder', price: 420, originalPrice: 460, sellerId: 'seller-dragon-001', stockStatus: 'in_stock', imageUrls: [], createdAt: '2025-01-09T10:00:00Z' },
+  { productId: 'demo-p8', name: 'Dettol Handwash 200ml', description: 'Original antibacterial handwash', price: 65, sellerId: 'seller-dragon-001', stockStatus: 'in_stock', imageUrls: [], createdAt: '2025-01-08T10:00:00Z' },
+  { productId: 'demo-p9', name: 'Aashirvaad Atta 5kg', description: 'Whole wheat flour', price: 295, sellerId: 'seller-dragon-001', stockStatus: 'in_stock', imageUrls: [], createdAt: '2025-01-07T10:00:00Z' },
+  { productId: 'demo-p10', name: 'Red Label Tea 500g', description: 'Premium Assam tea', price: 230, originalPrice: 250, sellerId: 'seller-dragon-001', stockStatus: 'low_stock', imageUrls: [], createdAt: '2025-01-06T10:00:00Z' },
+  { productId: 'demo-p11', name: 'Vim Dishwash Bar 500g', description: 'Lemon fresh dishwash bar', price: 35, sellerId: 'seller-dragon-001', stockStatus: 'in_stock', imageUrls: [], createdAt: '2025-01-05T10:00:00Z' },
+  { productId: 'demo-p12', name: 'Cadbury Dairy Milk Silk', description: 'Smooth chocolate bar', price: 85, sellerId: 'seller-dragon-001', stockStatus: 'in_stock', imageUrls: [], createdAt: '2025-01-04T10:00:00Z' },
 ];
 
 const DEMO_CATEGORIES: Category[] = [

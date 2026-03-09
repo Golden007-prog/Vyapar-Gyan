@@ -9,6 +9,7 @@ import {
   Store,
   Package,
   MessageCircle,
+  ShoppingCart,
   ChevronDown,
   X,
   LogOut,
@@ -22,6 +23,7 @@ import {
   STORE_KEY,
   type SellerStore,
 } from '@/lib/store-context';
+import { getDemoCart } from '@/lib/demo-cart';
 
 export default function CustomerLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -29,6 +31,7 @@ export default function CustomerLayout({ children }: { children: React.ReactNode
   const [showStorePicker, setShowStorePicker] = useState(false);
   const [pendingStore, setPendingStore] = useState<SellerStore | null>(null);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [cartCount, setCartCount] = useState(0);
 
   useEffect(() => {
     configureAmplify();
@@ -88,10 +91,24 @@ export default function CustomerLayout({ children }: { children: React.ReactNode
 
   const navItems = [
     { href: '/catalog', label: 'Catalog', icon: Search },
+    { href: '/cart', label: 'Cart', icon: ShoppingCart, badge: cartCount },
     { href: '/chat', label: 'Chat', icon: MessageCircle },
     { href: '/orders', label: 'Orders', icon: Package },
     { href: '/account', label: 'Account', icon: User },
   ];
+
+  // Poll demo cart count
+  useEffect(() => {
+    const update = () => {
+      if (selectedStore) {
+        const c = getDemoCart(selectedStore.sellerId);
+        setCartCount(c.itemCount);
+      }
+    };
+    update();
+    const id = setInterval(update, 1000);
+    return () => clearInterval(id);
+  }, [selectedStore]);
 
   return (
     <StoreContext.Provider value={{ selectedStore, setSelectedStore, stores: DEMO_STORES }}>
@@ -123,7 +140,7 @@ export default function CustomerLayout({ children }: { children: React.ReactNode
                   <Link
                     key={item.href}
                     href={item.href}
-                    className={`flex items-center gap-1 rounded-lg px-2 py-1.5 text-sm transition sm:px-3 ${
+                    className={`relative flex items-center gap-1 rounded-lg px-2 py-1.5 text-sm transition sm:px-3 ${
                       active
                         ? 'bg-indigo-50 text-indigo-600 font-medium'
                         : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
@@ -131,6 +148,11 @@ export default function CustomerLayout({ children }: { children: React.ReactNode
                   >
                     <Icon className="h-4 w-4" />
                     <span className="hidden sm:inline">{item.label}</span>
+                    {item.badge && item.badge > 0 ? (
+                      <span className="absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-indigo-600 px-1 text-[10px] font-bold text-white">
+                        {item.badge}
+                      </span>
+                    ) : null}
                   </Link>
                 );
               })}

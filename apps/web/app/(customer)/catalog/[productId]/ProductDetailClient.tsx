@@ -16,6 +16,25 @@ import {
   XCircle,
 } from 'lucide-react';
 import { getProduct, type ProductDetail } from '@/lib/api-catalog';
+import { addItem as apiAddItem } from '@/lib/api-cart';
+import { addDemoItem } from '@/lib/demo-cart';
+import { useStore } from '@/lib/store-context';
+
+// Demo product lookup for when API is unavailable
+const DEMO_PRODUCT_MAP: Record<string, ProductDetail> = {
+  'demo-p1': { productId: 'demo-p1', name: 'Tata Salt 1kg', description: 'Iodized salt for daily cooking', price: 25, stockStatus: 'in_stock', imageUrls: [], seller: { sellerId: 'seller-dragon-001', businessName: 'Dragon Store' }, createdAt: '2025-01-15T10:00:00Z' },
+  'demo-p2': { productId: 'demo-p2', name: 'Amul Butter 500g', description: 'Fresh pasteurized butter', price: 280, originalPrice: 300, stockStatus: 'in_stock', imageUrls: [], seller: { sellerId: 'seller-dragon-001', businessName: 'Dragon Store' }, createdAt: '2025-01-14T10:00:00Z' },
+  'demo-p3': { productId: 'demo-p3', name: 'Parle-G Biscuits 800g', description: 'India\'s favorite glucose biscuit', price: 55, stockStatus: 'in_stock', imageUrls: [], seller: { sellerId: 'seller-dragon-001', businessName: 'Dragon Store' }, createdAt: '2025-01-13T10:00:00Z' },
+  'demo-p4': { productId: 'demo-p4', name: 'Fortune Sunflower Oil 1L', description: 'Refined sunflower cooking oil', price: 180, originalPrice: 195, stockStatus: 'in_stock', imageUrls: [], seller: { sellerId: 'seller-dragon-001', businessName: 'Dragon Store' }, createdAt: '2025-01-12T10:00:00Z' },
+  'demo-p5': { productId: 'demo-p5', name: 'Maggi 2-Minute Noodles (Pack of 12)', description: 'Masala instant noodles', price: 144, stockStatus: 'in_stock', imageUrls: [], seller: { sellerId: 'seller-dragon-001', businessName: 'Dragon Store' }, createdAt: '2025-01-11T10:00:00Z' },
+  'demo-p6': { productId: 'demo-p6', name: 'Colgate MaxFresh Toothpaste 150g', description: 'Cooling crystals toothpaste', price: 95, stockStatus: 'low_stock', imageUrls: [], seller: { sellerId: 'seller-dragon-001', businessName: 'Dragon Store' }, createdAt: '2025-01-10T10:00:00Z' },
+  'demo-p7': { productId: 'demo-p7', name: 'Surf Excel Matic 2kg', description: 'Front load washing powder', price: 420, originalPrice: 460, stockStatus: 'in_stock', imageUrls: [], seller: { sellerId: 'seller-dragon-001', businessName: 'Dragon Store' }, createdAt: '2025-01-09T10:00:00Z' },
+  'demo-p8': { productId: 'demo-p8', name: 'Dettol Handwash 200ml', description: 'Original antibacterial handwash', price: 65, stockStatus: 'in_stock', imageUrls: [], seller: { sellerId: 'seller-dragon-001', businessName: 'Dragon Store' }, createdAt: '2025-01-08T10:00:00Z' },
+  'demo-p9': { productId: 'demo-p9', name: 'Aashirvaad Atta 5kg', description: 'Whole wheat flour', price: 295, stockStatus: 'in_stock', imageUrls: [], seller: { sellerId: 'seller-dragon-001', businessName: 'Dragon Store' }, createdAt: '2025-01-07T10:00:00Z' },
+  'demo-p10': { productId: 'demo-p10', name: 'Red Label Tea 500g', description: 'Premium Assam tea', price: 230, originalPrice: 250, stockStatus: 'low_stock', imageUrls: [], seller: { sellerId: 'seller-dragon-001', businessName: 'Dragon Store' }, createdAt: '2025-01-06T10:00:00Z' },
+  'demo-p11': { productId: 'demo-p11', name: 'Vim Dishwash Bar 500g', description: 'Lemon fresh dishwash bar', price: 35, stockStatus: 'in_stock', imageUrls: [], seller: { sellerId: 'seller-dragon-001', businessName: 'Dragon Store' }, createdAt: '2025-01-05T10:00:00Z' },
+  'demo-p12': { productId: 'demo-p12', name: 'Cadbury Dairy Milk Silk', description: 'Smooth chocolate bar', price: 85, stockStatus: 'in_stock', imageUrls: [], seller: { sellerId: 'seller-dragon-001', businessName: 'Dragon Store' }, createdAt: '2025-01-04T10:00:00Z' },
+};
 
 const STOCK_CONFIG: Record<string, { label: string; color: string; icon: typeof CheckCircle2 }> = {
   in_stock: { label: 'In Stock', color: 'text-green-600 bg-green-50', icon: CheckCircle2 },
@@ -26,6 +45,7 @@ const STOCK_CONFIG: Record<string, { label: string; color: string; icon: typeof 
 export default function ProductDetailClient() {
   const { productId } = useParams<{ productId: string }>();
   const router = useRouter();
+  const { selectedStore } = useStore();
 
   const [product, setProduct] = useState<ProductDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -40,7 +60,9 @@ export default function ProductDetailClient() {
     getProduct(productId)
       .then((res) => setProduct(res.product))
       .catch(() => {
-        setProduct({
+        // Use demo product map for known demo IDs, fallback for unknown
+        const demo = DEMO_PRODUCT_MAP[productId];
+        setProduct(demo ?? {
           productId,
           name: 'Demo Product',
           description: 'This is a demo product. In production, product details are loaded from the API.',
@@ -48,7 +70,7 @@ export default function ProductDetailClient() {
           originalPrice: 249,
           stockStatus: 'in_stock',
           imageUrls: [],
-          seller: { sellerId: 'demo-seller-001', businessName: 'Gupta General Store' },
+          seller: { sellerId: 'seller-dragon-001', businessName: 'Dragon Store' },
           createdAt: new Date().toISOString(),
         });
       })
@@ -62,14 +84,25 @@ export default function ProductDetailClient() {
   const nextImage = () => setImgIdx((i) => (i === images.length - 1 ? 0 : i + 1));
 
   const handleAddToCart = async () => {
+    if (!product) return;
     setAddingToCart(true);
     try {
-      await new Promise((r) => setTimeout(r, 600));
-      setAddedToCart(true);
-      setTimeout(() => setAddedToCart(false), 2000);
-    } finally {
-      setAddingToCart(false);
+      // Try real API first
+      await apiAddItem({ productId: product.productId, quantity: 1 });
+    } catch {
+      // Fallback: add to demo local cart
+      const sellerId = selectedStore?.sellerId || product.seller?.sellerId || 'seller-dragon-001';
+      addDemoItem(sellerId, {
+        productId: product.productId,
+        sellerId,
+        name: product.name,
+        price: product.price,
+        quantity: 1,
+      });
     }
+    setAddingToCart(false);
+    setAddedToCart(true);
+    setTimeout(() => setAddedToCart(false), 2000);
   };
 
   const handleAskSeller = () => {
