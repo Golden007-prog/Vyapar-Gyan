@@ -105,12 +105,16 @@ function ChatContent() {
     pollRef.current = setInterval(() => {
       const bridgeMsgs = getSessionMessages(DEMO_SESSION_ID);
       const converted = bridgeToCustomer(bridgeMsgs);
-      if (converted.length !== messages.length) {
-        setMessages(converted);
-      }
+      // Compare by last message id to detect new messages reliably
+      setMessages(prev => {
+        if (converted.length !== prev.length || (converted.length > 0 && prev.length > 0 && converted[converted.length - 1].messageId !== prev[prev.length - 1].messageId)) {
+          return converted;
+        }
+        return prev;
+      });
     }, 1500);
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [messages.length]);
+  }, []);
 
   const handleSend = useCallback(async (text: string) => {
     const msgId = `cust-${Date.now()}`;

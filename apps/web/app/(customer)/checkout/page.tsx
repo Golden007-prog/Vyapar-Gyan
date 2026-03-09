@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { useStore } from '@/lib/store-context';
 import { getDemoCart, clearDemoCart } from '@/lib/demo-cart';
+import { createDemoOrder, saveDemoOrder, type DemoOrder } from '@/lib/demo-orders';
 import type { Cart } from '@/lib/api-cart';
 
 const GST_RATE = 0.18;
@@ -36,8 +37,6 @@ export default function CheckoutPage() {
   const [orderPlaced, setOrderPlaced] = useState(false);
   const [orderId, setOrderId] = useState('');
   const [error, setError] = useState('');
-
-  const basePath = process.env.NEXT_PUBLIC_BASE_PATH || '';
 
   // Customer details for demo
   const [name, setName] = useState('Demo Customer');
@@ -64,11 +63,12 @@ export default function CheckoutPage() {
   const total = subtotal + gst;
 
   const handlePayment = useCallback(async () => {
-    if (items.length === 0) return;
+    if (items.length === 0 || !cart) return;
     setPaying(true);
     setError('');
 
-    const generatedOrderId = `VG-${Date.now().toString(36).toUpperCase()}`;
+    // Build demo order from cart
+    const demoOrder = createDemoOrder(cart, sellerId, storeName, name, phone, address);
 
     // Try to create order via backend first
     let razorpayOrderId: string | undefined;
@@ -78,7 +78,7 @@ export default function CheckoutPage() {
         const res = await fetch(`${apiBase}/api/v1/payments/create-order`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ amount: total, orderId: generatedOrderId }),
+          body: JSON.stringify({ amount: total, orderId: demoOrder.orderId }),
         });
         if (res.ok) {
           const data = await res.json();
@@ -87,7 +87,7 @@ export default function CheckoutPage() {
       }
     } catch { /* proceed with demo flow */ }
 
-    // If Razorpay SDK is loaded and we have a key, open checkout
+    // If Razorpay SDK is loaded and we have a real key, open checkout
     if (typeof window.Razorpay === 'function' && RAZORPAY_KEY !== 'rzp_test_demo') {
       const options = {
         key: RAZORPAY_KEY,
@@ -97,9 +97,10 @@ export default function CheckoutPage() {
         description: `Order from ${storeName}`,
         order_id: razorpayOrderId,
         handler: function () {
-          // Payment success
+          // Payment success — persist order and clear cart
+          saveDemoOrder(demoOrder);
           clearDemoCart(sellerId);
-          setOrderId(generatedOrderId);
+          setOrderId(demoOrder.orderId);
           setOrderPlaced(true);
           setPaying(false);
         },
@@ -108,7 +109,7 @@ export default function CheckoutPage() {
           contact: phone.replace(/\s/g, ''),
         },
         notes: {
-          order_id: generatedOrderId,
+          order_id: demoOrder.orderId,
           store: storeName,
         },
         theme: { color: '#4F46E5' },
@@ -123,12 +124,13 @@ export default function CheckoutPage() {
     } else {
       // Demo fallback: simulate successful payment after short delay
       await new Promise(r => setTimeout(r, 1500));
+      saveDemoOrder(demoOrder);
       clearDemoCart(sellerId);
-      setOrderId(generatedOrderId);
+      setOrderId(demoOrder.orderId);
       setOrderPlaced(true);
       setPaying(false);
     }
-  }, [items, total, sellerId, storeName, name, phone]);
+  }, [items, total, cart, sellerId, storeName, name, phone, address]);
 
   // Order confirmation view
   if (orderPlaced) {
@@ -147,13 +149,13 @@ export default function CheckoutPage() {
         </div>
         <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">
           <Link
-            href={`${basePath}/orders`}
+            href="/orders"
             className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-indigo-700"
           >
             View Orders
           </Link>
           <Link
-            href={`${basePath}/catalog`}
+            href="/catalog"
             className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-300 px-6 py-3 text-sm font-semibold text-gray-700 transition hover:bg-gray-50"
           >
             Continue Shopping
@@ -170,7 +172,7 @@ export default function CheckoutPage() {
         <ShoppingBag className="mx-auto h-16 w-16 text-gray-300" />
         <p className="mt-4 text-lg font-medium text-gray-600">Your cart is empty</p>
         <Link
-          href={`${basePath}/catalog`}
+          href="/catalog"
           className="mt-6 inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-indigo-700"
         >
           Browse Catalog
@@ -181,7 +183,7 @@ export default function CheckoutPage() {
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-6">
-      <Link href={`${basePath}/cart`} className="mb-4 inline-flex items-center gap-1 text-sm text-gray-500 hover:text-indigo-600">
+      <Link href="/cart" className="mb-4 inline-flex items-center gap-1 text-sm text-gray-500 hover:text-indigo-600">
         <ArrowLeft className="h-4 w-4" /> Back to Cart
       </Link>
 

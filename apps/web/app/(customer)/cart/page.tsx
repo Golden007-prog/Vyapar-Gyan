@@ -59,7 +59,7 @@ export default function CartPage() {
           <p className="mt-4 text-lg font-medium text-gray-600">Your cart is empty</p>
           <p className="mt-1 text-sm text-gray-400">Browse the catalog to add products</p>
           <Link
-            href={`${process.env.NEXT_PUBLIC_BASE_PATH || ''}/catalog`}
+            href="/catalog"
             className="mt-6 inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-indigo-700"
           >
             Browse Catalog
@@ -97,7 +97,7 @@ export default function CartPage() {
               </div>
             </div>
             <Link
-              href={`${process.env.NEXT_PUBLIC_BASE_PATH || ''}/checkout`}
+              href="/checkout"
               className="mt-5 flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 py-3 text-sm font-semibold text-white transition hover:bg-indigo-700"
             >
               Proceed to Checkout

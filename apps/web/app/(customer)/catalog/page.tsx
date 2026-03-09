@@ -216,12 +216,12 @@ function ProductCard({ product }: { product: CatalogProduct }) {
   const colors = ['bg-indigo-100', 'bg-emerald-100', 'bg-amber-100', 'bg-rose-100', 'bg-sky-100', 'bg-violet-100'];
   const colorIdx = product.productId.split('').reduce((a, c) => a + c.charCodeAt(0), 0) % colors.length;
 
-  // Use basePath for proper routing on GitHub Pages
-  const basePath = process.env.NEXT_PUBLIC_BASE_PATH || '';
+  // Next.js <Link> automatically prepends basePath from next.config.js
+  // Do NOT manually add basePath — it causes double-prefixing on GitHub Pages
 
   return (
     <Link
-      href={`${basePath}/catalog/${product.productId}`}
+      href={`/catalog/${product.productId}`}
       className="group overflow-hidden rounded-xl border bg-white shadow-sm transition hover:shadow-md"
     >
       {/* Image / Placeholder */}

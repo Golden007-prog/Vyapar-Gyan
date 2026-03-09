@@ -78,6 +78,7 @@ export default function CustomerLayout({ children }: { children: React.ReactNode
   const handleLogout = async () => {
     clearAllState();
     try { await signOut({ global: true }); } catch {}
+    // window.location needs full basePath since it's not a Next.js <Link>
     const base = process.env.NEXT_PUBLIC_BASE_PATH || '';
     window.location.href = `${base}/login`;
   };
@@ -89,6 +90,7 @@ export default function CustomerLayout({ children }: { children: React.ReactNode
     window.location.href = `${base}/login`;
   };
 
+  // Next.js <Link> auto-prepends basePath — do NOT add it manually
   const navItems = [
     { href: '/catalog', label: 'Catalog', icon: Search },
     { href: '/cart', label: 'Cart', icon: ShoppingCart, badge: cartCount },

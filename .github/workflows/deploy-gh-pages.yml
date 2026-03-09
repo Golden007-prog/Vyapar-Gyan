@@ -42,7 +42,7 @@ jobs:
           NEXT_PUBLIC_COGNITO_CLIENT_ID: "7fo79pf9va180tvmagefefngcg"
           NEXT_PUBLIC_AWS_REGION: "ap-south-1"
           NEXT_PUBLIC_BASE_PATH: "/Vyapar-Gyan"
-          NEXT_PUBLIC_RAZORPAY_KEY_ID: "rzp_test_demo"
+          NEXT_PUBLIC_RAZORPAY_KEY_ID: "rzp_test_SMPtcnanzcaSQb"
         run: pnpm build
 
       - name: Add .nojekyll

@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Package, Loader2, ChevronRight } from 'lucide-react';
 import { listOrders, type Order, type OrderStatus } from '@/lib/api-orders';
+import { getDemoOrders } from '@/lib/demo-orders';
 import StatusPill from '@/components/ui/StatusPill';
 import EmptyState from '@/components/ui/EmptyState';
 import { CardSkeleton } from '@/components/ui/Skeleton';
@@ -45,10 +46,44 @@ export default function OrdersPage() {
   useEffect(() => {
     setLoading(true);
     listOrders({ limit: 50 })
-      .then((res) => setOrders(res.orders ?? []))
+      .then((res) => {
+        // Merge API orders with any demo orders from sessionStorage
+        const demoOrders = getDemoOrders().map(d => ({
+          id: d.id,
+          orderId: d.orderId,
+          customerId: d.customerId,
+          sellerId: d.sellerId,
+          items: d.items,
+          subtotal: d.subtotal,
+          commissionAmount: d.commissionAmount,
+          totalAmount: d.totalAmount,
+          status: d.status as Order['status'],
+          createdAt: d.createdAt,
+          updatedAt: d.updatedAt,
+        }));
+        const apiOrders = res.orders ?? [];
+        // Deduplicate by orderId
+        const seen = new Set(apiOrders.map(o => o.orderId));
+        const merged = [...apiOrders, ...demoOrders.filter(d => !seen.has(d.orderId))];
+        setOrders(merged);
+      })
       .catch(() => {
-        // Demo orders for when API is unavailable
-        setOrders([
+        // API unavailable — show demo orders from sessionStorage + hardcoded fallbacks
+        const demoOrders = getDemoOrders().map(d => ({
+          id: d.id,
+          orderId: d.orderId,
+          customerId: d.customerId,
+          sellerId: d.sellerId,
+          items: d.items,
+          subtotal: d.subtotal,
+          commissionAmount: d.commissionAmount,
+          totalAmount: d.totalAmount,
+          status: d.status as Order['status'],
+          createdAt: d.createdAt,
+          updatedAt: d.updatedAt,
+        }));
+
+        const fallbackOrders: Order[] = [
           {
             id: 'demo-o1', orderId: 'ORD-2025-001', customerId: 'cust-demo', sellerId: 'seller-demo',
             items: [{ productId: 'p1', sellerId: 's1', name: 'Tata Salt 1kg', price: 25, quantity: 2 }, { productId: 'p2', sellerId: 's1', name: 'Amul Butter 500g', price: 280, quantity: 1 }],
@@ -61,13 +96,11 @@ export default function OrdersPage() {
             subtotal: 144, commissionAmount: 14, totalAmount: 158, status: 'PROCESSING',
             createdAt: new Date(Date.now() - 86400000).toISOString(), updatedAt: new Date().toISOString(),
           },
-          {
-            id: 'demo-o3', orderId: 'ORD-2025-003', customerId: 'cust-demo', sellerId: 'seller-demo',
-            items: [{ productId: 'p4', sellerId: 's1', name: 'Surf Excel Matic 2kg', price: 420, quantity: 1 }, { productId: 'p5', sellerId: 's1', name: 'Dettol Handwash 200ml', price: 65, quantity: 2 }],
-            subtotal: 550, commissionAmount: 55, totalAmount: 605, status: 'PAID',
-            createdAt: new Date(Date.now() - 3600000).toISOString(), updatedAt: new Date().toISOString(),
-          },
-        ]);
+        ];
+
+        // Demo orders from checkout go first, then fallbacks
+        const seen = new Set(demoOrders.map(o => o.orderId));
+        setOrders([...demoOrders, ...fallbackOrders.filter(f => !seen.has(f.orderId))]);
       })
       .finally(() => setLoading(false));
   }, []);
