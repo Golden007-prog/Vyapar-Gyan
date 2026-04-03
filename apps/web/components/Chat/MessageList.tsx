@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from 'react';
 import { Check, CheckCheck, Clock, AlertCircle } from 'lucide-react';
-import type { ChatMessage, DeliveryStatus, MessageChannel } from '@/lib/api-chat';
+import type { ChatMessage, DeliveryStatus } from '@/lib/api-chat';
 import TypingIndicator from './TypingIndicator';
 import ChannelIndicator from '@/components/ui/ChannelIndicator';
 
@@ -96,7 +96,7 @@ export default function MessageList({ messages, isTyping }: MessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [messages, isTyping]);
 
   return (

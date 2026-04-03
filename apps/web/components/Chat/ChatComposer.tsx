@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { Send, ImagePlus, Loader2 } from 'lucide-react';
 
 const MAX_CHARS = 4096;
@@ -20,8 +20,31 @@ export default function ChatComposer({
 }: ChatComposerProps) {
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
+  const [keyboardOffset, setKeyboardOffset] = useState(0);
   const fileRef = useRef<HTMLInputElement>(null);
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Pin composer above virtual keyboard on mobile
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (vv) {
+      const onResize = () => {
+        const offset = window.innerHeight - vv.height;
+        setKeyboardOffset(offset > 0 ? offset : 0);
+      };
+      vv.addEventListener('resize', onResize);
+      return () => vv.removeEventListener('resize', onResize);
+    }
+    // Fallback: compare window.innerHeight on resize
+    let lastHeight = window.innerHeight;
+    const onWindowResize = () => {
+      const offset = lastHeight - window.innerHeight;
+      setKeyboardOffset(offset > 0 ? offset : 0);
+    };
+    window.addEventListener('resize', onWindowResize);
+    lastHeight = window.innerHeight;
+    return () => window.removeEventListener('resize', onWindowResize);
+  }, []);
 
   const handleChange = useCallback(
     (value: string) => {
@@ -69,7 +92,10 @@ export default function ChatComposer({
   const nearLimit = charCount > MAX_CHARS * 0.9;
 
   return (
-    <div className="border-t bg-white px-3 py-2">
+    <div
+      className="border-t bg-white px-3 py-2 pb-[env(safe-area-inset-bottom)]"
+      style={keyboardOffset > 0 ? { transform: `translateY(-${keyboardOffset}px)` } : undefined}
+    >
       {/* Character counter (shown near limit) */}
       {nearLimit && (
         <div className="mb-1 text-right">
@@ -120,7 +146,7 @@ export default function ChatComposer({
           type="button"
           onClick={handleSend}
           disabled={!text.trim() || disabled || sending}
-          className="flex-shrink-0 rounded-full bg-indigo-600 p-2.5 text-white transition hover:bg-indigo-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+          className="flex-shrink-0 rounded-full bg-indigo-600 p-2.5 text-white transition hover:bg-indigo-700 disabled:bg-gray-300 disabled:cursor-not-allowed min-w-[44px] min-h-[44px] flex items-center justify-center"
           aria-label="Send message"
         >
           {sending ? (

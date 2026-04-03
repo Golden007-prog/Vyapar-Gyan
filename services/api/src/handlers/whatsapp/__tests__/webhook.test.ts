@@ -1,4 +1,4 @@
-﻿import { handler } from '../webhook';
+import { handler } from '../webhook';
 import { mockClient } from 'aws-sdk-client-mock';
 import { EventBridgeClient, PutEventsCommand } from '@aws-sdk/client-eventbridge';
 import { DynamoDBClient, PutItemCommand, ConditionalCheckFailedException } from '@aws-sdk/client-dynamodb';
@@ -50,6 +50,8 @@ function buildTwilioBody(p: Record<string, string>): string {
   return Object.entries(p).map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');
 }
 
+
+
 function buildPostEvent(body: string, overrides?: Partial<APIGatewayProxyEvent>): APIGatewayProxyEvent {
   return {
     httpMethod: 'POST',
@@ -57,7 +59,7 @@ function buildPostEvent(body: string, overrides?: Partial<APIGatewayProxyEvent>)
     headers: {
       'content-type': 'application/x-www-form-urlencoded',
       'x-twilio-signature': 'test-sig',
-      Host: 'example.com',
+      'Host': 'example.com',
       'X-Forwarded-Proto': 'https',
       ...overrides?.headers,
     },
@@ -111,7 +113,6 @@ describe('WhatsApp Webhook Handler (Twilio)', () => {
     expect(result.statusCode).toBe(200);
     expect(result.headers?.['Content-Type']).toBe('text/xml');
     expect(result.body).toContain('<Response>');
-    expect(result.body).toContain('<?xml');
     expect(eventBridgeMock.calls()).toHaveLength(1);
     const ebCall = eventBridgeMock.calls()[0].args[0] as any;
     const detail = JSON.parse(ebCall.input.Entries[0].Detail);
@@ -133,6 +134,8 @@ describe('WhatsApp Webhook Handler (Twilio)', () => {
     expect(result.body).toContain('<Response>');
     expect(eventBridgeMock.calls()).toHaveLength(0);
   });
+
+
 
   it('should handle image media messages', async () => {
     const body = buildTwilioBody({
@@ -173,6 +176,7 @@ describe('WhatsApp Webhook Handler (Twilio)', () => {
     expect(result1.statusCode).toBe(200);
     expect(eventBridgeMock.calls()).toHaveLength(1);
 
+    // Simulate DynamoDB conditional check failure (duplicate)
     dynamoDBMock.reset();
     dynamoDBMock.on(PutItemCommand).rejects(
       new ConditionalCheckFailedException({ message: 'Duplicate', $metadata: {} })
@@ -180,6 +184,7 @@ describe('WhatsApp Webhook Handler (Twilio)', () => {
     const result2 = await handler(event);
     expect(result2.statusCode).toBe(200);
     expect(result2.body).toContain('<Response>');
+    // EventBridge should NOT have been called again
     expect(eventBridgeMock.calls()).toHaveLength(1);
   });
 

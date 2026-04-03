@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { MessageCircle, Send, User, Search, Phone, Globe, Clock } from 'lucide-react';
@@ -55,6 +55,8 @@ function buildSeedSessions(): InboxSession[] {
     },
   ];
 }
+
+
 export default function InboxPage() {
   const [sessions, setSessions] = useState<InboxSession[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -65,6 +67,7 @@ export default function InboxPage() {
 
   useEffect(() => { setSessions(buildSeedSessions()); }, []);
 
+  // Poll bridge for new customer messages every 1.5s
   useEffect(() => {
     const interval = setInterval(() => {
       const bridgeMsgs = getSessionMessages(DEMO_SESSION_ID);
@@ -72,14 +75,17 @@ export default function InboxPage() {
         const idx = prev.findIndex(s => s.id === DEMO_SESSION_ID);
         if (idx < 0) return prev;
         const current = prev[idx];
-        if (bridgeMsgs.length === current.messages.length) return prev;
+        // Compare by length AND last message id for reliable change detection
+        const lastBridge = bridgeMsgs[bridgeMsgs.length - 1];
+        const lastCurrent = current.messages[current.messages.length - 1];
+        if (bridgeMsgs.length === current.messages.length && lastBridge?.id === lastCurrent?.id) return prev;
         const newInbound = bridgeMsgs.filter(m => m.direction === 'inbound' && !current.messages.some(cm => cm.id === m.id)).length;
         const updated = [...prev];
         updated[idx] = {
           ...current,
           messages: bridgeMsgs,
-          lastMessage: bridgeMsgs[bridgeMsgs.length - 1]?.text || current.lastMessage,
-          lastMessageTime: bridgeMsgs[bridgeMsgs.length - 1]?.timestamp || current.lastMessageTime,
+          lastMessage: lastBridge?.text || current.lastMessage,
+          lastMessageTime: lastBridge?.timestamp || current.lastMessageTime,
           unread: selectedId === DEMO_SESSION_ID ? 0 : current.unread + newInbound,
         };
         return updated;
@@ -137,6 +143,8 @@ export default function InboxPage() {
     s.phone.includes(searchQuery) ||
     s.lastMessage.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+
   return (
     <div className="flex h-[calc(100vh-64px)]">
       {/* Left panel - session list */}

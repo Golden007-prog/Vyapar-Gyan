@@ -32,7 +32,7 @@ interface StatCardProps {
 
 function StatCard({ title, value, change, icon: Icon, trend = 'neutral' }: StatCardProps) {
   return (
-    <div className="rounded-lg border bg-white p-6 shadow-sm hover:shadow-md transition-shadow">
+    <div className="rounded-lg border bg-white p-6 shadow-sm hover:shadow-md transition-shadow min-h-[80px]">
       <div className="flex items-center justify-between">
         <div>
           <p className="text-sm font-medium text-gray-600">{title}</p>

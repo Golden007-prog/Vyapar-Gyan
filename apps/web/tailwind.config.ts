@@ -13,6 +13,15 @@ const config: Config = {
         background: 'hsl(var(--background))',
         foreground: 'hsl(var(--foreground))',
       },
+      keyframes: {
+        'slide-up': {
+          '0%': { transform: 'translateY(100%)' },
+          '100%': { transform: 'translateY(0)' },
+        },
+      },
+      animation: {
+        'slide-up': 'slide-up 0.25s ease-out',
+      },
     },
   },
   plugins: [],

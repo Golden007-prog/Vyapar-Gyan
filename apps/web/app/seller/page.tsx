@@ -12,7 +12,7 @@ interface MetricCardProps {
 
 function MetricCard({ title, value, change, icon: Icon, trend }: MetricCardProps) {
   return (
-    <div className="rounded-lg border bg-white p-6 shadow-sm">
+    <div className="min-h-[80px] rounded-lg border bg-white p-6 shadow-sm">
       <div className="flex items-center justify-between">
         <div>
           <p className="text-sm font-medium text-gray-600">{title}</p>

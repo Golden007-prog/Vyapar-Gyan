@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
-import { useSearchParams } from 'next/navigation';
-import { ShoppingCart, Store } from 'lucide-react';
+import { useSearchParams, useRouter } from 'next/navigation';
+import { ArrowLeft, ShoppingCart, Store } from 'lucide-react';
 import MessageList from '@/components/Chat/MessageList';
 import ChatComposer from '@/components/Chat/ChatComposer';
 import CartSidePanel from '@/components/Chat/CartSidePanel';
@@ -64,7 +64,7 @@ function bridgeToCustomer(msgs: BridgeMessage[]): ChatMessage[] {
 
 export default function ChatPage() {
   return (
-    <Suspense fallback={<div className="flex h-[calc(100vh-56px)] items-center justify-center"><div className="animate-pulse text-gray-400">Loading chat...</div></div>}>
+    <Suspense fallback={<div className="flex h-[100dvh] md:h-[calc(100vh-56px)] items-center justify-center"><div className="animate-pulse text-gray-400">Loading chat...</div></div>}>
       <ChatContent />
     </Suspense>
   );
@@ -72,6 +72,7 @@ export default function ChatPage() {
 
 function ChatContent() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const { selectedStore } = useStore();
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -195,17 +196,29 @@ function ChatContent() {
   const itemCount = cart?.itemCount ?? 0;
 
   return (
-    <div className="flex h-[calc(100vh-56px)]">
+    <div className="flex h-[100dvh] md:h-[calc(100vh-56px)]">
       <div className="flex flex-1 flex-col">
         {/* Chat header */}
         <div className="flex items-center justify-between border-b bg-white px-4 py-3">
           <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-100">
+            {/* Mobile back arrow */}
+            <button
+              onClick={() => router.back()}
+              className="flex h-9 w-9 items-center justify-center rounded-full hover:bg-gray-100 md:hidden"
+              aria-label="Go back"
+            >
+              <ArrowLeft className="h-5 w-5 text-gray-600" />
+            </button>
+            {/* Store icon — desktop only */}
+            <div className="hidden h-9 w-9 items-center justify-center rounded-full bg-emerald-100 md:flex">
               <Store className="h-4 w-4 text-emerald-600" />
             </div>
             <div>
               <h1 className="text-sm font-semibold text-gray-800">{storeName}</h1>
-              <p className="text-[11px] text-gray-400">Online · Web + WhatsApp</p>
+              <p className="text-[11px] text-gray-400">
+                <span className="md:hidden">Online</span>
+                <span className="hidden md:inline">Online · Web + WhatsApp</span>
+              </p>
             </div>
           </div>
           <button

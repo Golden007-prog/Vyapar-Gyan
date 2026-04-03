@@ -72,3 +72,5 @@ coverage/
 *.temp
 .cache/
 temp-query.json
+
+.kiro/settings/mcp.json

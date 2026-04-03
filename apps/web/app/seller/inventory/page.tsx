@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { Package, Upload, FileSpreadsheet, X, AlertCircle, CheckCircle, Loader2, Camera, Sparkles, Eye, Edit3 } from 'lucide-react';
+import { Package, Upload, FileSpreadsheet, X, AlertCircle, CheckCircle, Loader2, Camera, Sparkles, Eye, Edit3, RotateCw } from 'lucide-react';
+import MobileProductCard from '@/components/ui/MobileProductCard';
 
 interface Product {
   id: string;
@@ -217,6 +218,7 @@ export default function InventoryPage() {
   const [imageStep, setImageStep] = useState<'upload' | 'processing' | 'review' | 'done'>('upload');
   const [ocrProducts, setOcrProducts] = useState<OcrExtractedProduct[]>([]);
   const [ocrSelected, setOcrSelected] = useState<Set<number>>(new Set());
+  const [imageRotation, setImageRotation] = useState(0);
 
   useEffect(() => {
     const timer = setTimeout(() => { setProducts(DEMO_PRODUCTS); setLoading(false); }, 500);
@@ -338,7 +340,7 @@ export default function InventoryPage() {
     setImageStep('done');
   };
 
-  const resetImageModal = () => { setShowImageModal(false); setImageFile(null); setImagePreview(null); setImageStep('upload'); setOcrProducts([]); };
+  const resetImageModal = () => { setShowImageModal(false); setImageFile(null); setImagePreview(null); setImageStep('upload'); setOcrProducts([]); setImageRotation(0); };
 
   return (
     <div className="space-y-6">
@@ -397,9 +399,9 @@ export default function InventoryPage() {
         </div>
       )}
 
-      {/* Products Table */}
+      {/* Products Table (desktop/tablet) */}
       {!loading && products.length > 0 && (
-        <div className="overflow-hidden rounded-lg border bg-white shadow">
+        <div className="hidden md:block overflow-hidden rounded-lg border bg-white shadow">
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
@@ -448,10 +450,19 @@ export default function InventoryPage() {
         </div>
       )}
 
+      {/* Products Card List (mobile) */}
+      {!loading && products.length > 0 && (
+        <div className="md:hidden space-y-2">
+          {products.map((product) => (
+            <MobileProductCard key={product.id} product={product} />
+          ))}
+        </div>
+      )}
+
       {/* ── Smart CSV Upload Modal ── */}
       {showCsvModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
-          <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-lg bg-white p-6 shadow-xl">
+        <div className="fixed inset-0 z-50 flex md:items-center md:justify-center bg-black bg-opacity-50 md:p-4">
+          <div className="w-full max-h-[100dvh] md:max-h-[90vh] overflow-y-auto bg-white p-6 shadow-xl md:max-w-2xl md:rounded-lg">
             <div className="mb-4 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Sparkles className="h-5 w-5 text-indigo-600" />
@@ -460,19 +471,30 @@ export default function InventoryPage() {
               <button onClick={resetCsvModal} className="text-gray-400 hover:text-gray-600"><X className="h-6 w-6" /></button>
             </div>
 
-            {/* Step indicator */}
-            <div className="mb-4 flex items-center gap-2 text-xs">
-              {['Upload', 'AI Analysis', 'Mapping', 'Preview', 'Done'].map((step, i) => {
-                const stepKeys = ['upload', 'analyzing', 'mapping', 'preview', 'done'];
-                const currentIdx = stepKeys.indexOf(csvStep);
-                return (
-                  <div key={step} className="flex items-center gap-2">
-                    <span className={`rounded-full px-2 py-0.5 font-medium ${i <= currentIdx ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-400'}`}>{step}</span>
-                    {i < 4 && <span className="text-gray-300">→</span>}
+            {/* Step indicator — dots on mobile, labels on desktop */}
+            {(() => {
+              const stepKeys = ['upload', 'analyzing', 'mapping', 'preview', 'done'];
+              const currentIdx = stepKeys.indexOf(csvStep);
+              return (
+                <>
+                  {/* Mobile: compact dots */}
+                  <div className="md:hidden flex gap-2 justify-center mb-4">
+                    {stepKeys.map((_, i) => (
+                      <span key={i} className={`h-2 w-2 rounded-full ${i <= currentIdx ? 'bg-indigo-600' : 'bg-gray-300'}`} />
+                    ))}
                   </div>
-                );
-              })}
-            </div>
+                  {/* Desktop: full labels */}
+                  <div className="hidden md:flex items-center gap-2 text-xs mb-4">
+                    {['Upload', 'AI Analysis', 'Mapping', 'Preview', 'Done'].map((step, i) => (
+                      <div key={step} className="flex items-center gap-2">
+                        <span className={`rounded-full px-2 py-0.5 font-medium ${i <= currentIdx ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-400'}`}>{step}</span>
+                        {i < 4 && <span className="text-gray-300">→</span>}
+                      </div>
+                    ))}
+                  </div>
+                </>
+              );
+            })()}
 
             {/* Step: Upload */}
             {csvStep === 'upload' && (
@@ -502,10 +524,10 @@ export default function InventoryPage() {
                     {csvResult.errors.map((e, i) => <p key={i} className="text-sm text-red-700">⚠ {e}</p>)}
                   </div>
                 )}
-                <div className="mt-4 flex gap-3">
-                  <button onClick={resetCsvModal} className="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+                <div className="mt-4 flex flex-col md:flex-row gap-3">
+                  <button onClick={resetCsvModal} className="w-full md:flex-1 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
                   <button onClick={handleCsvAnalyze} disabled={!csvFile}
-                    className="flex-1 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+                    className="w-full md:flex-1 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center justify-center gap-2">
                     <Sparkles className="h-4 w-4" /> Analyze with AI
                   </button>
                 </div>
@@ -595,22 +617,27 @@ export default function InventoryPage() {
                   </div>
                 )}
                 {csvResult.warnings.length > 0 && (
-                  <div className="rounded-lg bg-yellow-50 p-3 mb-4">
-                    {csvResult.warnings.map((w, i) => <p key={i} className="text-xs text-yellow-700">{w}</p>)}
+                  <div className="rounded-lg bg-yellow-50 p-3 mb-4 space-y-1">
+                    {csvResult.warnings.map((w, i) => (
+                      <div key={i} className="flex items-center justify-between gap-2">
+                        <p className="text-xs text-yellow-700 flex-1">{w}</p>
+                        <button className="shrink-0 rounded bg-yellow-200 px-2 py-0.5 text-[10px] font-medium text-yellow-800 hover:bg-yellow-300" onClick={() => setCsvStep('mapping')}>Fix</button>
+                      </div>
+                    ))}
                   </div>
                 )}
                 {csvResult.products.length > 0 && (
                   <div className="overflow-x-auto rounded border mb-4 max-h-60 overflow-y-auto">
                     <table className="min-w-full text-xs">
                       <thead className="bg-gray-50 sticky top-0"><tr>
-                        <th className="px-3 py-2 text-left font-medium text-gray-500">Name</th>
+                        <th className="px-3 py-2 text-left font-medium text-gray-500 sticky left-0 bg-gray-50 z-10">Name</th>
                         <th className="px-3 py-2 text-left font-medium text-gray-500">Price</th>
                         <th className="px-3 py-2 text-left font-medium text-gray-500">Qty</th>
                         <th className="px-3 py-2 text-left font-medium text-gray-500">Category</th>
                       </tr></thead>
                       <tbody>{csvResult.products.map((p, i) => (
                         <tr key={i} className="border-t">
-                          <td className="px-3 py-1.5 text-gray-900 font-medium">{p.name}</td>
+                          <td className="px-3 py-1.5 text-gray-900 font-medium sticky left-0 bg-white z-10">{p.name}</td>
                           <td className="px-3 py-1.5 text-gray-700">{formatCurrency(p.price || 0)}</td>
                           <td className="px-3 py-1.5 text-gray-700">{p.stockQuantity}</td>
                           <td className="px-3 py-1.5 text-gray-500">{p.categoryName}</td>
@@ -661,13 +688,19 @@ export default function InventoryPage() {
               <>
                 <p className="mb-3 text-sm text-gray-600">Upload a photo of your handwritten Khata book. Gemini Vision AI will extract product details.</p>
                 <div className="relative rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 p-6 text-center">
-                  <input type="file" accept="image/jpeg,image/jpg,image/png,image/webp" onChange={(e) => e.target.files?.[0] && handleImageSelect(e.target.files[0])}
+                  <input type="file" accept="image/jpeg,image/jpg,image/png,image/webp" capture="environment" onChange={(e) => e.target.files?.[0] && handleImageSelect(e.target.files[0])}
                     className="absolute inset-0 h-full w-full cursor-pointer opacity-0" />
                   {imagePreview ? (
                     <div className="space-y-3">
-                      <img src={imagePreview} alt="Khata book preview" className="mx-auto max-h-48 rounded-lg object-contain shadow" />
-                      <p className="text-sm font-medium text-gray-900">{imageFile?.name}</p>
-                      <button onClick={() => { setImageFile(null); setImagePreview(null); }} className="text-sm text-red-600 hover:text-red-700">Remove</button>
+                      <img src={imagePreview} alt="Khata book preview" className="mx-auto max-h-48 rounded-lg object-contain shadow transition-transform" style={{ transform: `rotate(${imageRotation}deg)` }} />
+                      <div className="flex items-center justify-center gap-3">
+                        <p className="text-sm font-medium text-gray-900">{imageFile?.name}</p>
+                        <button type="button" onClick={(e) => { e.stopPropagation(); setImageRotation(prev => (prev + 90) % 360); }}
+                          className="inline-flex items-center gap-1 rounded-md border border-gray-300 px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-100" title="Rotate 90°">
+                          <RotateCw className="h-3.5 w-3.5" /> Rotate
+                        </button>
+                      </div>
+                      <button onClick={() => { setImageFile(null); setImagePreview(null); setImageRotation(0); }} className="text-sm text-red-600 hover:text-red-700">Remove</button>
                     </div>
                   ) : (
                     <div className="space-y-2">
@@ -696,7 +729,7 @@ export default function InventoryPage() {
                 </div>
                 <p className="mt-4 text-sm font-medium text-gray-900">Gemini Vision is reading your Khata book...</p>
                 <p className="mt-1 text-xs text-gray-500">Extracting product names, quantities, and prices from handwriting</p>
-                {imagePreview && <img src={imagePreview} alt="Processing" className="mx-auto mt-4 max-h-32 rounded-lg opacity-50" />}
+                {imagePreview && <img src={imagePreview} alt="Processing" className="mx-auto mt-4 max-h-32 rounded-lg opacity-50 transition-transform" style={{ transform: `rotate(${imageRotation}deg)` }} />}
               </div>
             )}
 
@@ -710,7 +743,7 @@ export default function InventoryPage() {
                   </div>
                   <p className="mt-1 text-xs text-green-700">Review and select which items to add to inventory</p>
                 </div>
-                {imagePreview && <img src={imagePreview} alt="Source" className="mx-auto mb-3 max-h-24 rounded-lg object-contain opacity-70" />}
+                {imagePreview && <img src={imagePreview} alt="Source" className="mx-auto mb-3 max-h-24 rounded-lg object-contain opacity-70 transition-transform" style={{ transform: `rotate(${imageRotation}deg)` }} />}
                 <div className="space-y-2 max-h-60 overflow-y-auto">
                   {ocrProducts.map((p, i) => (
                     <label key={i} className={`flex items-center gap-3 rounded-lg border p-3 cursor-pointer transition ${ocrSelected.has(i) ? 'border-indigo-300 bg-indigo-50' : 'border-gray-200 hover:bg-gray-50'}`}>

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Package, Clock, CheckCircle, XCircle, IndianRupee } from 'lucide-react';
+import MobileOrderCard from '@/components/ui/MobileOrderCard';
 
 interface Order {
   id: string;
@@ -206,9 +207,18 @@ export default function OrdersPage() {
         </div>
       )}
 
+      {/* Mobile Order Cards */}
+      {!loading && !error && filteredOrders.length > 0 && (
+        <div className="space-y-2 md:hidden">
+          {filteredOrders.map((order) => (
+            <MobileOrderCard key={order.id} order={order} />
+          ))}
+        </div>
+      )}
+
       {/* Orders Table */}
       {!loading && !error && filteredOrders.length > 0 && (
-        <div className="overflow-hidden rounded-lg border bg-white shadow">
+        <div className="hidden md:block overflow-hidden rounded-lg border bg-white shadow">
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
