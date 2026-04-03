@@ -14,7 +14,16 @@
 
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { DynamoDBClient, PutItemCommand, ConditionalCheckFailedException } from '@aws-sdk/client-dynamodb';
+import {
+  DynamoDBDocumentClient,
+  QueryCommand,
+  DeleteCommand,
+} from '@aws-sdk/lib-dynamodb';
 import { marshall } from '@aws-sdk/util-dynamodb';
+import {
+  ApiGatewayManagementApiClient,
+  PostToConnectionCommand,
+} from '@aws-sdk/client-apigatewaymanagementapi';
 import { validateRequest } from 'twilio';
 import { logger } from '../../utils/logger';
 import { getConfig, type Config } from '../../utils/config';
@@ -26,6 +35,9 @@ import {
 } from '../../adapters/dynamodb-adapter';
 
 const dynamoDBClient = new DynamoDBClient({});
+const docClient = DynamoDBDocumentClient.from(dynamoDBClient, {
+  marshallOptions: { removeUndefinedValues: true },
+});
 let config: Config;
 
 /** Valid Twilio delivery statuses that map to our deliveryStatus enum */
@@ -37,6 +49,16 @@ const VALID_STATUSES: Record<string, MessageThread['deliveryStatus']> = {
   failed: 'failed',
   undelivered: 'failed',
 };
+
+/**
+ * Map a Twilio status string to our internal DeliveryStatus.
+ * Returns undefined for unknown statuses.
+ *
+ * Validates: Requirement 7.3
+ */
+export function mapTwilioStatus(twilioStatus: string): MessageThread['deliveryStatus'] | undefined {
+  return VALID_STATUSES[twilioStatus.toLowerCase()];
+}
 
 /** Map status to the timestamp field to update */
 const STATUS_TIMESTAMP_MAP: Record<string, 'sentAt' | 'deliveredAt' | 'readAt' | 'failedAt'> = {
@@ -133,7 +155,7 @@ async function handleStatusCallback(
   }
 
   // Map Twilio status to our deliveryStatus enum
-  const deliveryStatus = VALID_STATUSES[messageStatus.toLowerCase()];
+  const deliveryStatus = mapTwilioStatus(messageStatus);
   if (!deliveryStatus) {
     logger.warn('Unknown Twilio message status', { requestId, messageStatus });
     return { statusCode: 200, body: '' };
@@ -190,7 +212,121 @@ async function handleStatusCallback(
     deliveryStatus,
   });
 
+  // Push delivery status update to sender's active WebSocket connections (Req 7.2)
+  await pushStatusToSenderConnections(user.userId, messageSid, deliveryStatus, timestampField, requestId);
+
   return { statusCode: 200, body: '' };
+}
+
+/**
+ * Query all active WebSocket connectionIds for a user via GSI1.
+ * Key pattern: GSI1PK = USER_CONN#{userId}
+ */
+async function getConnectionsForUser(userId: string): Promise<string[]> {
+  const table = config.tableName;
+  const result = await docClient.send(
+    new QueryCommand({
+      TableName: table,
+      IndexName: 'GSI1',
+      KeyConditionExpression: 'GSI1PK = :pk',
+      ExpressionAttributeValues: { ':pk': `USER_CONN#${userId}` },
+      ProjectionExpression: 'connectionId',
+    }),
+  );
+  return (result.Items ?? []).map((item) => item.connectionId as string);
+}
+
+/**
+ * Push a JSON payload to a single WebSocket connection.
+ * Handles GoneException (410) by deleting the stale connection.
+ * Returns true if push succeeded, false otherwise.
+ */
+async function pushToConnection(
+  apigw: ApiGatewayManagementApiClient,
+  connectionId: string,
+  payload: Record<string, unknown>,
+): Promise<boolean> {
+  try {
+    await apigw.send(
+      new PostToConnectionCommand({
+        ConnectionId: connectionId,
+        Data: Buffer.from(JSON.stringify(payload)),
+      }),
+    );
+    return true;
+  } catch (err: unknown) {
+    const statusCode = (err as any)?.$metadata?.httpStatusCode;
+    if (statusCode === 410) {
+      logger.warn('GoneException: deleting stale connection', { connectionId });
+      await docClient.send(
+        new DeleteCommand({
+          TableName: config.tableName,
+          Key: { PK: `CONN#${connectionId}`, SK: 'META' },
+        }),
+      );
+      return false;
+    }
+    logger.error('Failed to push status update to connection', {
+      connectionId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return false;
+  }
+}
+
+/**
+ * Push delivery status update to all active WebSocket connections for the sender.
+ * If no connections exist, the update is stored in DynamoDB only (Req 7.4).
+ */
+async function pushStatusToSenderConnections(
+  userId: string,
+  messageSid: string,
+  deliveryStatus: string,
+  timestampField: string | undefined,
+  requestId: string,
+): Promise<void> {
+  const wsEndpoint = process.env.WEBSOCKET_API_ENDPOINT;
+  if (!wsEndpoint) {
+    logger.info('WEBSOCKET_API_ENDPOINT not configured, skipping WebSocket push', { requestId });
+    return;
+  }
+
+  const connections = await getConnectionsForUser(userId);
+  if (connections.length === 0) {
+    logger.info('No active WebSocket connections for sender, status stored in DynamoDB only', {
+      requestId,
+      userId,
+      deliveryStatus,
+    });
+    return;
+  }
+
+  const apigw = new ApiGatewayManagementApiClient({ endpoint: wsEndpoint });
+  const statusPayload: Record<string, unknown> = {
+    type: 'deliveryStatus',
+    messageSid,
+    deliveryStatus,
+  };
+
+  if (timestampField) {
+    statusPayload[timestampField] = new Date().toISOString();
+  }
+
+  const results = await Promise.allSettled(
+    connections.map((connId) => pushToConnection(apigw, connId, statusPayload)),
+  );
+
+  const successCount = results.filter(
+    (r) => r.status === 'fulfilled' && r.value === true,
+  ).length;
+
+  logger.info('Delivery status pushed to sender connections', {
+    requestId,
+    userId,
+    deliveryStatus,
+    totalConnections: connections.length,
+    successfulPushes: successCount,
+  });
 }
 
 /**

@@ -108,6 +108,9 @@ export class APIStack extends cdk.Stack {
   /** Get system health Lambda function */
   public readonly getSystemHealthFunction: Function;
 
+  /** WhatsApp status webhook Lambda function */
+  public readonly whatsappStatusWebhookFunction: Function;
+
   /** Cognito JWT authorizer for protected routes */
   public readonly jwtAuthorizer: HttpUserPoolAuthorizer;
 
@@ -226,7 +229,7 @@ export class APIStack extends cdk.Stack {
     // Receives delivery status callbacks (queued, sent, delivered, read, failed)
     // ========================================================================
 
-    const whatsappStatusWebhookFunction = new Function(this, 'WhatsAppStatusWebhookFunction', {
+    this.whatsappStatusWebhookFunction = new Function(this, 'WhatsAppStatusWebhookFunction', {
       functionName: `${config.resourcePrefix}-whatsapp-status-webhook`,
       runtime: Runtime.NODEJS_20_X,
       architecture: Architecture.ARM_64,
@@ -243,10 +246,10 @@ export class APIStack extends cdk.Stack {
     });
 
     // Grant DynamoDB read/write (read THREAD messages, write idempotency + status updates)
-    table.grantReadWriteData(whatsappStatusWebhookFunction);
+    table.grantReadWriteData(this.whatsappStatusWebhookFunction);
 
     // Grant Secrets Manager access for Twilio auth token (signature verification)
-    whatsappStatusWebhookFunction.addToRolePolicy(
+    this.whatsappStatusWebhookFunction.addToRolePolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,
         actions: ['secretsmanager:GetSecretValue'],
@@ -258,7 +261,7 @@ export class APIStack extends cdk.Stack {
         ],
       }),
     );
-    whatsappStatusWebhookFunction.addToRolePolicy(
+    this.whatsappStatusWebhookFunction.addToRolePolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,
         actions: ['ssm:GetParameter', 'ssm:GetParameters'],
@@ -268,7 +271,7 @@ export class APIStack extends cdk.Stack {
 
     const whatsappStatusIntegration = new HttpLambdaIntegration(
       'WhatsAppStatusWebhookIntegration',
-      whatsappStatusWebhookFunction,
+      this.whatsappStatusWebhookFunction,
       {
         payloadFormatVersion: PayloadFormatVersion.VERSION_2_0,
       },

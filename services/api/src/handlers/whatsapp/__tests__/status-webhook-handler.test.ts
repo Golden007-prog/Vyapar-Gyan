@@ -45,6 +45,23 @@ jest.mock('@aws-sdk/client-dynamodb', () => {
   };
 });
 
+const mockDocClientSend = jest.fn();
+jest.mock('@aws-sdk/lib-dynamodb', () => {
+  const actual = jest.requireActual('@aws-sdk/lib-dynamodb');
+  return {
+    ...actual,
+    DynamoDBDocumentClient: {
+      from: jest.fn().mockReturnValue({ send: mockDocClientSend }),
+    },
+  };
+});
+
+const mockApigwSend = jest.fn();
+jest.mock('@aws-sdk/client-apigatewaymanagementapi', () => ({
+  ApiGatewayManagementApiClient: jest.fn().mockImplementation(() => ({ send: mockApigwSend })),
+  PostToConnectionCommand: jest.fn().mockImplementation((input: any) => input),
+}));
+
 jest.mock('../../../utils/logger', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
@@ -53,7 +70,7 @@ jest.mock('../../../utils/logger', () => ({
 // Imports (after mocks)
 // ---------------------------------------------------------------------------
 
-import { handler } from '../status-webhook-handler';
+import { handler, mapTwilioStatus } from '../status-webhook-handler';
 
 const dbMod = jest.requireMock('../../../adapters/dynamodb-adapter') as any;
 const mockGetUserByPhone = dbMod.getUserByPhone as jest.Mock;
@@ -125,8 +142,11 @@ describe('Status Webhook Handler', () => {
     // Default: signature valid, idempotency succeeds (new record)
     mockValidateRequest.mockReturnValue(true);
     mockDDBSend.mockResolvedValue({});
+    mockDocClientSend.mockResolvedValue({ Items: [] }); // No active WS connections by default
     mockGetUserByPhone.mockResolvedValue({ userId: 'user-1' });
     mockFindSortKey.mockResolvedValue('MSG#2025-01-15T10:00:00Z#SM0001');
+    // No WEBSOCKET_API_ENDPOINT by default — WebSocket push is skipped
+    delete process.env.WEBSOCKET_API_ENDPOINT;
   });
 
   it('processes a valid status update with valid Twilio signature', async () => {
@@ -202,5 +222,79 @@ describe('Status Webhook Handler', () => {
     expect(result.statusCode).toBe(200);
     // Should NOT update delivery status since it's a duplicate
     expect(mockUpdateStatus).not.toHaveBeenCalled();
+  });
+
+  describe('WebSocket push after status update', () => {
+    it('pushes delivery status to active sender connections', async () => {
+      process.env.WEBSOCKET_API_ENDPOINT = 'https://ws.example.com/prod';
+      mockDocClientSend.mockResolvedValueOnce({
+        Items: [{ connectionId: 'conn-1' }, { connectionId: 'conn-2' }],
+      });
+      mockApigwSend.mockResolvedValue({});
+
+      const result = await handler(makeEvent());
+
+      expect(result.statusCode).toBe(200);
+      expect(mockDocClientSend).toHaveBeenCalled();
+      expect(mockApigwSend).toHaveBeenCalledTimes(2);
+    });
+
+    it('skips WebSocket push when WEBSOCKET_API_ENDPOINT is not set', async () => {
+      delete process.env.WEBSOCKET_API_ENDPOINT;
+
+      const result = await handler(makeEvent());
+
+      expect(result.statusCode).toBe(200);
+      expect(mockApigwSend).not.toHaveBeenCalled();
+    });
+
+    it('skips WebSocket push when no active connections exist', async () => {
+      process.env.WEBSOCKET_API_ENDPOINT = 'https://ws.example.com/prod';
+      mockDocClientSend.mockResolvedValueOnce({ Items: [] });
+
+      const result = await handler(makeEvent());
+
+      expect(result.statusCode).toBe(200);
+      expect(mockApigwSend).not.toHaveBeenCalled();
+    });
+
+    it('handles GoneException by deleting stale connection', async () => {
+      process.env.WEBSOCKET_API_ENDPOINT = 'https://ws.example.com/prod';
+      mockDocClientSend
+        .mockResolvedValueOnce({ Items: [{ connectionId: 'stale-conn' }] })
+        .mockResolvedValueOnce({}); // DeleteCommand for stale connection
+      mockApigwSend.mockRejectedValueOnce({ $metadata: { httpStatusCode: 410 } });
+
+      const result = await handler(makeEvent());
+
+      expect(result.statusCode).toBe(200);
+      // Should have attempted push and then deleted stale connection
+      expect(mockApigwSend).toHaveBeenCalledTimes(1);
+      // docClient.send called twice: once for query, once for delete
+      expect(mockDocClientSend).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('mapTwilioStatus', () => {
+    it('maps known Twilio statuses correctly', () => {
+      expect(mapTwilioStatus('sent')).toBe('sent');
+      expect(mapTwilioStatus('delivered')).toBe('delivered');
+      expect(mapTwilioStatus('read')).toBe('read');
+      expect(mapTwilioStatus('failed')).toBe('failed');
+      expect(mapTwilioStatus('undelivered')).toBe('failed');
+      expect(mapTwilioStatus('queued')).toBe('queued');
+    });
+
+    it('returns undefined for unknown statuses', () => {
+      expect(mapTwilioStatus('unknown')).toBeUndefined();
+      expect(mapTwilioStatus('pending')).toBeUndefined();
+      expect(mapTwilioStatus('')).toBeUndefined();
+    });
+
+    it('is case-insensitive', () => {
+      expect(mapTwilioStatus('DELIVERED')).toBe('delivered');
+      expect(mapTwilioStatus('Read')).toBe('read');
+      expect(mapTwilioStatus('FAILED')).toBe('failed');
+    });
   });
 });

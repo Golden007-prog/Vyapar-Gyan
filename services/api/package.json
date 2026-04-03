@@ -13,6 +13,7 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
+    "@aws-sdk/client-apigatewaymanagementapi": "^3.1024.0",
     "@aws-sdk/client-bedrock-runtime": "^3.1004.0",
     "@aws-sdk/client-cloudwatch": "^3.600.0",
     "@aws-sdk/client-cognito-identity-provider": "^3.1004.0",
@@ -26,6 +27,7 @@
     "@aws-sdk/s3-request-presigner": "^3.1003.0",
     "@aws-sdk/util-dynamodb": "^3.600.0",
     "@google/generative-ai": "^0.21.0",
+    "@opensearch-project/opensearch": "^3.5.1",
     "axios": "^1.7.2",
     "twilio": "^5.12.2",
     "zod": "^3.23.8"

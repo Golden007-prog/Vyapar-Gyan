@@ -16,6 +16,8 @@ import {
   type Cart,
 } from '@/lib/api-cart';
 import type { ChatMessage } from '@/lib/api-chat';
+import { deduplicateMessages } from '@/lib/websocket-client';
+import { useWebSocket } from '@/hooks/useWebSocket';
 import { useStore } from '@/lib/store-context';
 import { getDemoCart, updateDemoItem, removeDemoItem, clearDemoCart } from '@/lib/demo-cart';
 import {
@@ -62,6 +64,21 @@ function bridgeToCustomer(msgs: BridgeMessage[]): ChatMessage[] {
   }));
 }
 
+/** Format ISO timestamp as relative time (e.g. "5 min ago", "2h ago") */
+function formatRelativeTime(iso: string): string {
+  try {
+    const diffMs = Date.now() - new Date(iso).getTime();
+    const diffMin = Math.floor(diffMs / 60000);
+    if (diffMin < 1) return 'just now';
+    if (diffMin < 60) return `${diffMin} min ago`;
+    const diffHr = Math.floor(diffMs / 3600000);
+    if (diffHr < 24) return `${diffHr}h ago`;
+    return new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+  } catch {
+    return 'recently';
+  }
+}
+
 export default function ChatPage() {
   return (
     <Suspense fallback={<div className="flex h-[100dvh] md:h-[calc(100vh-56px)] items-center justify-center"><div className="animate-pulse text-gray-400">Loading chat...</div></div>}>
@@ -75,16 +92,43 @@ function ChatContent() {
   const router = useRouter();
   const { selectedStore } = useStore();
 
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [localMessages, setLocalMessages] = useState<ChatMessage[]>([]);
+  const [authToken, setAuthToken] = useState<string | null>(null);
   const [cart, setCart] = useState<Cart | null>(null);
   const [cartOpen, setCartOpen] = useState(false);
-  const [isTyping] = useState(false);
   const [checkingOut, setCheckingOut] = useState(false);
   const [error, setError] = useState('');
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const storeName = selectedStore?.businessName || 'Dragon Store';
   const sellerId = selectedStore?.sellerId || 'seller-dragon-001';
+
+  // Fetch Cognito JWT token for WebSocket connection
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { fetchAuthSession } = await import('aws-amplify/auth');
+        const session = await fetchAuthSession();
+        const token = session.tokens?.accessToken?.toString() ?? null;
+        if (!cancelled) setAuthToken(token);
+      } catch {
+        // No auth session — WebSocket will stay disconnected, bridge/polling still works
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Initialize WebSocket hook (Req 15.1, 15.2, 15.3, 15.4)
+  const {
+    connectionState,
+    messages: wsMessages,
+    sendMessage: wsSendMessage,
+    sendTyping: wsSendTyping,
+    markRead: wsMarkRead,
+    typingUsers,
+    presenceMap,
+  } = useWebSocket(authToken);
 
   // Load initial messages from bridge, seed if empty
   useEffect(() => {
@@ -93,7 +137,7 @@ function ChatContent() {
       bridgeMsgs = seedBridge(storeName);
       setSessionMessages(DEMO_SESSION_ID, bridgeMsgs);
     }
-    setMessages(bridgeToCustomer(bridgeMsgs));
+    setLocalMessages(bridgeToCustomer(bridgeMsgs));
 
     // Load cart — try API, fallback to demo
     getCart()
@@ -101,21 +145,28 @@ function ChatContent() {
       .catch(() => setCart(getDemoCart(sellerId)));
   }, [storeName, sellerId]);
 
-  // Poll bridge for seller replies every 1.5s
+  // Poll bridge for seller replies every 1.5s (suppressed when WebSocket connected)
   useEffect(() => {
+    if (connectionState === 'connected') {
+      // Req 15.2: suppress polling when WebSocket is connected
+      if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+      return;
+    }
     pollRef.current = setInterval(() => {
       const bridgeMsgs = getSessionMessages(DEMO_SESSION_ID);
       const converted = bridgeToCustomer(bridgeMsgs);
-      // Compare by last message id to detect new messages reliably
-      setMessages(prev => {
+      setLocalMessages(prev => {
         if (converted.length !== prev.length || (converted.length > 0 && prev.length > 0 && converted[converted.length - 1].messageId !== prev[prev.length - 1].messageId)) {
           return converted;
         }
         return prev;
       });
     }, 1500);
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, []);
+    return () => { if (pollRef.current) clearInterval(pollRef.current); pollRef.current = null; };
+  }, [connectionState]);
+
+  // Merge WebSocket messages with local/bridge messages, dedup by messageId (Req 15.5)
+  const messages: ChatMessage[] = deduplicateMessages([...localMessages, ...wsMessages]) as ChatMessage[];
 
   const handleSend = useCallback(async (text: string) => {
     const msgId = `cust-${Date.now()}`;
@@ -132,10 +183,17 @@ function ChatContent() {
 
     // Update local state immediately
     const bridgeMsgs = getSessionMessages(DEMO_SESSION_ID);
-    setMessages(bridgeToCustomer(bridgeMsgs));
-  }, []);
+    setLocalMessages(bridgeToCustomer(bridgeMsgs));
 
-  const handleTyping = useCallback(() => {}, []);
+    // Also send via WebSocket if connected
+    if (connectionState === 'connected') {
+      wsSendMessage(sellerId, { body: text }, 'text');
+    }
+  }, [connectionState, wsSendMessage, sellerId]);
+
+  const handleTyping = useCallback(() => {
+    wsSendTyping(sellerId);
+  }, [wsSendTyping, sellerId]);
 
   const handleUpdateQuantity = useCallback(async (pid: string, quantity: number) => {
     if (!cart) return;
@@ -173,7 +231,7 @@ function ChatContent() {
         timestamp: new Date().toISOString(),
         channel: 'web',
       });
-      setMessages(bridgeToCustomer(getSessionMessages(DEMO_SESSION_ID)));
+      setLocalMessages(bridgeToCustomer(getSessionMessages(DEMO_SESSION_ID)));
     } catch {
       // Demo fallback checkout
       clearDemoCart(sellerId);
@@ -187,7 +245,7 @@ function ChatContent() {
         timestamp: new Date().toISOString(),
         channel: 'web',
       });
-      setMessages(bridgeToCustomer(getSessionMessages(DEMO_SESSION_ID)));
+      setLocalMessages(bridgeToCustomer(getSessionMessages(DEMO_SESSION_ID)));
     } finally {
       setCheckingOut(false);
     }
@@ -215,10 +273,29 @@ function ChatContent() {
             </div>
             <div>
               <h1 className="text-sm font-semibold text-gray-800">{storeName}</h1>
-              <p className="text-[11px] text-gray-400">
-                <span className="md:hidden">Online</span>
-                <span className="hidden md:inline">Online · Web + WhatsApp</span>
-              </p>
+              {(() => {
+                const sellerPresence = presenceMap.get(sellerId);
+                const isOnline = sellerPresence?.online ?? false;
+                if (isOnline) {
+                  return (
+                    <p className="text-[11px] text-gray-400 flex items-center gap-1">
+                      <span className="inline-block h-2 w-2 rounded-full bg-green-500" />
+                      <span className="md:hidden">Online</span>
+                      <span className="hidden md:inline">Online · Web + WhatsApp</span>
+                    </p>
+                  );
+                }
+                const lastSeen = sellerPresence?.lastSeen;
+                const lastSeenText = lastSeen
+                  ? `Last seen ${formatRelativeTime(lastSeen)}`
+                  : 'Offline';
+                return (
+                  <p className="text-[11px] text-gray-400">
+                    <span className="md:hidden">{lastSeenText}</span>
+                    <span className="hidden md:inline">{lastSeenText} · Web + WhatsApp</span>
+                  </p>
+                );
+              })()}
             </div>
           </div>
           <button
@@ -242,7 +319,12 @@ function ChatContent() {
           </div>
         )}
 
-        <MessageList messages={messages} isTyping={isTyping} />
+        <MessageList
+          messages={messages}
+          isTyping={false}
+          typingUsers={typingUsers}
+          onMarkRead={wsMarkRead}
+        />
         <ChatComposer onSend={handleSend} onTyping={handleTyping} />
       </div>
 

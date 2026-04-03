@@ -1,8 +1,13 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { Package, Upload, FileSpreadsheet, X, AlertCircle, CheckCircle, Loader2, Camera, Sparkles, Eye, Edit3, RotateCw } from 'lucide-react';
+import { Package, Upload, FileSpreadsheet, X, AlertCircle, CheckCircle, Loader2, Camera, Sparkles, Eye, Edit3, RotateCw, ArrowLeft } from 'lucide-react';
 import MobileProductCard from '@/components/ui/MobileProductCard';
+import SearchBar from '@/components/search/SearchBar';
+import { searchProducts, type SearchProductItem } from '@/lib/api-search';
+
+// Demo seller ID used for seller-scoped search
+const DEMO_SELLER_ID = 'seller-dragon-001';
 
 interface Product {
   id: string;
@@ -220,10 +225,44 @@ export default function InventoryPage() {
   const [ocrSelected, setOcrSelected] = useState<Set<number>>(new Set());
   const [imageRotation, setImageRotation] = useState(0);
 
+  // Search state
+  const [searchMode, setSearchMode] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<SearchProductItem[]>([]);
+  const [searchTotal, setSearchTotal] = useState(0);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+
   useEffect(() => {
     const timer = setTimeout(() => { setProducts(DEMO_PRODUCTS); setLoading(false); }, 500);
     return () => clearTimeout(timer);
   }, []);
+
+  const handleSearch = useCallback(async (query: string) => {
+    setSearchQuery(query);
+    setSearchMode(true);
+    setSearchLoading(true);
+    setSearchError(null);
+    try {
+      const res = await searchProducts({ q: query, seller: DEMO_SELLER_ID, size: 20 });
+      setSearchResults(res.items);
+      setSearchTotal(res.total);
+    } catch {
+      setSearchError('Search is temporarily unavailable. Try again later.');
+      setSearchResults([]);
+      setSearchTotal(0);
+    } finally {
+      setSearchLoading(false);
+    }
+  }, []);
+
+  const handleExitSearch = () => {
+    setSearchMode(false);
+    setSearchQuery('');
+    setSearchResults([]);
+    setSearchTotal(0);
+    setSearchError(null);
+  };
 
   const calculateStockAge = (d: string) => Math.ceil(Math.abs(Date.now() - new Date(d).getTime()) / 86400000);
   const getStockAgeColor = (days: number) => days > 60 ? 'text-red-600' : days > 30 ? 'text-yellow-600' : 'text-green-600';
@@ -362,6 +401,115 @@ export default function InventoryPage() {
         </div>
       </div>
 
+      {/* Search Bar */}
+      <div className="w-full">
+        <SearchBar
+          placeholder="Search your inventory..."
+          onSearch={handleSearch}
+          sellerScope={DEMO_SELLER_ID}
+        />
+      </div>
+
+      {/* Search Results Mode */}
+      {searchMode && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <button
+              onClick={handleExitSearch}
+              className="flex items-center gap-1.5 text-sm font-medium text-indigo-600 hover:text-indigo-800"
+            >
+              <ArrowLeft className="h-4 w-4" /> Back to Inventory
+            </button>
+            {!searchLoading && !searchError && (
+              <p className="text-sm text-gray-500">
+                {searchTotal} result{searchTotal !== 1 ? 's' : ''} for &ldquo;{searchQuery}&rdquo;
+              </p>
+            )}
+          </div>
+
+          {searchLoading && (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="h-8 w-8 animate-spin text-indigo-600" />
+              <span className="ml-3 text-sm text-gray-500">Searching...</span>
+            </div>
+          )}
+
+          {searchError && (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-center">
+              <AlertCircle className="mx-auto h-8 w-8 text-red-400" />
+              <p className="mt-2 text-sm text-red-700">{searchError}</p>
+              <button
+                onClick={() => handleSearch(searchQuery)}
+                className="mt-3 rounded-lg border border-red-300 px-4 py-1.5 text-sm font-medium text-red-700 hover:bg-red-100"
+              >
+                Retry
+              </button>
+            </div>
+          )}
+
+          {!searchLoading && !searchError && searchResults.length === 0 && (
+            <div className="rounded-lg border-2 border-dashed border-gray-300 p-12 text-center">
+              <span className="mx-auto mb-4 block text-4xl">🔍</span>
+              <h3 className="text-sm font-medium text-gray-900">No products found</h3>
+              <p className="mt-1 text-sm text-gray-500">Try different search terms</p>
+            </div>
+          )}
+
+          {!searchLoading && !searchError && searchResults.length > 0 && (
+            <>
+              {/* Desktop table */}
+              <div className="hidden md:block overflow-hidden rounded-lg border bg-white shadow">
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Product Name</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Category</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Price</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Stock Qty</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200 bg-white">
+                      {searchResults.map((item) => (
+                        <tr key={item.productId} className="hover:bg-gray-50">
+                          <td className="whitespace-nowrap px-6 py-4">
+                            <div className="flex items-center">
+                              <div className="flex h-10 w-10 items-center justify-center rounded bg-gray-200"><Package className="h-5 w-5 text-gray-400" /></div>
+                              <div className="ml-4"><div className="text-sm font-medium text-gray-900">{item.productName}</div></div>
+                            </div>
+                          </td>
+                          <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-900">{item.category}</td>
+                          <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-gray-900">{formatCurrency(item.price)}</td>
+                          <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-900">{item.stockQuantity}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              {/* Mobile cards */}
+              <div className="md:hidden space-y-2">
+                {searchResults.map((item) => (
+                  <div key={item.productId} className="rounded-lg border bg-white p-4 shadow-sm">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-medium text-gray-900">{item.productName}</p>
+                      <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-xs text-indigo-700">{item.category}</span>
+                    </div>
+                    <div className="mt-2 flex items-center justify-between text-sm text-gray-600">
+                      <span>{formatCurrency(item.price)}</span>
+                      <span>Stock: {item.stockQuantity}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Default Inventory View (hidden during search) */}
+      {!searchMode && (
+        <>
       {/* Stats */}
       <div className="grid gap-4 md:grid-cols-3">
         <div className="rounded-lg border bg-white p-4 shadow-sm">
@@ -457,6 +605,8 @@ export default function InventoryPage() {
             <MobileProductCard key={product.id} product={product} />
           ))}
         </div>
+      )}
+        </>
       )}
 
       {/* ── Smart CSV Upload Modal ── */}

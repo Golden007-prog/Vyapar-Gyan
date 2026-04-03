@@ -55,6 +55,9 @@ import { AuthStack } from '../lib/stacks/auth-stack';
 import { EventsStack } from '../lib/stacks/events-stack';
 import { APIStack } from '../lib/stacks/api-stack';
 import { BedrockStack } from '../lib/stacks/bedrock-stack';
+import { SearchStack } from '../lib/stacks/search-stack';
+import { WebSocketStack } from '../lib/stacks/websocket-stack';
+import { PolicyStatement, Effect } from 'aws-cdk-lib/aws-iam';
 
 // Instantiate stacks in dependency order
 
@@ -144,6 +147,37 @@ console.log(`APIStack instantiated: ${apiStack.stackName}`);
 // API_BASE_URL is now injected via APIStack props (eventsWorkerFunctions)
 // to avoid cyclic cross-stack references
 
+// 5b. WebSocket Stack (depends on Database and Auth)
+const webSocketStack = new WebSocketStack(app, `${config.resourcePrefix}-websocket`, {
+  config,
+  table: databaseStack.table,
+  userPool: authStack.userPool,
+  env: {
+    account,
+    region,
+  },
+  description: `WebSocket infrastructure for VyaparGyan ${environment} environment`,
+});
+
+webSocketStack.addDependency(databaseStack);
+webSocketStack.addDependency(authStack);
+console.log(`WebSocketStack instantiated: ${webSocketStack.stackName}`);
+
+// Wire WebSocket endpoint to status webhook Lambda for real-time delivery status push
+apiStack.whatsappStatusWebhookFunction.addEnvironment(
+  'WEBSOCKET_API_ENDPOINT',
+  webSocketStack.webSocketEndpoint,
+);
+apiStack.whatsappStatusWebhookFunction.addToRolePolicy(
+  new PolicyStatement({
+    effect: Effect.ALLOW,
+    actions: ['execute-api:ManageConnections'],
+    resources: [
+      `arn:aws:execute-api:${region}:${account}:${webSocketStack.webSocketApi.ref}/*/POST/@connections/*`,
+    ],
+  }),
+);
+
 // 6. Bedrock Stack (depends on Database, Events, and Storage)
 const bedrockStack = new BedrockStack(app, `${config.resourcePrefix}-bedrock`, {
   config,
@@ -161,6 +195,23 @@ bedrockStack.addDependency(databaseStack);
 bedrockStack.addDependency(eventsStack);
 bedrockStack.addDependency(storageStack);
 console.log(`BedrockStack instantiated: ${bedrockStack.stackName}`);
+
+// 7. Search Stack (depends on Database and API for table, httpApi, jwtAuthorizer)
+const searchStack = new SearchStack(app, `${config.resourcePrefix}-search`, {
+  config,
+  table: databaseStack.table,
+  httpApi: apiStack.httpApi,
+  jwtAuthorizer: apiStack.jwtAuthorizer,
+  env: {
+    account,
+    region,
+  },
+  description: `OpenSearch search infrastructure for VyaparGyan ${environment} environment`,
+});
+
+searchStack.addDependency(databaseStack);
+searchStack.addDependency(apiStack);
+console.log(`SearchStack instantiated: ${searchStack.stackName}`);
 
 // API_BASE_URL for Bedrock action group — optional, used for status callbacks
 // Removed cross-stack reference to avoid potential cyclic dependencies

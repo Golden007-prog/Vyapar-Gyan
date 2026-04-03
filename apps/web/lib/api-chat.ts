@@ -12,7 +12,7 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://api.vyapargyan.
 export type DeliveryStatus = 'queued' | 'sent' | 'delivered' | 'read' | 'failed';
 export type MessageChannel = 'whatsapp' | 'web';
 export type SenderRole = 'customer' | 'seller' | 'system';
-export type MessageType = 'text' | 'image' | 'audio' | 'interactive' | 'product_card' | 'system';
+export type MessageType = 'text' | 'image' | 'audio' | 'interactive' | 'product_card' | 'order_status' | 'ai_suggestion' | 'quick_reply' | 'system';
 
 export interface ChatMessage {
   messageId: string;

@@ -155,3 +155,85 @@ export const CatalogSearchQuerySchema = z.object({
   cursor: z.string().optional(),
 });
 export type CatalogSearchQueryInput = z.infer<typeof CatalogSearchQuerySchema>;
+
+// ============================================================================
+// 3.0 OpenSearch Integration Schemas
+// ============================================================================
+
+/**
+ * Search query parameters for GET /api/v1/search
+ *
+ * Validates: Requirements 5.6, 5.7
+ */
+export const SearchQuerySchema = z.object({
+  q: z.string().optional(),
+  category: z.string().optional(),
+  seller: z.string().optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  size: z.coerce.number().int().min(1).max(100).default(20),
+});
+export type SearchQueryInput = z.infer<typeof SearchQuerySchema>;
+
+/**
+ * Autocomplete query parameters for GET /api/v1/autocomplete
+ *
+ * Validates: Requirements 6.2, 6.4
+ */
+export const AutocompleteQuerySchema = z.object({
+  q: z.string().min(1),
+  limit: z.coerce.number().int().min(1).max(10).default(5),
+});
+export type AutocompleteQueryInput = z.infer<typeof AutocompleteQuerySchema>;
+
+/**
+ * Individual product item returned in search results.
+ *
+ * Validates: Requirements 11.2
+ */
+export const SearchProductItemSchema = z.object({
+  productId: z.string(),
+  productName: z.string(),
+  description: z.string(),
+  category: z.string(),
+  sellerId: z.string(),
+  price: z.number(),
+  stockQuantity: z.number().int(),
+  imageUrls: z.array(z.string()),
+  createdAt: z.string(),
+});
+export type SearchProductItem = z.infer<typeof SearchProductItemSchema>;
+
+/**
+ * Search response schema for GET /api/v1/search
+ *
+ * Validates: Requirements 5.7, 11.2
+ */
+export const SearchResponseSchema = z.object({
+  items: z.array(SearchProductItemSchema),
+  total: z.number().int().min(0),
+  page: z.number().int().min(1),
+  pageSize: z.number().int().min(1).max(100),
+});
+export type SearchResponse = z.infer<typeof SearchResponseSchema>;
+
+/**
+ * Individual autocomplete suggestion.
+ *
+ * Validates: Requirements 6.4, 11.3
+ */
+export const AutocompleteSuggestionSchema = z.object({
+  name: z.string(),
+  category: z.string(),
+  productId: z.string(),
+});
+export type AutocompleteSuggestion = z.infer<typeof AutocompleteSuggestionSchema>;
+
+/**
+ * Autocomplete response schema for GET /api/v1/autocomplete
+ *
+ * Validates: Requirements 6.4, 11.3
+ */
+export const AutocompleteResponseSchema = z.object({
+  suggestions: z.array(AutocompleteSuggestionSchema),
+});
+export type AutocompleteResponse = z.infer<typeof AutocompleteResponseSchema>;

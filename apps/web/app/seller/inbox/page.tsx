@@ -10,6 +10,8 @@ import {
   DEMO_CUSTOMER_NAME,
   type BridgeMessage,
 } from '@/lib/chat-bridge';
+import { useWebSocket } from '@/hooks/useWebSocket';
+import TypingIndicator from '@/components/Chat/TypingIndicator';
 
 interface InboxSession {
   id: string;
@@ -63,12 +65,39 @@ export default function InboxPage() {
   const [messageInput, setMessageInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [sending, setSending] = useState(false);
+  const [authToken, setAuthToken] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Fetch Cognito JWT token for WebSocket connection (seller role)
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { fetchAuthSession } = await import('aws-amplify/auth');
+        const session = await fetchAuthSession();
+        const token = session.tokens?.accessToken?.toString() ?? null;
+        if (!cancelled) setAuthToken(token);
+      } catch {
+        // No auth session — WebSocket stays disconnected, bridge polling still works
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Initialize WebSocket hook for seller role (Req 15.1, 15.2, 15.3, 15.4)
+  const {
+    connectionState,
+    sendMessage: wsSendMessage,
+    sendTyping: wsSendTyping,
+    typingUsers,
+    presenceMap,
+  } = useWebSocket(authToken);
 
   useEffect(() => { setSessions(buildSeedSessions()); }, []);
 
-  // Poll bridge for new customer messages every 1.5s
+  // Poll bridge for new customer messages every 1.5s (suppressed when WebSocket connected)
   useEffect(() => {
+    if (connectionState === 'connected') return; // Req 15.2: suppress polling when WS connected
     const interval = setInterval(() => {
       const bridgeMsgs = getSessionMessages(DEMO_SESSION_ID);
       setSessions(prev => {
@@ -92,7 +121,7 @@ export default function InboxPage() {
       });
     }, 1500);
     return () => clearInterval(interval);
-  }, [selectedId]);
+  }, [selectedId, connectionState]);
 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [selectedId, sessions]);
 
@@ -122,9 +151,21 @@ export default function InboxPage() {
       lastMessage: text,
       lastMessageTime: timestamp,
     }));
+    // Also send via WebSocket if connected
+    if (connectionState === 'connected' && selectedSession) {
+      wsSendMessage(selectedSession.id, { body: text }, 'text');
+    }
     setMessageInput('');
     setSending(false);
-  }, [messageInput, selectedId, sending, selectedSession]);
+  }, [messageInput, selectedId, sending, selectedSession, connectionState, wsSendMessage]);
+
+  /** Notify typing via WebSocket (debounced by the hook) */
+  const handleInputChange = useCallback((value: string) => {
+    setMessageInput(value);
+    if (selectedSession && connectionState === 'connected') {
+      wsSendTyping(selectedSession.id);
+    }
+  }, [selectedSession, connectionState, wsSendTyping]);
 
   const formatTime = (iso: string) => {
     const d = new Date(iso);
@@ -208,14 +249,30 @@ export default function InboxPage() {
           <>
             {/* Thread header */}
             <div className="flex items-center gap-3 border-b bg-white px-4 py-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-100">
+              <div className="relative flex h-9 w-9 items-center justify-center rounded-full bg-gray-100">
                 <User className="h-4 w-4 text-gray-500" />
+                {/* Customer presence indicator */}
+                {(() => {
+                  const customerPresence = presenceMap.get(selectedSession.id);
+                  if (customerPresence?.online) {
+                    return <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-green-500 ring-2 ring-white" />;
+                  }
+                  return null;
+                })()}
               </div>
               <div>
                 <h2 className="text-sm font-semibold text-gray-800">{selectedSession.customerName}</h2>
                 <p className="text-[11px] text-gray-400 flex items-center gap-1">
                   {selectedSession.channel === 'whatsapp' ? <Phone className="h-3 w-3" /> : <Globe className="h-3 w-3" />}
                   {selectedSession.phone} &middot; {selectedSession.channel}
+                  {(() => {
+                    const customerPresence = presenceMap.get(selectedSession.id);
+                    if (customerPresence?.online) return <span className="text-green-600 ml-1">· Online</span>;
+                    if (customerPresence?.lastSeen) {
+                      return <span className="ml-1">· Last seen {formatTime(customerPresence.lastSeen)}</span>;
+                    }
+                    return null;
+                  })()}
                 </p>
               </div>
             </div>
@@ -240,6 +297,11 @@ export default function InboxPage() {
               <div ref={messagesEndRef} />
             </div>
 
+            {/* Typing indicator from WebSocket */}
+            {typingUsers.size > 0 && (
+              <TypingIndicator typingUsers={typingUsers} />
+            )}
+
             {/* Composer */}
             <div className="border-t bg-white px-4 py-3">
               <div className="flex items-center gap-2">
@@ -247,7 +309,7 @@ export default function InboxPage() {
                   type="text"
                   placeholder="Type a reply..."
                   value={messageInput}
-                  onChange={e => setMessageInput(e.target.value)}
+                  onChange={e => handleInputChange(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
                   className="flex-1 rounded-lg border border-gray-200 bg-gray-50 px-4 py-2 text-sm focus:border-indigo-400 focus:outline-none"
                 />

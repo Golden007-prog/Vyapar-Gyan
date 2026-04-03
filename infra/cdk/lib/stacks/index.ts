@@ -10,3 +10,5 @@ export * from './auth-stack';
 export * from './events-stack';
 export * from './api-stack';
 export * from './bedrock-stack';
+export * from './search-stack';
+export * from './websocket-stack';
