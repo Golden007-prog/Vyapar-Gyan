@@ -248,9 +248,25 @@ export default function InventoryPage() {
       setSearchResults(res.items);
       setSearchTotal(res.total);
     } catch {
-      setSearchError('Search is temporarily unavailable. Try again later.');
-      setSearchResults([]);
-      setSearchTotal(0);
+      // OpenSearch not deployed — fall back to client-side filtering of demo products
+      const lowerQuery = query.toLowerCase();
+      const filtered = DEMO_PRODUCTS.filter(
+        (p) => p.name.toLowerCase().includes(lowerQuery) ||
+               (p.categoryName && p.categoryName.toLowerCase().includes(lowerQuery))
+      );
+      const asSearchItems: SearchProductItem[] = filtered.map((p) => ({
+        productId: p.id,
+        productName: p.name,
+        description: '',
+        sellerId: DEMO_SELLER_ID,
+        price: p.price,
+        category: p.categoryName || '',
+        stockQuantity: p.stockQuantity,
+        imageUrls: p.imageUrls || [],
+        createdAt: p.stockAddedDate,
+      }));
+      setSearchResults(asSearchItems);
+      setSearchTotal(asSearchItems.length);
     } finally {
       setSearchLoading(false);
     }

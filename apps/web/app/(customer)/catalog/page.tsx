@@ -118,7 +118,7 @@ export default function CatalogPage() {
     }
   }, [fetchProducts, searchMode]);
 
-  // --- OpenSearch search handler ---
+  // --- OpenSearch search handler (with client-side demo fallback) ---
   const handleSearch = useCallback(async (query: string) => {
     setSearchQuery(query);
     setSearchMode(true);
@@ -132,17 +132,27 @@ export default function CatalogPage() {
       const res: SearchResponse = await opensearchProducts({ q: query, page: 1, size: PAGE_SIZE });
       setSearchItems(res.items);
       setSearchTotal(res.total);
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : '';
-      // 503 or network failure → fall back to DynamoDB browsing
-      if (message.includes('503') || message.includes('unavailable') || message.includes('abort')) {
-        setSearchUnavailable(true);
-        setSearchMode(false);
-      } else {
-        // Other errors: show empty results in search mode
-        setSearchItems([]);
-        setSearchTotal(0);
-      }
+    } catch {
+      // OpenSearch not deployed — fall back to client-side filtering of demo products
+      const lowerQuery = query.toLowerCase();
+      const filtered = DEMO_PRODUCTS.filter(
+        (p) =>
+          p.name.toLowerCase().includes(lowerQuery) ||
+          (p.description && p.description.toLowerCase().includes(lowerQuery))
+      );
+      const asSearchItems: SearchProductItem[] = filtered.map((p) => ({
+        productId: p.productId,
+        productName: p.name,
+        description: p.description || '',
+        sellerId: p.sellerId,
+        price: p.price,
+        category: '',
+        stockQuantity: 100,
+        imageUrls: p.imageUrls || [],
+        createdAt: p.createdAt || new Date().toISOString(),
+      }));
+      setSearchItems(asSearchItems);
+      setSearchTotal(asSearchItems.length);
     } finally {
       setSearchLoading(false);
     }
