@@ -13,8 +13,6 @@
 import * as cdk from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import { Table } from 'aws-cdk-lib/aws-dynamodb';
-import { HttpApi } from 'aws-cdk-lib/aws-apigatewayv2';
-import { HttpUserPoolAuthorizer } from 'aws-cdk-lib/aws-apigatewayv2-authorizers';
 import {
   Bucket,
   BucketEncryption,
@@ -34,8 +32,6 @@ import {
 } from 'aws-cdk-lib/aws-opensearchserverless';
 import { CfnPipeline } from 'aws-cdk-lib/aws-osis';
 import { Function, Runtime, Code, Architecture, Tracing } from 'aws-cdk-lib/aws-lambda';
-import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
-import { HttpMethod } from 'aws-cdk-lib/aws-apigatewayv2';
 import { RemovalPolicy, Duration } from 'aws-cdk-lib';
 import { EnvironmentConfig } from '../config';
 
@@ -47,10 +43,6 @@ export interface SearchStackProps extends cdk.StackProps {
   config: EnvironmentConfig;
   /** DynamoDB main table from DatabaseStack */
   table: Table;
-  /** HTTP API from APIStack */
-  httpApi: HttpApi;
-  /** Cognito JWT authorizer from APIStack */
-  jwtAuthorizer: HttpUserPoolAuthorizer;
 }
 
 /**
@@ -344,33 +336,8 @@ export class SearchStack extends cdk.Stack {
     });
 
     // ========================================================================
-    // 8b. API Gateway routes — Search and Autocomplete with JWT auth
+    // 8b. API Gateway routes are added in app.ts to avoid circular dependencies
     // ========================================================================
-    const { httpApi, jwtAuthorizer } = props;
-
-    const searchIntegration = new HttpLambdaIntegration(
-      'SearchIntegration',
-      this.searchFunction,
-    );
-
-    const autocompleteIntegration = new HttpLambdaIntegration(
-      'AutocompleteIntegration',
-      this.autocompleteFunction,
-    );
-
-    httpApi.addRoutes({
-      path: '/api/v1/search',
-      methods: [HttpMethod.GET],
-      integration: searchIntegration,
-      authorizer: jwtAuthorizer,
-    });
-
-    httpApi.addRoutes({
-      path: '/api/v1/autocomplete',
-      methods: [HttpMethod.GET],
-      integration: autocompleteIntegration,
-      authorizer: jwtAuthorizer,
-    });
 
     // ========================================================================
     // 9. OSIS Pipeline — DynamoDB source → OpenSearch sink

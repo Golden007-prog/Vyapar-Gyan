@@ -196,12 +196,10 @@ bedrockStack.addDependency(eventsStack);
 bedrockStack.addDependency(storageStack);
 console.log(`BedrockStack instantiated: ${bedrockStack.stackName}`);
 
-// 7. Search Stack (depends on Database and API for table, httpApi, jwtAuthorizer)
+// 7. Search Stack (depends on Database only — routes added below)
 const searchStack = new SearchStack(app, `${config.resourcePrefix}-search`, {
   config,
   table: databaseStack.table,
-  httpApi: apiStack.httpApi,
-  jwtAuthorizer: apiStack.jwtAuthorizer,
   env: {
     account,
     region,
@@ -210,8 +208,25 @@ const searchStack = new SearchStack(app, `${config.resourcePrefix}-search`, {
 });
 
 searchStack.addDependency(databaseStack);
-searchStack.addDependency(apiStack);
 console.log(`SearchStack instantiated: ${searchStack.stackName}`);
+
+// 7b. Wire Search Lambda routes into API Gateway (avoids circular dependency)
+import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
+import { HttpMethod } from 'aws-cdk-lib/aws-apigatewayv2';
+
+apiStack.httpApi.addRoutes({
+  path: '/api/v1/search',
+  methods: [HttpMethod.GET],
+  integration: new HttpLambdaIntegration('SearchIntegration', searchStack.searchFunction),
+  authorizer: apiStack.jwtAuthorizer,
+});
+
+apiStack.httpApi.addRoutes({
+  path: '/api/v1/autocomplete',
+  methods: [HttpMethod.GET],
+  integration: new HttpLambdaIntegration('AutocompleteIntegration', searchStack.autocompleteFunction),
+  authorizer: apiStack.jwtAuthorizer,
+});
 
 // API_BASE_URL for Bedrock action group — optional, used for status callbacks
 // Removed cross-stack reference to avoid potential cyclic dependencies
