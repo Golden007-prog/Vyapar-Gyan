@@ -57,10 +57,11 @@ export class StorageStack extends cdk.Stack {
     super(scope, id, props);
 
     const { config, table } = props;
+    const region = props.env?.region || 'ap-south-1';
 
     // Create logs bucket first (used for access logging by other buckets)
     this.logsBucket = new Bucket(this, 'LogsBucket', {
-      bucketName: `${config.resourcePrefix}-logs`,
+      bucketName: `${config.resourcePrefix}-${region}-logs`,
       
       // Encryption: AWS managed keys (AES-256)
       encryption: BucketEncryption.S3_MANAGED,
@@ -85,7 +86,7 @@ export class StorageStack extends cdk.Stack {
 
     // Create product images bucket
     this.productImagesBucket = new Bucket(this, 'ProductImagesBucket', {
-      bucketName: `${config.resourcePrefix}-product-images`,
+      bucketName: `${config.resourcePrefix}-${region}-product-images`,
       
       // Encryption: AWS managed keys (AES-256)
       encryption: BucketEncryption.S3_MANAGED,
@@ -117,7 +118,7 @@ export class StorageStack extends cdk.Stack {
 
     // Create documents bucket for seller verification
     this.documentsBucket = new Bucket(this, 'DocumentsBucket', {
-      bucketName: `${config.resourcePrefix}-documents`,
+      bucketName: `${config.resourcePrefix}-${region}-documents`,
       
       // Encryption: AWS managed keys (AES-256)
       encryption: BucketEncryption.S3_MANAGED,

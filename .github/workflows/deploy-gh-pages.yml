@@ -38,8 +38,8 @@ jobs:
         env:
           NEXT_PUBLIC_DEMO_MODE: "true"
           NEXT_PUBLIC_API_URL: "https://6jseqwaaeh.execute-api.ap-south-1.amazonaws.com"
-          NEXT_PUBLIC_COGNITO_USER_POOL_ID: "ap-south-1_jeKcCOzvw"
-          NEXT_PUBLIC_COGNITO_CLIENT_ID: "7fo79pf9va180tvmagefefngcg"
+          NEXT_PUBLIC_COGNITO_USER_POOL_ID: "ap-south-1_Hp1Vjdo7V"
+          NEXT_PUBLIC_COGNITO_CLIENT_ID: "7taba5u5v41nuoreglmp06e5m1"
           NEXT_PUBLIC_AWS_REGION: "ap-south-1"
           NEXT_PUBLIC_BASE_PATH: "/Vyapar-Gyan"
           NEXT_PUBLIC_RAZORPAY_KEY_ID: "rzp_test_SMPtcnanzcaSQb"
