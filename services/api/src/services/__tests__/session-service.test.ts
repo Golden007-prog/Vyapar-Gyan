@@ -16,6 +16,9 @@ const mockGetSessionByPhone = jest.fn();
 const mockUpdateSessionState = jest.fn();
 const mockGetUserByPhone = jest.fn();
 const mockGetCart = jest.fn();
+const mockPutOnboardingSession = jest.fn();
+const mockGetOnboardingSession = jest.fn();
+const mockUpdateOnboardingWelcomeSent = jest.fn();
 
 jest.mock('../../adapters/dynamodb-adapter', () => ({
   putSession: (...args: unknown[]) => mockPutSession(...args),
@@ -24,6 +27,9 @@ jest.mock('../../adapters/dynamodb-adapter', () => ({
   updateSessionState: (...args: unknown[]) => mockUpdateSessionState(...args),
   getUserByPhone: (...args: unknown[]) => mockGetUserByPhone(...args),
   getCart: (...args: unknown[]) => mockGetCart(...args),
+  putOnboardingSession: (...args: unknown[]) => mockPutOnboardingSession(...args),
+  getOnboardingSession: (...args: unknown[]) => mockGetOnboardingSession(...args),
+  updateOnboardingWelcomeSent: (...args: unknown[]) => mockUpdateOnboardingWelcomeSent(...args),
 }));
 
 jest.mock('../../utils/logger', () => ({
@@ -31,6 +37,11 @@ jest.mock('../../utils/logger', () => ({
 }));
 
 import { resolveOrCreateSession, isInactive } from '../session-service';
+import {
+  resolveOrCreateOnboardingSession,
+  markOnboardingWelcomeSent,
+  computeOnboardingTTL,
+} from '../session-service';
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -153,6 +164,62 @@ describe('Session Service', () => {
         expiresAt: Math.floor(Date.now() / 1000) + 2592000,
       };
       expect(isInactive(session)).toBe(false);
+    });
+  });
+
+  describe('computeOnboardingTTL', () => {
+    it('returns floor(createdAt / 1000) + 86400', () => {
+      const createdAtMs = 1705315800000; // some fixed timestamp
+      const ttl = computeOnboardingTTL(createdAtMs);
+      expect(ttl).toBe(Math.floor(createdAtMs / 1000) + 86400);
+    });
+
+    it('is exactly 24 hours after createdAt in seconds', () => {
+      const now = Date.now();
+      const ttl = computeOnboardingTTL(now);
+      const createdAtSec = Math.floor(now / 1000);
+      expect(ttl - createdAtSec).toBe(86400);
+    });
+  });
+
+  describe('resolveOrCreateOnboardingSession', () => {
+    it('creates a new onboarding session when none exists', async () => {
+      mockGetOnboardingSession.mockResolvedValue(null);
+      mockPutOnboardingSession.mockResolvedValue(undefined);
+
+      const result = await resolveOrCreateOnboardingSession('+919876543210');
+
+      expect(result.isNew).toBe(true);
+      expect(result.session.phoneNumber).toBe('+919876543210');
+      expect(result.session.welcomeSent).toBe(false);
+      expect(result.session.expiresAt).toBeGreaterThan(Math.floor(Date.now() / 1000));
+      expect(mockPutOnboardingSession).toHaveBeenCalledTimes(1);
+    });
+
+    it('returns existing onboarding session when found', async () => {
+      const existing = {
+        phoneNumber: '+919876543210',
+        welcomeSent: true,
+        createdAt: new Date().toISOString(),
+        expiresAt: Math.floor(Date.now() / 1000) + 43200, // 12h remaining
+      };
+      mockGetOnboardingSession.mockResolvedValue(existing);
+
+      const result = await resolveOrCreateOnboardingSession('+919876543210');
+
+      expect(result.isNew).toBe(false);
+      expect(result.session.welcomeSent).toBe(true);
+      expect(mockPutOnboardingSession).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('markOnboardingWelcomeSent', () => {
+    it('calls updateOnboardingWelcomeSent with the phone number', async () => {
+      mockUpdateOnboardingWelcomeSent.mockResolvedValue(undefined);
+
+      await markOnboardingWelcomeSent('+919876543210');
+
+      expect(mockUpdateOnboardingWelcomeSent).toHaveBeenCalledWith('+919876543210');
     });
   });
 });

@@ -20,6 +20,12 @@ import {
   updateSessionState as dbUpdateSessionState,
   getUserByPhone,
   getCart,
+  putOnboardingSession,
+  getOnboardingSession,
+  updateOnboardingWelcomeSent,
+  activateHandoff as dbActivateHandoff,
+  resetHandoffExpiry as dbResetHandoffExpiry,
+  deactivateHandoff as dbDeactivateHandoff,
   type UnifiedSession,
   type Cart,
 } from '../adapters/dynamodb-adapter';
@@ -30,6 +36,9 @@ import {
 
 /** Session TTL: 30 days in seconds */
 const SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
+
+/** Onboarding session TTL: 24 hours in seconds */
+const ONBOARDING_TTL_SECONDS = 86400;
 
 /** Inactivity threshold before a session is considered expired: 24 hours */
 const INACTIVITY_THRESHOLD_MS = 24 * 60 * 60 * 1000;
@@ -168,4 +177,127 @@ export async function resolveByPhone(
     logger.debug('Session resolved by phone', { phoneNumber, userId: session.userId });
   }
   return session;
+}
+
+// ---------------------------------------------------------------------------
+// Onboarding Session (unregistered users — 24h TTL)
+// ---------------------------------------------------------------------------
+
+export interface OnboardingSession {
+  phoneNumber: string;
+  welcomeSent: boolean;
+  createdAt: string;
+  expiresAt: number; // DynamoDB TTL (epoch seconds)
+}
+
+/**
+ * Compute the DynamoDB TTL for an onboarding session.
+ * TTL = floor(createdAt / 1000) + 86400
+ */
+export function computeOnboardingTTL(createdAtMs: number): number {
+  return Math.floor(createdAtMs / 1000) + ONBOARDING_TTL_SECONDS;
+}
+
+/**
+ * Resolve or create an onboarding session for an unregistered phone number.
+ *
+ * - If an active onboarding session exists (not yet expired), return it.
+ * - Otherwise create a new one with `welcomeSent = false` and a 24h TTL.
+ *
+ * After the first welcome message is sent the caller should call
+ * `markOnboardingWelcomeSent()` to flip the flag so subsequent messages
+ * within the same 24h window receive the shorter reminder.
+ */
+export async function resolveOrCreateOnboardingSession(
+  phoneNumber: string,
+): Promise<{ session: OnboardingSession; isNew: boolean }> {
+  const existing = await getOnboardingSession(phoneNumber);
+
+  if (existing) {
+    logger.info('Onboarding session resolved', { phoneNumber, welcomeSent: existing.welcomeSent });
+    return { session: existing, isNew: false };
+  }
+
+  const now = Date.now();
+  const newSession: OnboardingSession = {
+    phoneNumber,
+    welcomeSent: false,
+    createdAt: new Date(now).toISOString(),
+    expiresAt: computeOnboardingTTL(now),
+  };
+
+  await putOnboardingSession(newSession);
+  logger.info('Onboarding session created', { phoneNumber, expiresAt: newSession.expiresAt });
+  return { session: newSession, isNew: true };
+}
+
+/**
+ * Mark the onboarding session as having sent the full welcome message.
+ */
+export async function markOnboardingWelcomeSent(phoneNumber: string): Promise<void> {
+  await updateOnboardingWelcomeSent(phoneNumber);
+  logger.info('Onboarding welcome marked as sent', { phoneNumber });
+}
+
+
+// ---------------------------------------------------------------------------
+// Human Handoff Protocol (Req 10.1–10.5)
+// ---------------------------------------------------------------------------
+
+/** Handoff inactivity timeout: 30 minutes in seconds */
+const HANDOFF_TIMEOUT_SECONDS = 30 * 60;
+
+/**
+ * Pure function: determine if a session's handoff has expired.
+ * Returns true when handoffExpiresAt <= nowEpoch (or handoff fields are missing).
+ */
+export function isHandoffExpired(
+  session: Pick<UnifiedSession, 'isHumanHandoff' | 'handoffExpiresAt'>,
+  nowEpoch: number = Math.floor(Date.now() / 1000),
+): boolean {
+  if (!session.isHumanHandoff) return true;
+  if (session.handoffExpiresAt === undefined || session.handoffExpiresAt === null) return true;
+  return session.handoffExpiresAt <= nowEpoch;
+}
+
+/**
+ * Pure function: determine if AI processing should be bypassed.
+ * Returns true when handoff is active AND not expired.
+ */
+export function shouldBypassAI(
+  session: Pick<UnifiedSession, 'isHumanHandoff' | 'handoffExpiresAt'>,
+  nowEpoch: number = Math.floor(Date.now() / 1000),
+): boolean {
+  if (!session.isHumanHandoff) return false;
+  return !isHandoffExpired(session, nowEpoch);
+}
+
+/**
+ * Activate human handoff for a customer session.
+ * Called when a seller sends the first reply from the web Inbox.
+ */
+export async function startHandoff(
+  customerUserId: string,
+  sellerId: string,
+): Promise<void> {
+  const expiresAt = Math.floor(Date.now() / 1000) + HANDOFF_TIMEOUT_SECONDS;
+  await dbActivateHandoff(customerUserId, sellerId, expiresAt);
+  logger.info('Human handoff activated', { customerUserId, sellerId, expiresAt });
+}
+
+/**
+ * Extend handoff timer on each subsequent seller reply.
+ */
+export async function extendHandoff(customerUserId: string): Promise<void> {
+  const expiresAt = Math.floor(Date.now() / 1000) + HANDOFF_TIMEOUT_SECONDS;
+  await dbResetHandoffExpiry(customerUserId, expiresAt);
+  logger.info('Handoff timer extended', { customerUserId, expiresAt });
+}
+
+/**
+ * Deactivate human handoff (seller types /ai or auto-reset).
+ */
+export async function endHandoff(customerUserId: string): Promise<void> {
+  await dbDeactivateHandoff(customerUserId);
+  logger.info('Human handoff deactivated', { customerUserId });
 }

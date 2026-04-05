@@ -9,6 +9,7 @@ export interface Message {
   sessionId: string;
   waMessageId: string;
   direction: 'inbound' | 'outbound';
+  channel: 'whatsapp' | 'web' | 'system';
   messageType: 'text' | 'image' | 'interactive' | 'template' | 'audio' | 'document';
   content: Record<string, any>;
   waStatus?: 'sent' | 'delivered' | 'read' | 'failed';
@@ -22,6 +23,7 @@ export interface CreateMessageInput {
   sessionId: string;
   waMessageId: string;
   direction: 'inbound' | 'outbound';
+  channel?: 'whatsapp' | 'web' | 'system';
   messageType: string;
   content: Record<string, any>;
   waStatus?: string;
@@ -67,6 +69,7 @@ export class MessageRepository {
       sessionId: input.sessionId,
       waMessageId: input.waMessageId,
       direction: input.direction,
+      channel: input.channel || 'whatsapp',
       messageType: input.messageType as any,
       content: input.content,
       waStatus: input.waStatus as any,

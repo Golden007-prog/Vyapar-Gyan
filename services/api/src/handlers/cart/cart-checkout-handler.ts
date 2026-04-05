@@ -14,6 +14,7 @@ import { logger } from '../../utils/logger';
 import { extractUserId, UnauthorizedError } from '../../core/auth';
 import { validateCheckout, clearCart } from '../../services/cart-service';
 import { getConfig } from '../../utils/config';
+import { cancelTimer } from '../../services/cart-abandonment-scheduler';
 
 const eventBridgeClient = new EventBridgeClient({});
 
@@ -55,6 +56,14 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
 
     // Clear cart after successful checkout initiation
     await clearCart(userId);
+
+    // Cancel cart abandonment timer on checkout (Req 21.2)
+    try {
+      await cancelTimer(userId, userId);
+    } catch (err) {
+      // Non-fatal — log and continue
+      logger.error('Failed to cancel cart nudge timer on checkout', err, { userId });
+    }
 
     logger.info('Checkout initiated', { userId, orderId, itemCount: cart.itemCount });
 

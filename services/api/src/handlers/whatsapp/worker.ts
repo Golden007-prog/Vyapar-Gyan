@@ -5,8 +5,9 @@ import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
 import { logger } from '../../utils/logger';
 import { idempotencyService } from '../../utils/idempotency';
 import { CustomerRepository } from '../../repositories/customer-repository';
-import { getUserByPhone, putMessage } from '../../adapters/dynamodb-adapter';
+import { getUserByPhone, putMessage, updateSessionIntent, updateSessionState as dbUpdateSessionState } from '../../adapters/dynamodb-adapter';
 import { resolveOrCreateSession } from '../../services/session-service';
+import { shouldBypassAI } from '../../services/session-service';
 import { recordInboundMessage, handleOptOut } from '../../services/consent-service';
 import { getConfig, getVoicePipelineConfig } from '../../utils/config';
 import { whatsappSender } from '../../services/whatsapp-sender';
@@ -14,7 +15,19 @@ import { routeMessage } from './states/router';
 import { sanitizeForTTS } from '../../utils/whatsapp-sanitizer';
 import { GeminiAdapter } from '../../adapters/gemini-adapter';
 import { publishCountMetric, publishLatencyMetric } from '../../core/metrics';
-import { handleSellerWhatsAppCommand } from '../../services/whatsapp/seller-copilot';
+import { handleSellerCopilotMessage } from './seller-copilot';
+import { handleCustomerDiscovery } from './customer-discovery';
+import { executeFinancialQuery, isLikelyFinancialQuery, LANGUAGE_NAMES } from '../../services/financial-query';
+import { extractAndRouteIntent } from '../../services/intent-extraction';
+import {
+  detectMediaType,
+  handleInventoryUpload,
+  commitInventory,
+  applyInventoryEdit,
+  parseInventoryEditCommand,
+  formatInventoryList,
+  type InventoryItem,
+} from './inventory-upload';
 
 // Clients reused across invocations
 const s3Client = new S3Client({});
@@ -295,6 +308,49 @@ async function handleSellerMessage(context: {
     return;
   }
 
+  // Route media attachments (document/image) to inventory upload handler
+  // Detect from Twilio webhook fields: MediaContentType0 / MediaUrl0
+  const mediaContentType = message._rawPayload?.MediaContentType0
+    || message.document?.mime_type
+    || message.image?.mime_type;
+  const mediaUrl = message._rawPayload?.MediaUrl0
+    || message.document?.url
+    || message.image?.url;
+
+  if (mediaContentType && mediaUrl) {
+    const mediaCategory = detectMediaType(mediaContentType);
+    if (mediaCategory !== 'unknown') {
+      logger.info('Routing seller media to inventory upload', {
+        requestId, userId, phoneNumber, mediaCategory, mediaContentType,
+      });
+
+      const items = await handleInventoryUpload({
+        sellerId: userId,
+        phoneNumber,
+        mediaUrl,
+        mediaContentType,
+        requestId,
+      });
+
+      // Store pending inventory in session context for confirmation/edit flow
+      if (items.length > 0) {
+        try {
+          const { getSession, putSession } = await import('../../adapters/dynamodb-adapter.js');
+          const session = await getSession(userId);
+          if (session) {
+            (session as any).pendingInventory = items;
+            await putSession(session);
+          }
+        } catch (err) {
+          logger.warn('Failed to store pending inventory in session', {
+            requestId, userId, error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+      return;
+    }
+  }
+
   const user: any = userProfile
     ? {
         id: userProfile.userId,
@@ -318,8 +374,70 @@ async function handleSellerMessage(context: {
   // Extract message text
   const messageText = message.text?.body || '';
 
-  // Process seller command
-  const response = await handleSellerWhatsAppCommand({
+  // Check for pending inventory confirmation/edit flow
+  try {
+    const { getSession, putSession } = await import('../../adapters/dynamodb-adapter.js');
+    const session = await getSession(userId);
+    const pendingItems = (session as any)?.pendingInventory as InventoryItem[] | undefined;
+
+    if (pendingItems && pendingItems.length > 0) {
+      const textLower = messageText.trim().toLowerCase();
+
+      // Requirement 11.5: Seller confirms
+      if (textLower === 'looks good' || textLower === 'confirm' || textLower === 'yes' || textLower === 'ok') {
+        await commitInventory(userId, phoneNumber, pendingItems);
+        // Clear pending inventory from session
+        (session as any).pendingInventory = undefined;
+        await putSession(session!);
+        return;
+      }
+
+      // Cancel
+      if (textLower === 'cancel' || textLower === 'discard') {
+        (session as any).pendingInventory = undefined;
+        await putSession(session!);
+        await whatsappSender.sendMessage(
+          phoneNumber,
+          { type: 'text', text: '❌ Inventory upload cancelled.\n\nType "menu" to go back.' },
+          `inv-cancel-${userId}`,
+          'seller',
+        );
+        return;
+      }
+
+      // Requirement 11.6: Seller edits
+      const editCmd = parseInventoryEditCommand(messageText);
+      if (editCmd) {
+        const result = applyInventoryEdit(pendingItems, editCmd);
+        if (result.error) {
+          await whatsappSender.sendMessage(
+            phoneNumber,
+            { type: 'text', text: `⚠️ ${result.error}` },
+            `inv-edit-err-${userId}`,
+            'seller',
+          );
+        } else {
+          (session as any).pendingInventory = result.items;
+          await putSession(session!);
+          const updatedList = formatInventoryList(result.items);
+          await whatsappSender.sendMessage(
+            phoneNumber,
+            { type: 'text', text: `✏️ Updated!\n\n${updatedList}` },
+            `inv-edit-${userId}`,
+            'seller',
+          );
+        }
+        return;
+      }
+    }
+  } catch (err) {
+    logger.warn('Pending inventory check failed', {
+      requestId, userId, error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  // Process seller command via copilot handler (home menu + stock check + Bedrock delegation)
+  const response = await handleSellerCopilotMessage({
     user,
     message: messageText,
     phoneNumber,
@@ -407,6 +525,19 @@ async function handleCustomerMessage(context: {
     hasRestoredCart: !!sessionResult.restoredCart,
   });
 
+  // --- Human Handoff Check (Req 10.2) ---
+  // If handoff is active and not expired, skip AI and pipe to seller inbox
+  if (shouldBypassAI(sessionResult.session)) {
+    logger.info('Human handoff active — skipping AI, piping to seller inbox', {
+      userId,
+      handoffSellerId: sessionResult.session.handoffSellerId,
+      handoffExpiresAt: sessionResult.session.handoffExpiresAt,
+    });
+    // Message already stored in THREAD#{userId} above.
+    // Fan-out via EventBridge will push it to the seller's web inbox.
+    return;
+  }
+
   // --- Media detection: handle voice notes and images before text routing ---
   const messageType = message.type;
 
@@ -448,7 +579,72 @@ async function handleCustomerMessage(context: {
     expiresAt: new Date(sessionResult.session.expiresAt * 1000).toISOString(),
   };
 
-  // Route message to appropriate state handler
+  // Route to customer discovery for new sessions or greeting state
+  // Customer discovery handles store search, favorites, pincode/city lookup
+  const messageText = message.text?.body?.trim() || '';
+  const isDiscoveryTrigger = sessionResult.isNew
+    || session.state === 'greeting'
+    || /^(menu|home|discover|stores|1|2|3|4)$/i.test(messageText)
+    || /^store\s+\d+$/i.test(messageText)
+    || /^add to favorites/i.test(messageText);
+
+  if (isDiscoveryTrigger && session.state !== 'browsing' && session.state !== 'ordering' && session.state !== 'payment') {
+    logger.info('Routing to customer discovery', { userId, sessionState: session.state, isNew: sessionResult.isNew });
+    await handleCustomerDiscovery({
+      message,
+      userId,
+      phoneNumber,
+      sessionId: session.id,
+      requestId,
+    });
+    return;
+  }
+
+  // --- Intent extraction before routing (Req 9.1–9.6) ---
+  // For non-discovery text messages, extract shopping intent via Gemini
+  // to enable contextual routing to the correct seller/product.
+  const intentMessageText = message.text?.body?.trim() || '';
+  if (intentMessageText.length > 0 && session.state !== 'ordering' && session.state !== 'payment') {
+    try {
+      const intentResult = await extractAndRouteIntent(intentMessageText);
+
+      // Store intent in session for conversation continuity (Req 9.4)
+      const lastIntent: Record<string, unknown> = {
+        product: intentResult.intent.product,
+        store: intentResult.intent.store,
+        language: intentResult.intent.language,
+      };
+      if (intentResult.routing.seller) {
+        (lastIntent.store as Record<string, unknown>).sellerId = intentResult.routing.seller.sellerId;
+      }
+      await updateSessionIntent(userId, lastIntent as any);
+
+      // Route based on intent (Req 9.2, 9.3)
+      if (intentResult.routing.type === 'store_match' && intentResult.routing.seller) {
+        logger.info('Intent: store match, routing to seller context', {
+          userId, sellerId: intentResult.routing.seller.sellerId,
+          storeName: intentResult.routing.seller.storeName,
+        });
+        // Transition to browsing with the matched seller
+        await dbUpdateSessionState(userId, 'browsing', 'whatsapp');
+        session.state = 'browsing';
+        session.context = { sellerId: intentResult.routing.seller.sellerId };
+      } else if (intentResult.routing.type === 'product_search' && intentResult.routing.searchQuery) {
+        logger.info('Intent: product search across all sellers', {
+          userId, searchQuery: intentResult.routing.searchQuery,
+        });
+        // Let the existing router handle the product search
+      }
+    } catch (intentErr) {
+      // Non-fatal — continue with default routing on intent extraction failure
+      logger.warn('Intent extraction failed, continuing with default routing', {
+        userId,
+        error: intentErr instanceof Error ? intentErr.message : String(intentErr),
+      });
+    }
+  }
+
+  // Route message to appropriate state handler (browsing, checkout, etc.)
   await routeMessage({
     message,
     customer,
@@ -883,38 +1079,72 @@ async function _executeVoicePipeline(context: VoiceContext, pipelineStart: numbe
   }
 
   // ── Step 5: Route transcript to agent pipeline ──
-  let agentReply: string;
+  let agentReply: string = '';
   try {
     if (userRole === 'seller') {
-      // Seller copilot (statically imported at top)
+      // Seller voice pipeline: check for financial query FIRST, then fall through to copilot
+      // Requirement 22.2, 22.3: Extract financial intent and execute query
 
-      // Build user object matching SellerCommandContext
-      const resolvedProfile = userProfile || await getUserByPhone(phoneNumber);
-      const user: any = resolvedProfile
-        ? {
-            id: resolvedProfile.userId,
-            email: `${resolvedProfile.displayName?.toLowerCase().replace(/\s+/g, '.') || 'seller'}@vyapargyan.com`,
-            phoneNumber: resolvedProfile.phoneNumber,
-            role: resolvedProfile.role,
-            cognitoId: resolvedProfile.cognitoId,
-            createdAt: resolvedProfile.createdAt,
-            updatedAt: resolvedProfile.updatedAt,
+      if (isLikelyFinancialQuery(transcriptText)) {
+        try {
+          const financialResult = await executeFinancialQuery(
+            voiceGemini,
+            userId,
+            transcriptText,
+            detectedLanguage,
+          );
+
+          if (financialResult.intent !== 'unknown') {
+            agentReply = financialResult.text;
+            // Override detected language for TTS to match the financial query language
+            detectedLanguage = LANGUAGE_NAMES[financialResult.language] || detectedLanguage;
+            logger.info('Financial query handled via voice pipeline', {
+              userId, requestId, intent: financialResult.intent,
+              language: financialResult.language,
+            });
+          } else {
+            // Unknown intent — fall through to seller copilot
+            agentReply = '';
           }
-        : {
-            id: userId,
-            phoneNumber,
-            role: 'seller' as const,
-            cognitoId: 'unknown',
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          };
+        } catch (fqErr) {
+          logger.warn('Financial query failed, falling through to copilot', {
+            userId, requestId,
+            error: fqErr instanceof Error ? fqErr.message : String(fqErr),
+          });
+          agentReply = '';
+        }
+      }
 
-      agentReply = await handleSellerWhatsAppCommand({
-        user,
-        message: transcriptText,
-        phoneNumber,
-        requestId,
-      });
+      // Fall through to seller copilot if not a financial query or if it failed
+      if (!agentReply) {
+        // Build user object matching SellerCommandContext
+        const resolvedProfile = userProfile || await getUserByPhone(phoneNumber);
+        const user: any = resolvedProfile
+          ? {
+              id: resolvedProfile.userId,
+              email: `${resolvedProfile.displayName?.toLowerCase().replace(/\s+/g, '.') || 'seller'}@vyapargyan.com`,
+              phoneNumber: resolvedProfile.phoneNumber,
+              role: resolvedProfile.role,
+              cognitoId: resolvedProfile.cognitoId,
+              createdAt: resolvedProfile.createdAt,
+              updatedAt: resolvedProfile.updatedAt,
+            }
+          : {
+              id: userId,
+              phoneNumber,
+              role: 'seller' as const,
+              cognitoId: 'unknown',
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            };
+
+        agentReply = await handleSellerCopilotMessage({
+          user,
+          message: transcriptText,
+          phoneNumber,
+          requestId,
+        });
+      }
     } else {
       // Customer: construct a text message and route through the state router
       const customerProfile = await getUserByPhone(phoneNumber);

@@ -79,6 +79,10 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
         await handlePaymentLinkPaid(webhookData, requestId);
         break;
 
+      case 'payment_link.expired':
+        await handlePaymentLinkExpired(webhookData, requestId);
+        break;
+
       default:
         logger.info('Unhandled webhook event type', { requestId, eventType });
     }
@@ -222,19 +226,71 @@ async function handlePaymentFailed(webhookData: any, requestId: string): Promise
 
 /**
  * Handle payment_link.paid event
+ *
+ * Updates order status to confirmed, deducts inventory (handled by order
+ * creation transaction), and sends confirmation notifications to both
+ * customer and seller via WhatsApp.
+ *
+ * Requirements: 20.4
  */
 async function handlePaymentLinkPaid(webhookData: any, requestId: string): Promise<void> {
   const paymentLink = webhookData.payload.payment_link.entity;
   const orderId = paymentLink.reference_id;
+  const paymentLinkId = paymentLink.id;
+
+  if (!orderId) {
+    logger.error('Order ID (reference_id) not found in payment_link.paid event', {
+      requestId,
+      paymentLinkId,
+    });
+    return;
+  }
 
   logger.info('Processing payment link paid', {
     requestId,
     orderId,
-    paymentLinkId: paymentLink.id,
+    paymentLinkId,
+    amount: paymentLink.amount,
   });
 
-  // The actual payment capture will be handled by payment.captured event
-  // This is just for logging/tracking
+  const config = await getConfig();
+
+  // Get order details
+  const order = await getOrder(config.tableName, orderId);
+
+  if (!order) {
+    logger.error('Order not found for payment_link.paid', { requestId, orderId });
+    return;
+  }
+
+  // Idempotency: skip if already confirmed
+  if (order.status === 'PAID' || order.status === 'CONFIRMED' || order.status === 'PROCESSING') {
+    logger.info('Order already confirmed, skipping duplicate payment_link.paid', {
+      requestId,
+      orderId,
+      currentStatus: order.status,
+    });
+    return;
+  }
+
+  // Update order status to PAID / confirmed
+  await updateOrderStatus(config.tableName, orderId, 'PAID', {
+    paymentLinkId,
+    paymentMethod: 'payment_link',
+    paymentCapturedAt: new Date().toISOString(),
+  });
+
+  logger.info('Order confirmed via payment link', {
+    requestId,
+    orderId,
+    paymentLinkId,
+  });
+
+  // Send confirmation to customer
+  await notifyCustomerPaymentSuccess(order, requestId);
+
+  // Send notification to seller
+  await notifySellerNewOrder(order, requestId);
 }
 
 /**
@@ -325,6 +381,71 @@ async function notifyCustomerPaymentSuccess(order: any, requestId: string): Prom
     logger.error('Failed to notify customer', {
       requestId,
       orderId: order.orderId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+/**
+ * Handle payment_link.expired event
+ *
+ * Notifies the customer that their payment link has expired and offers
+ * to generate a new one.
+ *
+ * Requirement: 20.3, 20.5
+ */
+async function handlePaymentLinkExpired(webhookData: any, requestId: string): Promise<void> {
+  const paymentLink = webhookData.payload.payment_link.entity;
+  const orderId = paymentLink.reference_id;
+
+  if (!orderId) {
+    logger.error('Order ID not found in payment_link.expired event', { requestId });
+    return;
+  }
+
+  logger.info('Processing payment link expired', {
+    requestId,
+    orderId,
+    paymentLinkId: paymentLink.id,
+  });
+
+  const config = await getConfig();
+  const order = await getOrder(config.tableName, orderId);
+
+  if (!order) {
+    logger.error('Order not found for expired payment link', { requestId, orderId });
+    return;
+  }
+
+  // Only send reminder if order is still pending payment
+  if (order.status !== 'PENDING_PAYMENT') {
+    logger.info('Order no longer pending, skipping expiry notification', {
+      requestId,
+      orderId,
+      currentStatus: order.status,
+    });
+    return;
+  }
+
+  const message = [
+    '⏰ *Payment Link Expired*',
+    '',
+    `Your payment link for order *${order.orderId}* (₹${order.totalAmount}) has expired.`,
+    '',
+    'Reply *PAY* to receive a new payment link, or *CANCEL* to cancel the order.',
+  ].join('\n');
+
+  try {
+    await twilioAdapter.sendWhatsAppMessage(order.customerPhone, message);
+    logger.info('Customer notified of payment link expiry', {
+      requestId,
+      orderId,
+      customerPhone: order.customerPhone,
+    });
+  } catch (error) {
+    logger.error('Failed to notify customer of payment link expiry', {
+      requestId,
+      orderId,
       error: error instanceof Error ? error.message : String(error),
     });
   }

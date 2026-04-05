@@ -26,6 +26,7 @@ import {
   type Cart,
   type UnifiedCartItem,
 } from '../adapters/dynamodb-adapter';
+import { createOrResetTimer } from './cart-abandonment-scheduler';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -164,6 +165,15 @@ export async function addItem(
   });
 
   await publishCartUpdated(updatedCart);
+
+  // Trigger cart abandonment scheduler — create/reset 2h timer (Req 21.1)
+  try {
+    await createOrResetTimer(userId, userId);
+  } catch (err) {
+    // Non-fatal — log and continue. The cart write already succeeded.
+    logger.error('Failed to create/reset cart nudge timer', err, { userId });
+  }
+
   return updatedCart;
 }
 
@@ -228,6 +238,14 @@ export async function updateQuantity(
   });
 
   await publishCartUpdated(updatedCart);
+
+  // Reset cart abandonment timer on quantity update (Req 21.1)
+  try {
+    await createOrResetTimer(userId, userId);
+  } catch (err) {
+    logger.error('Failed to reset cart nudge timer on quantity update', err, { userId });
+  }
+
   return updatedCart;
 }
 

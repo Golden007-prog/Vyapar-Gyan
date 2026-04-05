@@ -34,9 +34,13 @@ function deriveTitle(pathname: string): string {
     approvals: 'Approvals',
     campaigns: 'Campaigns',
     sellers: 'Sellers',
+    customers: 'Customers',
+    disputes: 'Disputes',
+    financials: 'Financials',
     audit: 'Audit Log',
     system: 'System Health',
     catalog: 'Catalog',
+    settings: 'Settings',
     chat: 'Chat',
     cart: 'Cart',
     account: 'Account',
@@ -70,8 +74,11 @@ export function AppShell({ children, role, navConfig, headerActions }: AppShellP
 
   const pageTitle = useMemo(() => deriveTitle(pathname), [pathname]);
 
-  // Combine all nav items for the sidebar (primary non-"More" + overflow)
+  // Combine all nav items for the sidebar (use explicit sidebar order if provided, else primary non-"More" + overflow)
   const sidebarItems = useMemo(() => {
+    if (navConfig.sidebar && navConfig.sidebar.length > 0) {
+      return navConfig.sidebar;
+    }
     const primary = navConfig.primary.filter((item) => item.href !== '#more');
     return [...primary, ...navConfig.overflow];
   }, [navConfig]);

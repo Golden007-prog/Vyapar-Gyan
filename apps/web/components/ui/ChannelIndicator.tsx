@@ -1,6 +1,6 @@
-import { MessageSquare } from 'lucide-react';
+import { MessageSquare, Bot } from 'lucide-react';
 
-export type Channel = 'whatsapp' | 'web' | string;
+export type Channel = 'whatsapp' | 'web' | 'system' | string;
 
 export interface ChannelIndicatorProps {
   channel: Channel;
@@ -18,6 +18,15 @@ export default function ChannelIndicator({ channel, className = '' }: ChannelInd
       >
         WA
       </span>
+    );
+  }
+
+  if (channel === 'system') {
+    return (
+      <Bot
+        className={`h-3 w-3 text-gray-400 ${className}`}
+        aria-label="system message"
+      />
     );
   }
 

@@ -14,7 +14,8 @@ import { EventBridgeClient, PutEventsCommand } from '@aws-sdk/client-eventbridge
 import { logger } from '../../utils/logger';
 import { extractUserId, UnauthorizedError } from '../../core/auth';
 import { getConfig } from '../../utils/config';
-import { putMessage, type MessageThread } from '../../adapters/dynamodb-adapter';
+import { putMessage, getSession, type MessageThread } from '../../adapters/dynamodb-adapter';
+import { startHandoff, extendHandoff, endHandoff, shouldBypassAI } from '../../services/session-service';
 
 const ebClient = new EventBridgeClient({});
 
@@ -94,6 +95,29 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
       sellerUserId: sellerId,
     };
     await putMessage(customerMessage as any);
+
+    // --- Human Handoff Protocol (Req 10.1–10.4) ---
+    // Check for /ai command to deactivate handoff
+    const trimmedContent = body.content.trim();
+    if (trimmedContent === '/ai') {
+      await endHandoff(customerUserId);
+      logger.info('Seller deactivated handoff via /ai', { sellerId, customerUserId });
+    } else {
+      // Activate or extend handoff on seller reply
+      const session = await getSession(customerUserId);
+      if (session) {
+        if (session.isHumanHandoff && !shouldBypassAI(session)) {
+          // Handoff expired — re-activate
+          await startHandoff(customerUserId, sellerId);
+        } else if (session.isHumanHandoff) {
+          // Already in handoff — extend timer
+          await extendHandoff(customerUserId);
+        } else {
+          // First seller reply — activate handoff
+          await startHandoff(customerUserId, sellerId);
+        }
+      }
+    }
 
     // Publish SellerReplySent event for notification router
     const config = await getConfig();

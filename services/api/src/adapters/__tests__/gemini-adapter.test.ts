@@ -227,7 +227,7 @@ describe('GeminiAdapter', () => {
 
       await expect(
         adapter.transcribeVoiceNote(audioBuffer, 'English', [])
-      ).rejects.toThrow('Voice transcription failed: API quota exceeded');
+      ).rejects.toThrow('Voice transcription failed: Error: API quota exceeded');
     });
 
     it('should pass audio as base64 inlineData with audio/ogg mimeType', async () => {
@@ -338,7 +338,7 @@ describe('GeminiAdapter', () => {
 
       await expect(
         adapter.textToSpeech('Hello', 'English')
-      ).rejects.toThrow('TTS generation failed: No audio data in Gemini TTS response');
+      ).rejects.toThrow('TTS generation failed: Error: No audio data in Gemini TTS response');
     });
 
     it('should throw when candidates are empty', async () => {
@@ -350,7 +350,7 @@ describe('GeminiAdapter', () => {
 
       await expect(
         adapter.textToSpeech('Hello', 'English')
-      ).rejects.toThrow('TTS generation failed: No audio data in Gemini TTS response');
+      ).rejects.toThrow('TTS generation failed: Error: No audio data in Gemini TTS response');
     });
 
     it('should throw on Gemini API failure', async () => {
@@ -358,7 +358,7 @@ describe('GeminiAdapter', () => {
 
       await expect(
         adapter.textToSpeech('Hello', 'English')
-      ).rejects.toThrow('TTS generation failed: TTS quota exceeded');
+      ).rejects.toThrow('TTS generation failed: Error: TTS quota exceeded');
     });
 
     it('should default voiceStyle to conversational', async () => {
@@ -464,7 +464,7 @@ describe('GeminiAdapter', () => {
 
       await expect(
         adapter.analyzeProductImage(imageBuffer, mimeType)
-      ).rejects.toThrow('Image analysis failed: Rate limited');
+      ).rejects.toThrow('Image analysis failed: Error: Rate limited');
     });
 
     it('should pass image as base64 inlineData with correct mimeType', async () => {

@@ -1997,6 +1997,365 @@ export class APIStack extends cdk.Stack {
     });
 
     // ========================================================================
+    // Admin Customers Lambda — JWT-protected (admin role)
+    // Customer directory, LTV analytics, cross-pollination metrics
+    // ========================================================================
+
+    const adminCustomersFunction = new Function(this, 'AdminCustomersFunction', {
+      functionName: `${config.resourcePrefix}-admin-customers`,
+      runtime: Runtime.NODEJS_20_X,
+      architecture: Architecture.ARM_64,
+      handler: 'handlers/admin/customers.handler',
+      code: Code.fromAsset('../../services/api/dist'),
+      timeout: Duration.seconds(20),
+      memorySize: 512,
+      environment: {
+        ENVIRONMENT: config.environment,
+        TABLE_NAME: table.tableName,
+        LOG_LEVEL: 'info',
+      },
+    });
+    table.grantReadData(adminCustomersFunction);
+
+    // Grant Secrets Manager + SSM for getConfig() fallback
+    adminCustomersFunction.addToRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['secretsmanager:GetSecretValue'],
+        resources: [
+          `arn:aws:secretsmanager:${config.region}:${config.account}:secret:/${config.environment}/twilio/*`,
+          `arn:aws:secretsmanager:${config.region}:${config.account}:secret:/${config.environment}/razorpay/*`,
+          `arn:aws:secretsmanager:${config.region}:${config.account}:secret:GEMINI_API_KEY-*`,
+          `arn:aws:secretsmanager:${config.region}:${config.account}:secret:GROK_API_KEY-*`,
+        ],
+      }),
+    );
+    adminCustomersFunction.addToRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['ssm:GetParameter', 'ssm:GetParameters'],
+        resources: [`arn:aws:ssm:${config.region}:${config.account}:parameter/${config.environment}/*`],
+      }),
+    );
+
+    const adminCustomersIntegration = new HttpLambdaIntegration(
+      'AdminCustomersIntegration', adminCustomersFunction,
+      { payloadFormatVersion: PayloadFormatVersion.VERSION_2_0 },
+    );
+
+    this.httpApi.addRoutes({
+      path: '/api/v1/admin/customers',
+      methods: [HttpMethod.GET],
+      integration: adminCustomersIntegration,
+      authorizer: this.jwtAuthorizer,
+    });
+    this.httpApi.addRoutes({
+      path: '/api/v1/admin/customers/{id}',
+      methods: [HttpMethod.GET],
+      integration: adminCustomersIntegration,
+      authorizer: this.jwtAuthorizer,
+    });
+
+    // ========================================================================
+    // Admin Disputes Lambda — JWT-protected (admin role)
+    // Dispute resolution, support hub, refund actions via Razorpay
+    // ========================================================================
+
+    const adminDisputesFunction = new Function(this, 'AdminDisputesFunction', {
+      functionName: `${config.resourcePrefix}-admin-disputes`,
+      runtime: Runtime.NODEJS_20_X,
+      architecture: Architecture.ARM_64,
+      handler: 'handlers/admin/disputes.handler',
+      code: Code.fromAsset('../../services/api/dist'),
+      timeout: Duration.seconds(20),
+      memorySize: 512,
+      environment: {
+        ENVIRONMENT: config.environment,
+        TABLE_NAME: table.tableName,
+        LOG_LEVEL: 'info',
+      },
+    });
+    table.grantReadWriteData(adminDisputesFunction);
+
+    // Grant Secrets Manager + SSM for Razorpay refund API and getConfig()
+    adminDisputesFunction.addToRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['secretsmanager:GetSecretValue'],
+        resources: [
+          `arn:aws:secretsmanager:${config.region}:${config.account}:secret:/${config.environment}/twilio/*`,
+          `arn:aws:secretsmanager:${config.region}:${config.account}:secret:/${config.environment}/razorpay/*`,
+          `arn:aws:secretsmanager:${config.region}:${config.account}:secret:GEMINI_API_KEY-*`,
+          `arn:aws:secretsmanager:${config.region}:${config.account}:secret:GROK_API_KEY-*`,
+        ],
+      }),
+    );
+    adminDisputesFunction.addToRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['ssm:GetParameter', 'ssm:GetParameters'],
+        resources: [`arn:aws:ssm:${config.region}:${config.account}:parameter/${config.environment}/*`],
+      }),
+    );
+
+    const adminDisputesIntegration = new HttpLambdaIntegration(
+      'AdminDisputesIntegration', adminDisputesFunction,
+      { payloadFormatVersion: PayloadFormatVersion.VERSION_2_0 },
+    );
+
+    this.httpApi.addRoutes({
+      path: '/api/v1/admin/disputes',
+      methods: [HttpMethod.GET],
+      integration: adminDisputesIntegration,
+      authorizer: this.jwtAuthorizer,
+    });
+    this.httpApi.addRoutes({
+      path: '/api/v1/admin/disputes/{id}',
+      methods: [HttpMethod.GET],
+      integration: adminDisputesIntegration,
+      authorizer: this.jwtAuthorizer,
+    });
+    this.httpApi.addRoutes({
+      path: '/api/v1/admin/disputes/{id}/resolve',
+      methods: [HttpMethod.POST],
+      integration: adminDisputesIntegration,
+      authorizer: this.jwtAuthorizer,
+    });
+    this.httpApi.addRoutes({
+      path: '/api/v1/admin/disputes/{id}/notes',
+      methods: [HttpMethod.PUT],
+      integration: adminDisputesIntegration,
+      authorizer: this.jwtAuthorizer,
+    });
+
+    // ========================================================================
+    // Admin Financials Lambda — JWT-protected (admin role)
+    // Commission tracking, Razorpay Route transactions, CSV export
+    // ========================================================================
+
+    const adminFinancialsFunction = new Function(this, 'AdminFinancialsFunction', {
+      functionName: `${config.resourcePrefix}-admin-financials`,
+      runtime: Runtime.NODEJS_20_X,
+      architecture: Architecture.ARM_64,
+      handler: 'handlers/admin/financials.handler',
+      code: Code.fromAsset('../../services/api/dist'),
+      timeout: Duration.seconds(20),
+      memorySize: 512,
+      environment: {
+        ENVIRONMENT: config.environment,
+        TABLE_NAME: table.tableName,
+        LOG_LEVEL: 'info',
+      },
+    });
+    table.grantReadWriteData(adminFinancialsFunction);
+
+    // Grant Secrets Manager + SSM for Razorpay transfer retry and getConfig()
+    adminFinancialsFunction.addToRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['secretsmanager:GetSecretValue'],
+        resources: [
+          `arn:aws:secretsmanager:${config.region}:${config.account}:secret:/${config.environment}/twilio/*`,
+          `arn:aws:secretsmanager:${config.region}:${config.account}:secret:/${config.environment}/razorpay/*`,
+          `arn:aws:secretsmanager:${config.region}:${config.account}:secret:GEMINI_API_KEY-*`,
+          `arn:aws:secretsmanager:${config.region}:${config.account}:secret:GROK_API_KEY-*`,
+        ],
+      }),
+    );
+    adminFinancialsFunction.addToRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['ssm:GetParameter', 'ssm:GetParameters'],
+        resources: [`arn:aws:ssm:${config.region}:${config.account}:parameter/${config.environment}/*`],
+      }),
+    );
+
+    const adminFinancialsIntegration = new HttpLambdaIntegration(
+      'AdminFinancialsIntegration', adminFinancialsFunction,
+      { payloadFormatVersion: PayloadFormatVersion.VERSION_2_0 },
+    );
+
+    this.httpApi.addRoutes({
+      path: '/api/v1/admin/financials/summary',
+      methods: [HttpMethod.GET],
+      integration: adminFinancialsIntegration,
+      authorizer: this.jwtAuthorizer,
+    });
+    this.httpApi.addRoutes({
+      path: '/api/v1/admin/financials/transactions',
+      methods: [HttpMethod.GET],
+      integration: adminFinancialsIntegration,
+      authorizer: this.jwtAuthorizer,
+    });
+    this.httpApi.addRoutes({
+      path: '/api/v1/admin/financials/transactions/{id}/retry',
+      methods: [HttpMethod.POST],
+      integration: adminFinancialsIntegration,
+      authorizer: this.jwtAuthorizer,
+    });
+    this.httpApi.addRoutes({
+      path: '/api/v1/admin/financials/export',
+      methods: [HttpMethod.GET],
+      integration: adminFinancialsIntegration,
+      authorizer: this.jwtAuthorizer,
+    });
+
+    // ========================================================================
+    // Admin Campaigns Lambda — Campaign oversight across all sellers
+    // ========================================================================
+
+    const adminCampaignsFunction = new Function(this, 'AdminCampaignsFunction', {
+      functionName: `${config.resourcePrefix}-admin-campaigns`,
+      runtime: Runtime.NODEJS_20_X,
+      architecture: Architecture.ARM_64,
+      handler: 'handlers/admin/campaigns.handler',
+      code: Code.fromAsset('../../services/api/dist'),
+      timeout: Duration.seconds(20),
+      memorySize: 512,
+      environment: {
+        ENVIRONMENT: config.environment,
+        TABLE_NAME: table.tableName,
+        LOG_LEVEL: 'info',
+      },
+    });
+    table.grantReadWriteData(adminCampaignsFunction);
+
+    // Grant Secrets Manager + SSM for getConfig() fallback
+    adminCampaignsFunction.addToRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['secretsmanager:GetSecretValue'],
+        resources: [
+          `arn:aws:secretsmanager:${config.region}:${config.account}:secret:/${config.environment}/twilio/*`,
+          `arn:aws:secretsmanager:${config.region}:${config.account}:secret:/${config.environment}/razorpay/*`,
+          `arn:aws:secretsmanager:${config.region}:${config.account}:secret:GEMINI_API_KEY-*`,
+          `arn:aws:secretsmanager:${config.region}:${config.account}:secret:GROK_API_KEY-*`,
+        ],
+      }),
+    );
+    adminCampaignsFunction.addToRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['ssm:GetParameter', 'ssm:GetParameters'],
+        resources: [`arn:aws:ssm:${config.region}:${config.account}:parameter/${config.environment}/*`],
+      }),
+    );
+
+    const adminCampaignsIntegration = new HttpLambdaIntegration(
+      'AdminCampaignsIntegration', adminCampaignsFunction,
+      { payloadFormatVersion: PayloadFormatVersion.VERSION_2_0 },
+    );
+
+    this.httpApi.addRoutes({
+      path: '/api/v1/admin/campaigns',
+      methods: [HttpMethod.GET],
+      integration: adminCampaignsIntegration,
+      authorizer: this.jwtAuthorizer,
+    });
+    this.httpApi.addRoutes({
+      path: '/api/v1/admin/campaigns/{id}',
+      methods: [HttpMethod.GET],
+      integration: adminCampaignsIntegration,
+      authorizer: this.jwtAuthorizer,
+    });
+    this.httpApi.addRoutes({
+      path: '/api/v1/admin/campaigns/{id}/flag',
+      methods: [HttpMethod.POST],
+      integration: adminCampaignsIntegration,
+      authorizer: this.jwtAuthorizer,
+    });
+    this.httpApi.addRoutes({
+      path: '/api/v1/admin/campaigns/{id}/block',
+      methods: [HttpMethod.POST],
+      integration: adminCampaignsIntegration,
+      authorizer: this.jwtAuthorizer,
+    });
+
+    // ========================================================================
+    // Admin Catalog Manager Lambda — JWT-protected (admin role)
+    // Global category CRUD, alias management, merge operations
+    // ========================================================================
+
+    const adminCatalogManagerFunction = new Function(this, 'AdminCatalogManagerFunction', {
+      functionName: `${config.resourcePrefix}-admin-catalog-manager`,
+      runtime: Runtime.NODEJS_20_X,
+      architecture: Architecture.ARM_64,
+      handler: 'handlers/admin/catalog-manager.handler',
+      code: Code.fromAsset('../../services/api/dist'),
+      timeout: Duration.seconds(20),
+      memorySize: 512,
+      environment: {
+        ENVIRONMENT: config.environment,
+        TABLE_NAME: table.tableName,
+        LOG_LEVEL: 'info',
+      },
+    });
+    table.grantReadWriteData(adminCatalogManagerFunction);
+
+    // Grant Secrets Manager + SSM for getConfig() fallback
+    adminCatalogManagerFunction.addToRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['secretsmanager:GetSecretValue'],
+        resources: [
+          `arn:aws:secretsmanager:${config.region}:${config.account}:secret:/${config.environment}/twilio/*`,
+          `arn:aws:secretsmanager:${config.region}:${config.account}:secret:/${config.environment}/razorpay/*`,
+          `arn:aws:secretsmanager:${config.region}:${config.account}:secret:GEMINI_API_KEY-*`,
+          `arn:aws:secretsmanager:${config.region}:${config.account}:secret:GROK_API_KEY-*`,
+        ],
+      }),
+    );
+    adminCatalogManagerFunction.addToRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['ssm:GetParameter', 'ssm:GetParameters'],
+        resources: [`arn:aws:ssm:${config.region}:${config.account}:parameter/${config.environment}/*`],
+      }),
+    );
+
+    const adminCatalogManagerIntegration = new HttpLambdaIntegration(
+      'AdminCatalogManagerIntegration', adminCatalogManagerFunction,
+      { payloadFormatVersion: PayloadFormatVersion.VERSION_2_0 },
+    );
+
+    this.httpApi.addRoutes({
+      path: '/api/v1/admin/catalog/categories',
+      methods: [HttpMethod.GET, HttpMethod.POST],
+      integration: adminCatalogManagerIntegration,
+      authorizer: this.jwtAuthorizer,
+    });
+    this.httpApi.addRoutes({
+      path: '/api/v1/admin/catalog/categories/merge',
+      methods: [HttpMethod.POST],
+      integration: adminCatalogManagerIntegration,
+      authorizer: this.jwtAuthorizer,
+    });
+    this.httpApi.addRoutes({
+      path: '/api/v1/admin/catalog/categories/merge-preview',
+      methods: [HttpMethod.GET],
+      integration: adminCatalogManagerIntegration,
+      authorizer: this.jwtAuthorizer,
+    });
+    this.httpApi.addRoutes({
+      path: '/api/v1/admin/catalog/categories/{id}',
+      methods: [HttpMethod.PUT, HttpMethod.DELETE],
+      integration: adminCatalogManagerIntegration,
+      authorizer: this.jwtAuthorizer,
+    });
+    this.httpApi.addRoutes({
+      path: '/api/v1/admin/catalog/categories/{id}/aliases',
+      methods: [HttpMethod.GET, HttpMethod.POST],
+      integration: adminCatalogManagerIntegration,
+      authorizer: this.jwtAuthorizer,
+    });
+    this.httpApi.addRoutes({
+      path: '/api/v1/admin/catalog/categories/{id}/aliases/{alias}',
+      methods: [HttpMethod.DELETE],
+      integration: adminCatalogManagerIntegration,
+      authorizer: this.jwtAuthorizer,
+    });
+
+    // ========================================================================
     // API_BASE_URL — Add to all Lambda functions that send Twilio messages
     // Enables statusCallback URL construction for delivery tracking
     // ========================================================================

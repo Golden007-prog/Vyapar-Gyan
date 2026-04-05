@@ -3,13 +3,12 @@ import { whatsappSender } from '../../../services/whatsapp-sender';
 import { MessageRepository } from '../../../repositories/message-repository';
 import { SessionRepository } from '../../../repositories/session-repository';
 import { OrderService } from '../../../services/order-service';
-import { RazorpayAdapter } from '../../../adapters/razorpay-adapter';
+import { generateWhatsAppPaymentLink } from '../../../services/payment-link';
 import type { MessageContext } from './router';
 
 const messageRepository = new MessageRepository();
 const sessionRepository = new SessionRepository();
 const orderService = new OrderService();
-const razorpayAdapter = new RazorpayAdapter();
 
 /**
  * Checkout State Handler
@@ -219,30 +218,19 @@ async function handleOrderConfirmation(context: MessageContext): Promise<void> {
     // Order created successfully
     const order = result.order;
 
-    // Generate Razorpay payment link with commission splitting
-    let paymentLink: string | undefined;
-    
+    // Generate Razorpay payment link via payment-link service (Req 20.1, 20.2)
     try {
-      // TODO: Get seller's Razorpay account ID from seller profile
-      // For now, using a placeholder - this should be fetched from SELLER# record
-      const sellerAccountId = process.env.RAZORPAY_SELLER_ACCOUNT_ID || 'acc_SELLER_PLACEHOLDER';
-      
-      const paymentLinkResponse = await razorpayAdapter.createPaymentLink({
-        orderId: order.id,
-        amount: order.totalAmount,
-        customerPhone: customer.phoneNumber,
-        customerName: customer.name || 'Customer',
-        description: `Order ${order.orderId}`,
-        sellerAccountId,
-        commissionAmount: order.commissionAmount,
-      });
+      const { whatsappMessage } = await generateWhatsAppPaymentLink(order);
 
-      paymentLink = paymentLinkResponse.short_url;
+      await whatsappSender.sendMessage(
+        customer.phoneNumber,
+        { type: 'text', text: whatsappMessage },
+        session.id,
+      );
 
-      logger.info('Payment link generated', {
+      logger.info('Payment link message sent', {
         sessionId: session.id,
         orderId: order.orderId,
-        paymentLinkId: paymentLinkResponse.id,
         amount: order.totalAmount,
       });
     } catch (error) {
@@ -251,35 +239,20 @@ async function handleOrderConfirmation(context: MessageContext): Promise<void> {
         orderId: order.orderId,
         error: error instanceof Error ? error.message : String(error),
       });
-      
-      // Continue without payment link - can be generated later
-      paymentLink = undefined;
-    }
 
-    // Send success message with payment link
-    let successMessage = '✅ *Order Created Successfully!*\n\n';
-    successMessage += `📦 Order ID: *${order.orderId}*\n`;
-    successMessage += `💰 Total Amount: *₹${order.totalAmount}*\n`;
-    successMessage += `📍 Status: Pending Payment\n\n`;
-    
-    if (paymentLink) {
-      successMessage += `💳 *Please complete payment to confirm your order:*\n`;
-      successMessage += `${paymentLink}\n\n`;
-      successMessage += 'Once payment is received, we will notify you and the seller will prepare your order.\n\n';
-    } else {
-      successMessage += 'Payment link will be sent shortly. Please wait for payment instructions.\n\n';
-    }
-    
-    successMessage += 'Thank you for shopping with VyaparGyan! 🎉';
+      // Fallback: send order confirmation without payment link
+      let fallbackMsg = '✅ *Order Created!*\n\n';
+      fallbackMsg += `📦 Order ID: *${order.orderId}*\n`;
+      fallbackMsg += `💰 Total: *₹${order.totalAmount}*\n\n`;
+      fallbackMsg += 'Payment link will be sent shortly. Please wait for payment instructions.\n\n';
+      fallbackMsg += 'Thank you for shopping with VyaparGyan! 🎉';
 
-    await whatsappSender.sendMessage(
-      customer.phoneNumber,
-      {
-        type: 'text',
-        text: successMessage,
-      },
-      session.id
-    );
+      await whatsappSender.sendMessage(
+        customer.phoneNumber,
+        { type: 'text', text: fallbackMsg },
+        session.id,
+      );
+    }
 
     // Clear cart
     await sessionRepository.clearCart(customer.id, customer.phoneNumber);

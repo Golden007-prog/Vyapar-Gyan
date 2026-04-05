@@ -2,6 +2,11 @@ import { logger } from '../../../utils/logger';
 import { greetingHandler } from './greeting-handler';
 import { browsingHandler } from './browsing-handler';
 import { checkoutHandler } from './checkout-handler';
+import { onboardingHandler } from './onboarding-handler';
+import {
+  resolveOrCreateOnboardingSession,
+  markOnboardingWelcomeSent,
+} from '../../../services/session-service';
 
 export interface MessageContext {
   message: any;
@@ -114,6 +119,10 @@ export async function routeMessage(context: MessageContext): Promise<void> {
       case 'support':
         await handleSupport(context);
         break;
+
+      case 'onboarding':
+        await handleOnboarding(context);
+        break;
       
       default:
         logger.warn('Unknown session state, defaulting to browsing', {
@@ -144,4 +153,34 @@ async function handleSupport(context: MessageContext): Promise<void> {
   });
   
   await browsingHandler(context);
+}
+
+/**
+ * Handle onboarding state for unregistered users.
+ *
+ * Resolves or creates a 24h onboarding session keyed by phone number.
+ * Sends the full welcome on first contact, shorter reminders on subsequent
+ * messages within the same 24h window.
+ */
+async function handleOnboarding(context: MessageContext): Promise<void> {
+  const { customer, session } = context;
+  const phoneNumber = customer.phoneNumber || session.phoneNumber;
+
+  logger.info('Routing to onboarding handler', {
+    sessionId: session.id,
+    phoneNumber,
+  });
+
+  const { session: onboardingSession } = await resolveOrCreateOnboardingSession(phoneNumber);
+
+  await onboardingHandler({
+    phoneNumber,
+    welcomeSent: onboardingSession.welcomeSent,
+    sessionId: session.id || `onboarding-${phoneNumber}`,
+  });
+
+  // After sending the first welcome, mark it so subsequent messages get the reminder
+  if (!onboardingSession.welcomeSent) {
+    await markOnboardingWelcomeSent(phoneNumber);
+  }
 }

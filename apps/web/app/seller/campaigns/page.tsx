@@ -15,6 +15,11 @@ interface Campaign {
   messagesDelivered: number;
   messagesFailed: number;
   estimatedConversions: number;
+  channel: 'web' | 'whatsapp' | 'both';
+  webSent: number;
+  webDelivered: number;
+  whatsappSent: number;
+  whatsappDelivered: number;
   status: 'pending' | 'in_progress' | 'completed' | 'failed';
   createdAt: string;
   completedAt?: string;
@@ -45,6 +50,11 @@ export default function CampaignsPage() {
             messagesDelivered: 218,
             messagesFailed: 16,
             estimatedConversions: 18,
+            channel: 'both',
+            webSent: 120,
+            webDelivered: 118,
+            whatsappSent: 114,
+            whatsappDelivered: 100,
             status: 'completed',
             createdAt: new Date(Date.now() - 604800000).toISOString(),
             completedAt: new Date(Date.now() - 518400000).toISOString(),
@@ -60,6 +70,11 @@ export default function CampaignsPage() {
             messagesDelivered: 148,
             messagesFailed: 8,
             estimatedConversions: 12,
+            channel: 'whatsapp',
+            webSent: 0,
+            webDelivered: 0,
+            whatsappSent: 156,
+            whatsappDelivered: 148,
             status: 'completed',
             createdAt: new Date(Date.now() - 1209600000).toISOString(),
             completedAt: new Date(Date.now() - 1123200000).toISOString(),
@@ -99,6 +114,15 @@ export default function CampaignsPage() {
   const calculateDeliveryRate = (campaign: Campaign): number => {
     if (campaign.messagesSent === 0) return 0;
     return Math.round((campaign.messagesDelivered / campaign.messagesSent) * 100);
+  };
+
+  const getChannelBadge = (ch: Campaign['channel']) => {
+    const config = {
+      web: { label: 'Web Chat', color: 'bg-purple-100 text-purple-800' },
+      whatsapp: { label: 'WhatsApp', color: 'bg-green-100 text-green-800' },
+      both: { label: 'Both', color: 'bg-indigo-100 text-indigo-800' },
+    };
+    return config[ch] || config.web;
   };
 
   const formatDate = (dateString: string) => {
@@ -228,10 +252,19 @@ export default function CampaignsPage() {
                     Offer
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                    Channel
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
                     Target Customers
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
                     Delivery Rate
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                    Web Sent / Delivered
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                    WhatsApp Sent / Delivered
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
                     Est. Conversions
@@ -249,6 +282,7 @@ export default function CampaignsPage() {
                   const statusConfig = getStatusBadge(campaign.status);
                   const StatusIcon = statusConfig.icon;
                   const deliveryRate = calculateDeliveryRate(campaign);
+                  const channelBadge = getChannelBadge(campaign.channel);
 
                   return (
                     <tr key={campaign.id} className="hover:bg-gray-50">
@@ -274,6 +308,11 @@ export default function CampaignsPage() {
                         ) : (
                           <span className="text-sm text-gray-500">N/A</span>
                         )}
+                      </td>
+                      <td className="whitespace-nowrap px-6 py-4">
+                        <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${channelBadge.color}`}>
+                          {channelBadge.label}
+                        </span>
                       </td>
                       <td className="whitespace-nowrap px-6 py-4">
                         <div className="text-sm text-gray-900">
@@ -302,6 +341,16 @@ export default function CampaignsPage() {
                           <div className="text-xs text-gray-500">
                             {campaign.messagesDelivered}/{campaign.messagesSent} delivered
                           </div>
+                        </div>
+                      </td>
+                      <td className="whitespace-nowrap px-6 py-4">
+                        <div className="text-sm text-gray-900">
+                          {campaign.webSent} / {campaign.webDelivered}
+                        </div>
+                      </td>
+                      <td className="whitespace-nowrap px-6 py-4">
+                        <div className="text-sm text-gray-900">
+                          {campaign.whatsappSent} / {campaign.whatsappDelivered}
                         </div>
                       </td>
                       <td className="whitespace-nowrap px-6 py-4">

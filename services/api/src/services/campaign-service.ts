@@ -19,9 +19,13 @@ import {
   putCampaign,
   getCampaign,
   updateCampaign,
+  putCampaignDelivery,
   type CampaignRecord,
+  type CampaignDeliveryRecord,
   type AudienceFilters,
 } from '../adapters/dynamodb-adapter';
+import { routeMessage } from './message-router';
+import { TwilioAdapter } from '../adapters/twilio-adapter';
 
 // ---------------------------------------------------------------------------
 // Clients
@@ -306,4 +310,132 @@ export async function trackMetrics(
   await updateCampaign(campaignId, merged);
 
   logger.debug('Campaign metrics updated', { campaignId, updates });
+}
+
+// ---------------------------------------------------------------------------
+// Omnichannel Campaign Dispatch (Req 12.1–12.6)
+// ---------------------------------------------------------------------------
+
+export type DeliveryChannel = 'web' | 'whatsapp';
+
+/**
+ * Pure function: resolve which delivery channels to dispatch to.
+ * Exported for property-based testing (Property 19).
+ *
+ * @param channel - The channel selection: 'web', 'whatsapp', or 'both'
+ * @returns Array of concrete delivery channels to execute
+ */
+export function resolveDeliveryChannels(
+  channel: 'web' | 'whatsapp' | 'both',
+): DeliveryChannel[] {
+  if (channel === 'both') return ['web', 'whatsapp'];
+  return [channel];
+}
+
+const twilioAdapterInstance = new TwilioAdapter();
+
+export interface DispatchTarget {
+  userId: string;
+  phoneNumber?: string;
+}
+
+/**
+ * Dispatch a campaign to targeted customers via the selected channel(s).
+ *
+ * - Web Chat: creates a system message in the customer's thread and pushes via EventBridge fan-out
+ * - WhatsApp: sends via Twilio with discount details
+ * - Both: executes both delivery paths
+ *
+ * Tracks delivery per customer per channel in CAMPAIGN#{id} / DELIVERY#{custId}#{channel}.
+ */
+export async function dispatchCampaign(
+  campaignId: string,
+  channel: 'web' | 'whatsapp' | 'both',
+  targets: DispatchTarget[],
+): Promise<{ sentWeb: number; sentWhatsApp: number; failed: number }> {
+  const campaign = await getCampaign(campaignId);
+  if (!campaign) {
+    throw new CampaignNotFoundError(campaignId);
+  }
+
+  const channels = resolveDeliveryChannels(channel);
+  let sentWeb = 0;
+  let sentWhatsApp = 0;
+  let failed = 0;
+
+  for (const target of targets) {
+    for (const ch of channels) {
+      try {
+        const now = new Date().toISOString();
+
+        if (ch === 'web') {
+          // Create system message in customer thread + push via EventBridge fan-out
+          await routeMessage({
+            messageId: `camp-${campaignId}-${target.userId}-web-${Date.now()}`,
+            threadId: target.userId,
+            senderUserId: campaign.sellerId,
+            senderType: 'system',
+            recipientUserId: target.userId,
+            channel: 'system',
+            content: campaign.messageText,
+            metadata: { campaignId, type: 'campaign' },
+          });
+          sentWeb++;
+        }
+
+        if (ch === 'whatsapp') {
+          if (!target.phoneNumber) {
+            logger.debug('No phone number for WhatsApp delivery — skipping', {
+              campaignId,
+              userId: target.userId,
+            });
+            continue;
+          }
+          const result = await twilioAdapterInstance.sendWhatsAppMessage(
+            target.phoneNumber,
+            campaign.messageText,
+          );
+          // Record delivery with Twilio SID
+          await putCampaignDelivery({
+            campaignId,
+            customerId: target.userId,
+            channel: 'whatsapp',
+            sentAt: now,
+            twilioSid: result.messageId,
+            status: 'sent',
+          });
+          sentWhatsApp++;
+          continue; // skip the generic putCampaignDelivery below
+        }
+
+        // Record web delivery
+        if (ch === 'web') {
+          await putCampaignDelivery({
+            campaignId,
+            customerId: target.userId,
+            channel: 'web',
+            sentAt: now,
+            status: 'sent',
+          });
+        }
+      } catch (err) {
+        logger.error('Campaign dispatch failed for target', err, {
+          campaignId,
+          userId: target.userId,
+          channel: ch,
+        });
+        failed++;
+      }
+    }
+  }
+
+  logger.info('Campaign dispatch completed', {
+    campaignId,
+    channel,
+    sentWeb,
+    sentWhatsApp,
+    failed,
+  });
+
+  return { sentWeb, sentWhatsApp, failed };
 }

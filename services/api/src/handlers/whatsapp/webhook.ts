@@ -1,11 +1,12 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { EventBridgeClient, PutEventsCommand } from '@aws-sdk/client-eventbridge';
-import { DynamoDBClient, PutItemCommand, ConditionalCheckFailedException } from '@aws-sdk/client-dynamodb';
+import { DynamoDBClient, PutItemCommand, UpdateItemCommand, ConditionalCheckFailedException } from '@aws-sdk/client-dynamodb';
 import { marshall } from '@aws-sdk/util-dynamodb';
 import { validateRequest } from 'twilio';
 import { logger } from '../../utils/logger';
 import { getWebhookConfig, type WebhookConfig } from '../../utils/config';
 import { publishLatencyMetric, publishCountMetric } from '../../core/metrics';
+import { resolveUserByPhone, type ResolvedUser } from '../../services/user-lookup';
 
 const eventBridgeClient = new EventBridgeClient({});
 const dynamoDBClient = new DynamoDBClient({});
@@ -514,42 +515,114 @@ async function acquireIdempotency(messageSid: string, requestId: string): Promis
 }
 
 /**
+ * Determine the routing flow based on resolved user role.
+ *
+ * - seller → Seller_Copilot
+ * - customer → Customer_Discovery
+ * - null (unregistered) → Onboarding
+ */
+export function resolveRoutingFlow(resolved: ResolvedUser | null): string {
+  if (!resolved) return 'Onboarding';
+  switch (resolved.role) {
+    case 'seller':
+      return 'Seller_Copilot';
+    case 'customer':
+      return 'Customer_Discovery';
+    case 'admin':
+      return 'Seller_Copilot'; // admins use seller-like flow
+    default:
+      return 'Onboarding';
+  }
+}
+
+/**
+ * Cache the resolved role in the WhatsApp session DynamoDB record.
+ * Uses an UpdateItem with SET to avoid overwriting the full session.
+ * Creates the record if it doesn't exist (upsert).
+ */
+async function cacheRoleInSession(
+  phoneNumber: string,
+  resolved: ResolvedUser | null,
+  routingFlow: string,
+): Promise<void> {
+  try {
+    const now = new Date().toISOString();
+    const ttl = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60; // 30 days
+
+    await dynamoDBClient.send(
+      new UpdateItemCommand({
+        TableName: config.tableName,
+        Key: marshall({ PK: `WASESSION#${phoneNumber}`, SK: 'ROLE_CACHE' }),
+        UpdateExpression:
+          'SET #role = :role, #userId = :userId, #flow = :flow, #updatedAt = :now, #expiresAt = :ttl',
+        ExpressionAttributeNames: {
+          '#role': 'resolvedRole',
+          '#userId': 'resolvedUserId',
+          '#flow': 'routingFlow',
+          '#updatedAt': 'updatedAt',
+          '#expiresAt': 'expiresAt',
+        },
+        ExpressionAttributeValues: marshall({
+          ':role': resolved?.role ?? 'unregistered',
+          ':userId': resolved?.userId ?? null,
+          ':flow': routingFlow,
+          ':now': now,
+          ':ttl': ttl,
+        }, { removeUndefinedValues: true }),
+      }),
+    );
+
+    logger.info('Role cached in WhatsApp session', {
+      phoneNumber,
+      role: resolved?.role ?? 'unregistered',
+      routingFlow,
+    });
+  } catch (error) {
+    // Non-fatal — caching failure should not block the webhook
+    logger.warn('Failed to cache role in session', {
+      phoneNumber,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+/**
  * Publish webhook payload to EventBridge
- * 
- * Enhanced to include user role information for downstream routing.
- * If the phone number belongs to a registered seller/admin, the event
- * will include userRole and userId for seller-specific handling.
+ *
+ * Uses the new resolveUserByPhone service for role-based routing.
+ * Caches the resolved role in the WhatsApp session DynamoDB record
+ * to avoid repeated GSI lookups on subsequent messages.
+ *
+ * Routing:
+ *   seller  → Seller_Copilot
+ *   customer → Customer_Discovery
+ *   null     → Onboarding
  */
 async function publishToEventBridge(payload: any, requestId: string): Promise<void> {
   // Extract phone number from the first message
   const phoneNumber = payload.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.from;
-  
-  let userRole: string | undefined;
-  let userId: string | undefined;
-  
-  // Unified role resolution: always use DB lookup (no hardcoded overrides)
-  // The worker also does getUserByPhone — both must agree on the same source of truth
+
+  let resolved: ResolvedUser | null = null;
+  let routingFlow = 'Onboarding';
+
   if (phoneNumber) {
-    // Normal flow: Check if this phone number belongs to a registered user (seller/admin)
     try {
-      const { UserRepository } = await import('../../repositories/user-repository.js');
-      const userRepo = new UserRepository();
-      const user = await userRepo.getUserByPhone(phoneNumber);
-      
-      if (user && (user.role === 'seller' || user.role === 'admin')) {
-        userRole = user.role;
-        userId = user.id;
-        
-        logger.info('Detected registered user in WhatsApp message', {
-          requestId,
-          phoneNumber,
-          userRole,
-          userId,
-        });
-      }
+      resolved = await resolveUserByPhone(phoneNumber);
+      routingFlow = resolveRoutingFlow(resolved);
+
+      logger.info('Role-based routing resolved', {
+        requestId,
+        phoneNumber,
+        userRole: resolved?.role ?? 'unregistered',
+        userId: resolved?.userId,
+        routingFlow,
+      });
+
+      // Cache role in session to avoid repeated GSI lookups
+      await cacheRoleInSession(phoneNumber, resolved, routingFlow);
     } catch (error) {
-      // Log error but don't fail the webhook - treat as customer if lookup fails
-      logger.warn('Failed to lookup user by phone number', {
+      // Log error but don't fail the webhook — treat as unregistered if lookup fails
+      logger.warn('Failed to resolve user role', {
         requestId,
         phoneNumber,
         error: error instanceof Error ? error.message : String(error),
@@ -568,8 +641,9 @@ async function publishToEventBridge(payload: any, requestId: string): Promise<vo
           requestId,
           source: 'twilio',
           // Include user context for routing
-          userRole,
-          userId,
+          userRole: resolved?.role,
+          userId: resolved?.userId,
+          routingFlow,
         }),
         EventBusName: config.eventBusName || 'default',
       },
@@ -577,7 +651,7 @@ async function publishToEventBridge(payload: any, requestId: string): Promise<vo
   });
 
   const response = await eventBridgeClient.send(command);
-  
+
   if (response.FailedEntryCount && response.FailedEntryCount > 0) {
     logger.error('Failed to publish to EventBridge', {
       requestId,
@@ -587,8 +661,9 @@ async function publishToEventBridge(payload: any, requestId: string): Promise<vo
     throw new Error('Failed to publish event to EventBridge');
   }
 
-  logger.info('Event published to EventBridge', { 
+  logger.info('Event published to EventBridge', {
     requestId,
-    userRole: userRole || 'customer',
+    userRole: resolved?.role ?? 'unregistered',
+    routingFlow,
   });
 }

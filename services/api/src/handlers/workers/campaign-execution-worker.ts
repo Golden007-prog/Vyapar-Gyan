@@ -33,9 +33,8 @@ import {
   checkSendPermission,
   incrementPromotionalCount,
 } from '../../services/consent-service';
-import { trackMetrics } from '../../services/campaign-service';
+import { trackMetrics, dispatchCampaign, type DispatchTarget } from '../../services/campaign-service';
 import { logAction } from '../../services/audit-service';
-import { TwilioAdapter } from '../../adapters/twilio-adapter';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -45,6 +44,7 @@ interface CampaignScheduledDetail {
   campaignId: string;
   sellerId: string;
   scheduledAt: string;
+  channel?: 'web' | 'whatsapp' | 'both'; // omnichannel dispatch (defaults to 'whatsapp')
 }
 
 interface AudienceMember {
@@ -60,7 +60,6 @@ const rawClient = new DynamoDBClient({});
 const docClient = DynamoDBDocumentClient.from(rawClient, {
   marshallOptions: { removeUndefinedValues: true },
 });
-const twilioAdapter = new TwilioAdapter();
 
 // ---------------------------------------------------------------------------
 // Handler
@@ -69,9 +68,10 @@ const twilioAdapter = new TwilioAdapter();
 export async function handler(
   event: EventBridgeEvent<'CampaignScheduled', CampaignScheduledDetail>,
 ): Promise<void> {
-  const { campaignId, sellerId } = event.detail;
+  const { campaignId, sellerId, channel: dispatchChannel } = event.detail;
+  const channel = dispatchChannel ?? 'whatsapp'; // default to whatsapp for backward compat
 
-  logger.info('Campaign execution worker started', { campaignId, sellerId });
+  logger.info('Campaign execution worker started', { campaignId, sellerId, channel });
 
   try {
     const campaign = await getCampaign(campaignId);
@@ -99,23 +99,20 @@ export async function handler(
       audienceSize: audience.length,
     });
 
-    let sentCount = 0;
+    // Filter audience through consent checks
+    const eligibleTargets: DispatchTarget[] = [];
     let skippedCount = 0;
-    let failedCount = 0;
 
     for (const member of audience) {
       try {
-        // 1. Idempotency check — prevent duplicate sends on retry
+        // Idempotency check — prevent duplicate sends on retry
         const alreadySent = await checkIdempotency(campaignId, member.userId);
         if (alreadySent) {
-          logger.debug('Skipping duplicate send', {
-            campaignId,
-            userId: member.userId,
-          });
+          logger.debug('Skipping duplicate send', { campaignId, userId: member.userId });
           continue;
         }
 
-        // 2. Consent check (opt-out, frequency cap, quiet hours)
+        // Consent check (opt-out, frequency cap, quiet hours)
         const permission = await checkSendPermission(member.userId, 'promotional');
         if (!permission.allowed) {
           logger.debug('Send blocked by consent', {
@@ -127,48 +124,44 @@ export async function handler(
           continue;
         }
 
-        // 3. Send message via Twilio
-        if (!member.phoneNumber) {
-          logger.debug('No phone number — skipping', {
-            campaignId,
-            userId: member.userId,
-          });
-          skippedCount++;
-          continue;
-        }
-
-        await twilioAdapter.sendWhatsAppMessage(
-          member.phoneNumber,
-          campaign.messageText,
-        );
-
-        // 4. Record idempotency key
+        // Record idempotency key
         await recordIdempotency(campaignId, member.userId);
 
-        // 5. Increment promotional counter for frequency cap
+        // Increment promotional counter for frequency cap
         await incrementPromotionalCount(member.userId);
 
-        sentCount++;
+        eligibleTargets.push({
+          userId: member.userId,
+          ...(member.phoneNumber ? { phoneNumber: member.phoneNumber } : {}),
+        });
       } catch (err) {
-        logger.error('Failed to send campaign message to user', err, {
+        logger.error('Failed consent check for user', err, {
           campaignId,
           userId: member.userId,
         });
-        failedCount++;
       }
     }
 
+    // Dispatch via omnichannel dispatcher
+    const { sentWeb, sentWhatsApp, failed: failedCount } = await dispatchCampaign(
+      campaignId,
+      channel,
+      eligibleTargets,
+    );
+
+    const totalSent = sentWeb + sentWhatsApp;
+
     // Update campaign metrics and status
-    const finalStatus = failedCount > 0 && sentCount === 0 ? 'failed' : 'sent';
+    const finalStatus = failedCount > 0 && totalSent === 0 ? 'failed' : 'sent';
     await updateCampaign(campaignId, {
       status: finalStatus,
-      sentCount,
+      sentCount: totalSent,
       executedAt: new Date().toISOString(),
     });
 
     // Also update via trackMetrics for consistency
-    if (sentCount > 0) {
-      await trackMetrics(campaignId, { sentCount });
+    if (totalSent > 0) {
+      await trackMetrics(campaignId, { sentCount: totalSent });
     }
 
     // Audit log
@@ -180,7 +173,9 @@ export async function handler(
       resourceId: campaignId,
       newValues: {
         status: finalStatus,
-        sentCount,
+        channel,
+        sentWeb,
+        sentWhatsApp,
         skippedCount,
         failedCount,
         audienceSize: audience.length,
@@ -189,7 +184,9 @@ export async function handler(
 
     logger.info('Campaign execution completed', {
       campaignId,
-      sentCount,
+      channel,
+      sentWeb,
+      sentWhatsApp,
       skippedCount,
       failedCount,
       status: finalStatus,

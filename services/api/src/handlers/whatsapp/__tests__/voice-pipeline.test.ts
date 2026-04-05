@@ -14,13 +14,16 @@ const sqsMock = mockClient(SQSClient);
 const mockSendMessage = jest.fn().mockResolvedValue('msg-sid');
 jest.mock('../../../services/whatsapp-sender', () => ({ whatsappSender: { sendMessage: (...args: any[]) => mockSendMessage(...args) } }));
 
-jest.mock('../../../utils/config', () => ({ getConfig: jest.fn().mockResolvedValue({ twilioAccountSid: 'AC_TEST_SID', twilioAuthToken: 'test_auth_token', productImagesBucket: 'test-media-bucket' }) }));
+jest.mock('../../../utils/config', () => ({
+  getConfig: jest.fn().mockResolvedValue({ twilioAccountSid: 'AC_TEST_SID', twilioAuthToken: 'test_auth_token', productImagesBucket: 'test-media-bucket' }),
+  getVoicePipelineConfig: jest.fn().mockResolvedValue({ geminiApiKey: 'test-gemini-key', twilioAccountSid: 'AC_TEST_SID', twilioAuthToken: 'test_auth_token', twilioPhoneNumber: '+1234567890', productImagesBucket: 'test-media-bucket', region: 'us-east-1' }),
+}));
 jest.mock('../../../utils/logger', () => ({ logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() } }));
 jest.mock('../../../utils/idempotency', () => ({ idempotencyService: { acquireLock: jest.fn().mockResolvedValue(true) } }));
 
 const mockGetUserByPhone = jest.fn();
-jest.mock('../../../adapters/dynamodb-adapter', () => ({ getUserByPhone: (...args: any[]) => mockGetUserByPhone(...args), putMessage: jest.fn().mockResolvedValue(undefined) }));
-jest.mock('../../../services/session-service', () => ({ resolveOrCreateSession: jest.fn().mockResolvedValue({ session: { state: 'browsing', createdAt: '2025-01-01T00:00:00Z', lastActivityAt: '2025-01-01T00:00:00Z', expiresAt: Math.floor(Date.now() / 1000) + 86400 }, isNew: false, restoredCart: null }) }));
+jest.mock('../../../adapters/dynamodb-adapter', () => ({ getUserByPhone: (...args: any[]) => mockGetUserByPhone(...args), putMessage: jest.fn().mockResolvedValue(undefined), updateSessionIntent: jest.fn().mockResolvedValue(undefined), updateSessionState: jest.fn().mockResolvedValue(undefined) }));
+jest.mock('../../../services/session-service', () => ({ resolveOrCreateSession: jest.fn().mockResolvedValue({ session: { state: 'browsing', createdAt: '2025-01-01T00:00:00Z', lastActivityAt: '2025-01-01T00:00:00Z', expiresAt: Math.floor(Date.now() / 1000) + 86400 }, isNew: false, restoredCart: null }), shouldBypassAI: jest.fn().mockReturnValue(false) }));
 jest.mock('../../../services/consent-service', () => ({ recordInboundMessage: jest.fn().mockResolvedValue(undefined), handleOptOut: jest.fn().mockResolvedValue(false) }));
 jest.mock('../../../repositories/customer-repository', () => ({ CustomerRepository: jest.fn().mockImplementation(() => ({ resolveOrCreate: jest.fn().mockResolvedValue({ id: 'cust-123' }) })) }));
 
@@ -28,7 +31,13 @@ const mockRouteMessage = jest.fn().mockResolvedValue(undefined);
 jest.mock('../states/router', () => ({ routeMessage: (...args: any[]) => mockRouteMessage(...args) }));
 
 const mockSellerCmd = jest.fn().mockResolvedValue('Stock updated!');
-jest.mock('../../../services/whatsapp/seller-copilot', () => ({ handleSellerWhatsAppCommand: (...args: any[]) => mockSellerCmd(...args) }));
+jest.mock('../seller-copilot', () => ({ handleSellerCopilotMessage: (...args: any[]) => mockSellerCmd(...args) }));
+
+jest.mock('../customer-discovery', () => ({ handleCustomerDiscovery: jest.fn().mockResolvedValue(undefined) }));
+jest.mock('../../../services/financial-query', () => ({ executeFinancialQuery: jest.fn().mockResolvedValue({ intent: 'unknown', text: '', language: 'en' }), isLikelyFinancialQuery: jest.fn().mockReturnValue(false), LANGUAGE_NAMES: {} }));
+jest.mock('../../../services/intent-extraction', () => ({ extractAndRouteIntent: jest.fn().mockResolvedValue(undefined) }));
+jest.mock('../../../utils/whatsapp-sanitizer', () => ({ sanitizeForTTS: jest.fn((text: string) => text) }));
+jest.mock('../inventory-upload', () => ({ detectMediaType: jest.fn().mockReturnValue('unknown'), handleInventoryUpload: jest.fn().mockResolvedValue(undefined), commitInventory: jest.fn().mockResolvedValue(undefined), applyInventoryEdit: jest.fn(), parseInventoryEditCommand: jest.fn().mockReturnValue(null), formatInventoryList: jest.fn().mockReturnValue('') }));
 
 const mockTranscribe = jest.fn().mockResolvedValue({ transcript: 'Show stock', detectedLanguage: 'English', confidence: 90, products: [] });
 const mockTTS = jest.fn().mockResolvedValue(Buffer.from('fake-tts'));

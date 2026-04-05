@@ -23,6 +23,14 @@ jest.mock('../../../utils/config', () => ({
     eventBusName: 'test-event-bus',
     tableName: 'test-table',
   }),
+  getVoicePipelineConfig: jest.fn().mockResolvedValue({
+    geminiApiKey: 'test-gemini-key',
+    twilioAccountSid: 'AC_TEST_SID',
+    twilioAuthToken: 'test_auth_token',
+    twilioPhoneNumber: '+1234567890',
+    productImagesBucket: 'test-media-bucket',
+    region: 'us-east-1',
+  }),
 }));
 
 // Mock logger
@@ -52,6 +60,8 @@ const mockGetUserByPhone = jest.fn().mockResolvedValue({
 jest.mock('../../../adapters/dynamodb-adapter', () => ({
   getUserByPhone: (...args: any[]) => mockGetUserByPhone(...args),
   putMessage: jest.fn().mockResolvedValue(undefined),
+  updateSessionIntent: jest.fn().mockResolvedValue(undefined),
+  updateSessionState: jest.fn().mockResolvedValue(undefined),
 }));
 
 // Mock session service
@@ -66,6 +76,7 @@ jest.mock('../../../services/session-service', () => ({
     isNew: false,
     restoredCart: null,
   }),
+  shouldBypassAI: jest.fn().mockReturnValue(false),
 }));
 
 // Mock consent service
@@ -105,6 +116,24 @@ jest.mock('../../../adapters/gemini-adapter', () => ({
 jest.mock('@aws-sdk/s3-request-presigner', () => ({
   getSignedUrl: jest.fn().mockResolvedValue('https://s3.amazonaws.com/test-media-bucket/voice/outbound/presigned-url'),
 }));
+
+// Mock seller copilot
+jest.mock('../seller-copilot', () => ({ handleSellerCopilotMessage: jest.fn().mockResolvedValue('OK') }));
+
+// Mock customer discovery
+jest.mock('../customer-discovery', () => ({ handleCustomerDiscovery: jest.fn().mockResolvedValue(undefined) }));
+
+// Mock financial query
+jest.mock('../../../services/financial-query', () => ({ executeFinancialQuery: jest.fn().mockResolvedValue({ intent: 'unknown', text: '', language: 'en' }), isLikelyFinancialQuery: jest.fn().mockReturnValue(false), LANGUAGE_NAMES: {} }));
+
+// Mock intent extraction
+jest.mock('../../../services/intent-extraction', () => ({ extractAndRouteIntent: jest.fn().mockResolvedValue({ intent: { product: null, store: null, language: 'en' }, routing: { type: 'none' } }) }));
+
+// Mock whatsapp sanitizer
+jest.mock('../../../utils/whatsapp-sanitizer', () => ({ sanitizeForTTS: jest.fn((text: string) => text) }));
+
+// Mock inventory upload
+jest.mock('../inventory-upload', () => ({ detectMediaType: jest.fn().mockReturnValue('unknown'), handleInventoryUpload: jest.fn().mockResolvedValue([]), commitInventory: jest.fn().mockResolvedValue(undefined), applyInventoryEdit: jest.fn(), parseInventoryEditCommand: jest.fn().mockReturnValue(null), formatInventoryList: jest.fn().mockReturnValue('') }));
 
 // Mock global fetch for Twilio media download
 const mockFetch = jest.fn();

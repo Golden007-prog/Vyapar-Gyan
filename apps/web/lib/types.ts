@@ -4,7 +4,7 @@ export interface AIInsight {
   sellerId: string;
   insightType: 'DEAD_STOCK_DISCOUNT' | 'PRICE_INCREASE' | 'RESTOCK_ALERT' | 'DEMAND_FORECAST';
   priority: 'HIGH' | 'MEDIUM' | 'LOW';
-  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'EXECUTED';
+  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'EXECUTED' | 'DISMISSED';
   title: string;
   description: string;
   affectedProducts: string[]; // Product IDs
@@ -13,13 +13,14 @@ export interface AIInsight {
   suggestedPriceIncrease?: number;
   estimatedImpact: string; // e.g., "+₹12,000 revenue recovery"
   marketResearch?: {
-    source: 'GROK' | 'GEMINI';
+    source: 'GROK' | 'GEMINI' | 'BEDROCK';
     summary: string;
     confidence: number;
   };
   createdAt: string;
   updatedAt: string;
   expiresAt?: string;
+  dismissedAt?: string; // ISO timestamp when dismissed, enables 24h undo
 }
 
 // API Response Types

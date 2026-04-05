@@ -48,12 +48,23 @@ export interface UserProfile {
 
 export interface UnifiedSession {
   userId: string;
-  state: 'greeting' | 'browsing' | 'product_inquiry' | 'ordering' | 'payment' | 'tracking' | 'idle' | 'closed';
+  state: 'greeting' | 'browsing' | 'product_inquiry' | 'ordering' | 'payment' | 'tracking' | 'idle' | 'closed' | 'onboarding';
   lastActiveChannel: 'whatsapp' | 'web';
   lastActivityAt: string;
   phoneNumber: string;
   createdAt: string;
   expiresAt: number;
+  /** Intent context stored by intent extraction for conversation continuity */
+  lastIntent?: {
+    product?: { name: string | null; quantity: number | null; action: string | null };
+    store?: { name: string | null; sellerId?: string };
+    language?: string;
+  };
+  /** Human handoff fields (Req 10.1–10.5) */
+  isHumanHandoff?: boolean;
+  handoffSellerId?: string;
+  handoffStartedAt?: string;
+  handoffExpiresAt?: number; // Unix epoch seconds
 }
 
 export interface UnifiedCartItem {
@@ -79,7 +90,7 @@ export interface MessageThread {
   userId: string;
   messageId: string;
   direction: 'inbound' | 'outbound';
-  channel: 'whatsapp' | 'web';
+  channel: 'whatsapp' | 'web' | 'system';
   senderRole: 'customer' | 'seller' | 'system';
   messageType: 'text' | 'image' | 'audio' | 'interactive' | 'product_card' | 'system';
   content: unknown;
@@ -367,6 +378,26 @@ export async function updateSessionState(
       UpdateExpression: 'SET #state = :s, lastActiveChannel = :ch, lastActivityAt = :now',
       ExpressionAttributeNames: { '#state': 'state' },
       ExpressionAttributeValues: { ':s': state, ':ch': channel, ':now': now },
+    }),
+  );
+}
+
+/**
+ * Update the lastIntent field on a session record.
+ * Used by intent extraction to store context for conversation continuity.
+ */
+export async function updateSessionIntent(
+  userId: string,
+  lastIntent: UnifiedSession['lastIntent'],
+): Promise<void> {
+  const table = await tableName();
+  const now = new Date().toISOString();
+  await docClient.send(
+    new UpdateCommand({
+      TableName: table,
+      Key: { PK: `SESSION#${userId}`, SK: 'ACTIVE' },
+      UpdateExpression: 'SET lastIntent = :intent, lastActivityAt = :now',
+      ExpressionAttributeValues: { ':intent': lastIntent, ':now': now },
     }),
   );
 }
@@ -976,6 +1007,215 @@ export async function deleteRestockNotification(productId: string, userId: strin
     new DeleteCommand({
       TableName: table,
       Key: { PK: `RESTOCK_NOTIFY#${productId}`, SK: `USER#${userId}` },
+    }),
+  );
+}
+
+// ============================================================================
+// 12. Onboarding Session — PK: ONBOARDING#{phoneNumber}  SK: ACTIVE
+//     24-hour TTL for unregistered user welcome flow
+// ============================================================================
+
+export interface OnboardingSessionRecord {
+  phoneNumber: string;
+  welcomeSent: boolean;
+  createdAt: string;
+  expiresAt: number; // DynamoDB TTL (epoch seconds)
+}
+
+export async function putOnboardingSession(session: OnboardingSessionRecord): Promise<void> {
+  const table = await tableName();
+  await docClient.send(
+    new PutCommand({
+      TableName: table,
+      Item: {
+        PK: `ONBOARDING#${session.phoneNumber}`,
+        SK: 'ACTIVE',
+        ...session,
+      },
+    }),
+  );
+}
+
+export async function getOnboardingSession(
+  phoneNumber: string,
+): Promise<OnboardingSessionRecord | null> {
+  const table = await tableName();
+  const res = await docClient.send(
+    new GetCommand({
+      TableName: table,
+      Key: { PK: `ONBOARDING#${phoneNumber}`, SK: 'ACTIVE' },
+    }),
+  );
+  const item = res.Item as OnboardingSessionRecord | undefined;
+  if (!item) return null;
+
+  // Check if the session has expired (DynamoDB TTL cleanup is eventually consistent)
+  if (item.expiresAt <= Math.floor(Date.now() / 1000)) {
+    return null;
+  }
+
+  return item;
+}
+
+export async function updateOnboardingWelcomeSent(phoneNumber: string): Promise<void> {
+  const table = await tableName();
+  await docClient.send(
+    new UpdateCommand({
+      TableName: table,
+      Key: { PK: `ONBOARDING#${phoneNumber}`, SK: 'ACTIVE' },
+      UpdateExpression: 'SET welcomeSent = :t',
+      ExpressionAttributeValues: { ':t': true },
+    }),
+  );
+}
+
+
+// ============================================================================
+// 13. Session Handoff — Updates handoff fields on SESSION#{userId} ACTIVE
+// ============================================================================
+
+/**
+ * Activate human handoff on a session.
+ * Sets isHumanHandoff=true, handoffSellerId, handoffStartedAt, and handoffExpiresAt.
+ */
+export async function activateHandoff(
+  userId: string,
+  sellerId: string,
+  expiresAtEpoch: number,
+): Promise<void> {
+  const table = await tableName();
+  const now = new Date().toISOString();
+  await docClient.send(
+    new UpdateCommand({
+      TableName: table,
+      Key: { PK: `SESSION#${userId}`, SK: 'ACTIVE' },
+      UpdateExpression:
+        'SET isHumanHandoff = :t, handoffSellerId = :sid, handoffStartedAt = :now, handoffExpiresAt = :exp, lastActivityAt = :now',
+      ExpressionAttributeValues: {
+        ':t': true,
+        ':sid': sellerId,
+        ':now': now,
+        ':exp': expiresAtEpoch,
+      },
+    }),
+  );
+}
+
+/**
+ * Reset handoff expiry timer (on each seller reply).
+ */
+export async function resetHandoffExpiry(
+  userId: string,
+  expiresAtEpoch: number,
+): Promise<void> {
+  const table = await tableName();
+  const now = new Date().toISOString();
+  await docClient.send(
+    new UpdateCommand({
+      TableName: table,
+      Key: { PK: `SESSION#${userId}`, SK: 'ACTIVE' },
+      UpdateExpression: 'SET handoffExpiresAt = :exp, lastActivityAt = :now',
+      ExpressionAttributeValues: { ':exp': expiresAtEpoch, ':now': now },
+    }),
+  );
+}
+
+/**
+ * Deactivate human handoff (e.g. /ai command or auto-reset).
+ */
+export async function deactivateHandoff(userId: string): Promise<void> {
+  const table = await tableName();
+  const now = new Date().toISOString();
+  await docClient.send(
+    new UpdateCommand({
+      TableName: table,
+      Key: { PK: `SESSION#${userId}`, SK: 'ACTIVE' },
+      UpdateExpression:
+        'SET isHumanHandoff = :f, lastActivityAt = :now REMOVE handoffSellerId, handoffStartedAt, handoffExpiresAt',
+      ExpressionAttributeValues: { ':f': false, ':now': now },
+    }),
+  );
+}
+
+
+// ============================================================================
+// 14. Campaign Delivery — PK: CAMPAIGN#{campaignId}  SK: DELIVERY#{customerId}
+//     Per-customer per-channel delivery tracking for omnichannel campaigns
+// ============================================================================
+
+export interface CampaignDeliveryRecord {
+  campaignId: string;
+  customerId: string;
+  channel: 'web' | 'whatsapp';
+  sentAt: string;
+  deliveredAt?: string;
+  readAt?: string;
+  convertedAt?: string;
+  twilioSid?: string;
+  status: 'sent' | 'delivered' | 'read' | 'converted' | 'failed';
+}
+
+export async function putCampaignDelivery(record: CampaignDeliveryRecord): Promise<void> {
+  const table = await tableName();
+  await docClient.send(
+    new PutCommand({
+      TableName: table,
+      Item: {
+        PK: `CAMPAIGN#${record.campaignId}`,
+        SK: `DELIVERY#${record.customerId}#${record.channel}`,
+        ...record,
+      },
+    }),
+  );
+}
+
+export async function queryCampaignDeliveries(
+  campaignId: string,
+  limit = 100,
+): Promise<CampaignDeliveryRecord[]> {
+  const table = await tableName();
+  const res = await docClient.send(
+    new QueryCommand({
+      TableName: table,
+      KeyConditionExpression: 'PK = :pk AND begins_with(SK, :prefix)',
+      ExpressionAttributeValues: {
+        ':pk': `CAMPAIGN#${campaignId}`,
+        ':prefix': 'DELIVERY#',
+      },
+      Limit: limit,
+    }),
+  );
+  return (res.Items ?? []) as CampaignDeliveryRecord[];
+}
+
+export async function updateCampaignDeliveryStatus(
+  campaignId: string,
+  customerId: string,
+  channel: 'web' | 'whatsapp',
+  status: CampaignDeliveryRecord['status'],
+  timestampField?: 'deliveredAt' | 'readAt' | 'convertedAt',
+): Promise<void> {
+  const table = await tableName();
+  let updateExpr = 'SET #status = :s';
+  const names: Record<string, string> = { '#status': 'status' };
+  const values: Record<string, unknown> = { ':s': status };
+
+  if (timestampField) {
+    updateExpr += `, ${timestampField} = :ts`;
+    values[':ts'] = new Date().toISOString();
+  }
+
+  await docClient.send(
+    new UpdateCommand({
+      TableName: table,
+      Key: {
+        PK: `CAMPAIGN#${campaignId}`,
+        SK: `DELIVERY#${customerId}#${channel}`,
+      },
+      UpdateExpression: updateExpr,
+      ExpressionAttributeNames: names,
+      ExpressionAttributeValues: values,
     }),
   );
 }

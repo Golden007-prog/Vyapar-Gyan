@@ -231,6 +231,47 @@ export class RazorpayAdapter {
   }
 
   /**
+   * Create a refund for a payment via Razorpay Refunds API
+   * Used by dispute resolution to issue full or partial refunds.
+   */
+  async createRefund(paymentId: string, amount: number): Promise<any> {
+    const amountInPaise = Math.round(amount * 100);
+
+    logger.info('Creating Razorpay refund', { paymentId, amount, amountInPaise });
+
+    try {
+      const response = await fetch(`${this.baseUrl}/payments/${paymentId}/refund`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Basic ${Buffer.from(`${this.keyId}:${this.keySecret}`).toString('base64')}`,
+        },
+        body: JSON.stringify({ amount: amountInPaise }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        logger.error('Razorpay refund creation failed', {
+          paymentId,
+          status: response.status,
+          error: errorText,
+        });
+        throw new Error(`Razorpay refund API error: ${response.status} - ${errorText}`);
+      }
+
+      const data = await response.json();
+      logger.info('Refund created successfully', { paymentId, refundId: (data as any).id });
+      return data;
+    } catch (error) {
+      logger.error('Error creating refund', {
+        paymentId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
+  }
+
+  /**
    * Get payment link details
    */
   async getPaymentLink(paymentLinkId: string): Promise<any> {

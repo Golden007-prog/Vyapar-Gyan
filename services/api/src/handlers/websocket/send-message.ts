@@ -391,7 +391,7 @@ export const handler = async (
           sentAt: autoReplyTimestamp,
           createdAt: autoReplyTimestamp,
           expiresAt: autoReplyEpoch + NINETY_DAYS_SECONDS,
-          channel: 'web',
+          channel: 'system',
         };
 
         // Store auto-reply in customer's thread only
@@ -410,7 +410,7 @@ export const handler = async (
             content: { body: autoReplyBody },
             deliveryStatus: 'sent',
             sentAt: autoReplyTimestamp,
-            channel: 'web',
+            channel: 'system',
           };
 
           await Promise.allSettled(

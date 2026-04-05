@@ -15,6 +15,10 @@ import {
   FileText,
   Activity,
   Settings,
+  UserSearch,
+  AlertTriangle,
+  DollarSign,
+  Tags,
 } from 'lucide-react';
 
 export type NavItem = {
@@ -27,6 +31,7 @@ export type NavConfig = {
   role: 'seller' | 'customer' | 'admin';
   primary: NavItem[];   // max 5, shown in BottomNav
   overflow: NavItem[];  // shown in MoreMenu sheet
+  sidebar?: NavItem[];  // optional explicit sidebar order (overrides primary+overflow merge)
 };
 
 export const SELLER_NAV: NavConfig = {
@@ -62,11 +67,28 @@ export const ADMIN_NAV: NavConfig = {
   primary: [
     { label: 'Overview', href: '/admin', icon: LayoutDashboard },
     { label: 'Sellers', href: '/admin/sellers', icon: Users },
-    { label: 'Audit', href: '/admin/audit', icon: FileText },
-    { label: 'Health', href: '/admin/system', icon: Activity },
+    { label: 'Disputes', href: '/admin/disputes', icon: AlertTriangle },
+    { label: 'Financials', href: '/admin/financials', icon: DollarSign },
     { label: 'More', href: '#more', icon: MoreHorizontal },
   ],
   overflow: [
+    { label: 'Customers', href: '/admin/customers', icon: UserSearch },
+    { label: 'Campaigns', href: '/admin/campaigns', icon: Megaphone },
+    { label: 'Catalog', href: '/admin/catalog', icon: Tags },
+    { label: 'Audit', href: '/admin/audit', icon: FileText },
+    { label: 'Health', href: '/admin/system', icon: Activity },
+    { label: 'Settings', href: '/admin/settings', icon: Settings },
+  ],
+  sidebar: [
+    { label: 'Overview', href: '/admin', icon: LayoutDashboard },
+    { label: 'Sellers', href: '/admin/sellers', icon: Users },
+    { label: 'Customers', href: '/admin/customers', icon: UserSearch },
+    { label: 'Disputes', href: '/admin/disputes', icon: AlertTriangle },
+    { label: 'Financials', href: '/admin/financials', icon: DollarSign },
+    { label: 'Campaigns', href: '/admin/campaigns', icon: Megaphone },
+    { label: 'Catalog', href: '/admin/catalog', icon: Tags },
+    { label: 'Audit', href: '/admin/audit', icon: FileText },
+    { label: 'Health', href: '/admin/system', icon: Activity },
     { label: 'Settings', href: '/admin/settings', icon: Settings },
   ],
 };

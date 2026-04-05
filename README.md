@@ -26,6 +26,8 @@ pnpm --filter @vyapargyan/web dev
 | Seller (Dragon Store) | 9000000002 | DemoSeller@123 | AI insights, approval inbox, inventory upload (CSV + OCR), customer inbox, orders, campaigns |
 | Customer | 9000000003 | DemoCustomer@123 | Product catalog, real-time chat with seller, order tracking, account settings |
 
+**WhatsApp Bot:** +1 (947) 234-9399 — Send any message to start the omnichannel experience (role-based routing auto-detects seller/customer/new user).
+
 ## Overview
 
 VyaparGyan bridges the gap between traditional retail and digital commerce by providing:
@@ -43,20 +45,22 @@ VyaparGyan bridges the gap between traditional retail and digital commerce by pr
 
 Modern AWS serverless architecture built for scale and operational simplicity:
 
-- **Compute**: AWS Lambda (Node.js 20, TypeScript) — 55+ handlers across 10 domains
-- **API**: API Gateway HTTP API with JWT authorization
+- **Compute**: AWS Lambda (Node.js 20, TypeScript) — 65+ handlers across 12 domains
+- **API**: API Gateway HTTP API with JWT authorization + WebSocket API for real-time messaging
 - **Authentication**: Amazon Cognito User Pools with role-based groups (admin/seller/customer)
-- **Database**: DynamoDB (single-table design with multi-seller partition strategy)
-- **Storage**: S3 (product images, Khata book photos, documents, exports)
-- **Events**: EventBridge + SQS for async workflows, AI pipelines, and campaign execution
+- **Database**: DynamoDB (single-table design with multi-seller partition strategy, 6 GSIs including phone lookup, seller orders, location, city, stock, transfers)
+- **Search**: OpenSearch Serverless with zero-ETL pipeline from DynamoDB Streams
+- **Storage**: S3 (product images, Khata book photos, voice notes, documents, exports)
+- **Events**: EventBridge + SQS for async workflows, AI pipelines, campaign execution, and cart abandonment
+- **Scheduling**: EventBridge Scheduler for trend alerts, cart nudges, and payment link expiry
 - **Messaging**: Twilio SDK for omnichannel messaging (WhatsApp, SMS, in-app chat routing)
-- **Payments**: Razorpay Route (Transfers) for automated commission splitting and seller payouts
+- **Payments**: Razorpay Route (Transfers) for automated commission splitting, seller payouts, and UPI Payment Links
 - **AI — Orchestration**: Amazon Bedrock for dead-stock detection and discount campaign generation
-- **AI — Analysis**: Google Gemini 2.0 Flash for OCR, multilingual voice transcription, product intent extraction, and market analysis
+- **AI — Analysis**: Google Gemini 2.0 Flash for OCR, multilingual voice transcription, TTS, intent extraction, product image analysis, and market research
 - **AI — Trends**: xAI Grok for live market trend research and dynamic pricing
-- **Frontend**: Next.js 14 with Tailwind CSS (22 pages, 14 components)
+- **Frontend**: Next.js 14 with Tailwind CSS (30+ pages, 20+ components)
 - **Observability**: CloudWatch Logs, Metrics, Alarms, and X-Ray tracing
-- **Infrastructure**: AWS CDK v2 with TypeScript (7 CloudFormation stacks)
+- **Infrastructure**: AWS CDK v2 with TypeScript (8 CloudFormation stacks)
 - **Developer Tools**: Kiro IDE with 3 MCP servers for platform data access
 - **Package Manager**: pnpm workspaces for monorepo management
 
@@ -211,13 +215,19 @@ cd tools/mcp/commerce-admin && pnpm install && pnpm build
 
 - Seller onboarding with document verification and admin approval
 - Product catalog management with image uploads and inventory tracking
-- Omnichannel messaging: customers and sellers communicate via web chat and WhatsApp (Twilio)
+- Omnichannel messaging: customers and sellers communicate via web chat and WhatsApp (Twilio) with unified message storage and bi-directional sync
+- Role-based WhatsApp routing: seller → Copilot (stock check, trend alerts, campaign approval), customer → Discovery (favorites, pincode/city search, global search), unregistered → Onboarding
 - Voice-first shopping: send voice notes in any Indian language (Hindi, English, Tamil, Telugu, Marathi, Bengali, Gujarati, Kannada) — Gemini 2.0 transcribes, extracts product intents, and matches catalog automatically
-- Automated stock ingestion: CSV upload with smart column mapping and Khata book OCR via Gemini Vision
-- Proactive AI insights: dead stock detection, dynamic pricing, restock alerts (Bedrock + Gemini + Grok)
-- Automated WhatsApp campaigns: seller-approved discounts sent to past customers
+- Voice-activated financial reports: sellers ask business questions via voice note and receive text + audio responses in their language
+- Automated stock ingestion: CSV/Excel upload and Khata book OCR via WhatsApp or web dashboard (Gemini Vision)
+- Gemini intent extraction: contextual routing based on product intent, store intent, and detected language
+- Human handoff protocol: seller takes over from AI bot via web inbox, auto-resets after 30 min inactivity
+- Proactive AI insights: dead stock detection, dynamic pricing, restock alerts (Bedrock + Gemini + Grok) with severity, confidence, and financial impact
+- Omnichannel campaign dispatch: Web Chat, WhatsApp, or both — with per-customer per-channel delivery tracking
+- UPI payment links: Razorpay Payment Links for WhatsApp checkout with 30-min expiry and auto-reminder
+- Automated abandoned cart nudges: 2h + 24h reminders via preferred channel (WhatsApp or Web Chat)
 - Order lifecycle management with commission-based payment splitting (Razorpay Route)
-- Admin controls for seller moderation, platform analytics, system health, and audit trails
+- Admin dashboard: 10 pages including customers, disputes, financials, campaigns, catalog manager with multilingual aliases and merge operations
 - AI assistance for catalog extraction, voice transcription, multilingual support, and product intent extraction
 
 ## Development Workflow

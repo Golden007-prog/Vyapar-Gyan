@@ -66,6 +66,9 @@ export class EventsStack extends cdk.Stack {
   /** Notification router worker Lambda function */
   public readonly notificationRouterFunction: Function;
 
+  /** Message fan-out Lambda function */
+  public readonly messageFanoutFunction: Function;
+
   /** Media processing retry queue */
   public readonly mediaProcessingQueue: Queue;
 
@@ -266,6 +269,64 @@ export class EventsStack extends cdk.Stack {
     cdk.Tags.of(this.trendAnalyzerFunction).add('Name', `${config.resourcePrefix}-trend-analyzer`);
     cdk.Tags.of(this.trendAnalyzerFunction).add('Service', 'ai-insights');
 
+    // -----------------------------------------------------------------------
+    // Trend Scheduler — IAM role + permissions for per-seller EventBridge
+    // Scheduler rules created dynamically by the WhatsApp worker Lambda
+    // -----------------------------------------------------------------------
+
+    // IAM role that EventBridge Scheduler assumes to invoke the trend analyzer
+    const schedulerRole = new cdk.aws_iam.Role(this, 'TrendSchedulerRole', {
+      roleName: `${config.resourcePrefix}-trend-scheduler-role`,
+      assumedBy: new cdk.aws_iam.ServicePrincipal('scheduler.amazonaws.com'),
+      description: 'Role assumed by EventBridge Scheduler to invoke trend analyzer Lambda',
+    });
+
+    // Allow the scheduler role to invoke the trend analyzer function
+    this.trendAnalyzerFunction.grantInvoke(schedulerRole);
+
+    // Grant the WhatsApp worker permissions to manage EventBridge Scheduler rules
+    this.whatsappWorkerFunction.addToRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: [
+          'scheduler:CreateSchedule',
+          'scheduler:UpdateSchedule',
+          'scheduler:DeleteSchedule',
+          'scheduler:GetSchedule',
+        ],
+        resources: [
+          `arn:aws:scheduler:${config.region}:${config.account}:schedule/default/vyapargyan-${config.environment}-trend-*`,
+        ],
+      }),
+    );
+
+    // Allow the WhatsApp worker to pass the scheduler role to EventBridge Scheduler
+    this.whatsappWorkerFunction.addToRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['iam:PassRole'],
+        resources: [schedulerRole.roleArn],
+        conditions: {
+          StringEquals: {
+            'iam:PassedToService': 'scheduler.amazonaws.com',
+          },
+        },
+      }),
+    );
+
+    // Pass scheduler config as environment variables to the WhatsApp worker
+    this.whatsappWorkerFunction.addEnvironment(
+      'TREND_SCHEDULER_ROLE_ARN',
+      schedulerRole.roleArn,
+    );
+    this.whatsappWorkerFunction.addEnvironment(
+      'TREND_ANALYZER_FUNCTION_ARN',
+      this.trendAnalyzerFunction.functionArn,
+    );
+
+    cdk.Tags.of(schedulerRole).add('Name', `${config.resourcePrefix}-trend-scheduler-role`);
+    cdk.Tags.of(schedulerRole).add('Service', 'ai-insights');
+
     // Create Campaign Worker Lambda function for automated WhatsApp campaigns
     this.campaignWorkerFunction = new Function(this, 'CampaignWorkerFunction', {
       functionName: `${config.resourcePrefix}-campaign-worker`,
@@ -379,6 +440,143 @@ export class EventsStack extends cdk.Stack {
     // Add tags to notification router
     cdk.Tags.of(this.notificationRouterFunction).add('Name', `${config.resourcePrefix}-notification-router`);
     cdk.Tags.of(this.notificationRouterFunction).add('Service', 'messaging');
+
+    // -----------------------------------------------------------------------
+    // Message Fan-out Lambda — bi-directional message push (WhatsApp ↔ Web)
+    // Triggered by EventBridge: message.created (source: vyapargyan.messaging)
+    // Pushes messages to all active recipient channels except the originator
+    // -----------------------------------------------------------------------
+
+    this.messageFanoutFunction = new Function(this, 'MessageFanoutFunction', {
+      functionName: `${config.resourcePrefix}-message-fanout`,
+      runtime: Runtime.NODEJS_20_X,
+      architecture: Architecture.ARM_64,
+      handler: 'handlers/messaging/fanout.handler',
+      code: Code.fromAsset('../../services/api/dist'),
+      timeout: Duration.seconds(30),
+      memorySize: 256,
+      tracing: Tracing.ACTIVE,
+      environment: {
+        ENVIRONMENT: config.environment,
+        TABLE_NAME: table.tableName,
+        EVENT_BUS_NAME: this.eventBus.eventBusName,
+        LOG_LEVEL: 'info',
+        TWILIO_ACCOUNT_SID: twilioSecret.secretValueFromJson('accountSid').unsafeUnwrap(),
+        TWILIO_AUTH_TOKEN: twilioSecret.secretValueFromJson('authToken').unsafeUnwrap(),
+        TWILIO_PHONE_NUMBER: twilioSecret.secretValueFromJson('phoneNumber').unsafeUnwrap(),
+      },
+    });
+
+    // Grant DynamoDB read/write for connection lookups, user profiles, sessions
+    table.grantReadWriteData(this.messageFanoutFunction);
+
+    // Grant Secrets Manager permissions for Twilio credentials
+    this.messageFanoutFunction.addToRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['secretsmanager:GetSecretValue'],
+        resources: [
+          `arn:aws:secretsmanager:${config.region}:${config.account}:secret:/${config.environment}/twilio/*`,
+        ],
+      }),
+    );
+
+    // Grant SSM Parameter Store permissions for Twilio configuration
+    this.messageFanoutFunction.addToRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['ssm:GetParameter', 'ssm:GetParametersByPath'],
+        resources: [
+          `arn:aws:ssm:${config.region}:${config.account}:parameter/${config.environment}/twilio/*`,
+        ],
+      }),
+    );
+
+    // Grant API Gateway Management API permissions for WebSocket push
+    this.messageFanoutFunction.addToRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['execute-api:ManageConnections'],
+        resources: ['*'],
+      }),
+    );
+
+    // EventBridge rule: route message.created events to fan-out Lambda
+    new Rule(this, 'MessageCreatedFanoutRule', {
+      ruleName: `${config.resourcePrefix}-message-created-fanout`,
+      description: 'Route message.created events to fan-out Lambda for bi-directional push',
+      eventBus: this.eventBus,
+      eventPattern: {
+        source: ['vyapargyan.messaging'],
+        detailType: ['message.created'],
+      },
+      targets: [new LambdaFunction(this.messageFanoutFunction)],
+    });
+
+    // Add tags to message fan-out
+    cdk.Tags.of(this.messageFanoutFunction).add('Name', `${config.resourcePrefix}-message-fanout`);
+    cdk.Tags.of(this.messageFanoutFunction).add('Service', 'messaging');
+
+    // -----------------------------------------------------------------------
+    // Dispute Auto-Flag Lambda — creates DISPUTE records on negative events
+    // Triggered by EventBridge: order.payment_failed, order.delivery_delayed,
+    //   order.feedback_negative
+    // -----------------------------------------------------------------------
+
+    const disputeAutoFlagFunction = new Function(this, 'DisputeAutoFlagFunction', {
+      functionName: `${config.resourcePrefix}-dispute-auto-flag`,
+      runtime: Runtime.NODEJS_20_X,
+      architecture: Architecture.ARM_64,
+      handler: 'handlers/admin/disputes.autoFlagHandler',
+      code: Code.fromAsset('../../services/api/dist'),
+      timeout: Duration.seconds(15),
+      memorySize: 256,
+      tracing: Tracing.ACTIVE,
+      environment: {
+        ENVIRONMENT: config.environment,
+        TABLE_NAME: table.tableName,
+        LOG_LEVEL: 'info',
+      },
+    });
+
+    // Grant DynamoDB read/write for creating DISPUTE records
+    table.grantReadWriteData(disputeAutoFlagFunction);
+
+    // Grant Secrets Manager + SSM for getConfig() fallback
+    disputeAutoFlagFunction.addToRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['secretsmanager:GetSecretValue'],
+        resources: [
+          `arn:aws:secretsmanager:${config.region}:${config.account}:secret:/${config.environment}/twilio/*`,
+          `arn:aws:secretsmanager:${config.region}:${config.account}:secret:/${config.environment}/razorpay/*`,
+          `arn:aws:secretsmanager:${config.region}:${config.account}:secret:GEMINI_API_KEY-*`,
+          `arn:aws:secretsmanager:${config.region}:${config.account}:secret:GROK_API_KEY-*`,
+        ],
+      }),
+    );
+    disputeAutoFlagFunction.addToRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['ssm:GetParameter', 'ssm:GetParameters'],
+        resources: [`arn:aws:ssm:${config.region}:${config.account}:parameter/${config.environment}/*`],
+      }),
+    );
+
+    // EventBridge rule: auto-flag negative order events as disputes
+    new Rule(this, 'DisputeAutoFlagRule', {
+      ruleName: `${config.resourcePrefix}-dispute-auto-flag`,
+      description: 'Auto-flag orders with negative feedback, payment failures, or delivery delays as disputes',
+      eventBus: this.eventBus,
+      eventPattern: {
+        source: ['vyapargyan.orders'],
+        detailType: ['order.payment_failed', 'order.delivery_delayed', 'order.feedback_negative'],
+      },
+      targets: [new LambdaFunction(disputeAutoFlagFunction)],
+    });
+
+    cdk.Tags.of(disputeAutoFlagFunction).add('Name', `${config.resourcePrefix}-dispute-auto-flag`);
+    cdk.Tags.of(disputeAutoFlagFunction).add('Service', 'disputes');
 
     // -----------------------------------------------------------------------
     // Approval Execution Worker — executes approved seller actions
@@ -1088,6 +1286,12 @@ export class EventsStack extends cdk.Stack {
       value: this.notificationRouterFunction.functionArn,
       description: 'Notification router Lambda function ARN',
       exportName: `${config.resourcePrefix}-notification-router-arn`,
+    });
+
+    new cdk.CfnOutput(this, 'MessageFanoutFunctionArn', {
+      value: this.messageFanoutFunction.functionArn,
+      description: 'Message fan-out Lambda function ARN',
+      exportName: `${config.resourcePrefix}-message-fanout-arn`,
     });
 
     new cdk.CfnOutput(this, 'MediaProcessingQueueUrl', {

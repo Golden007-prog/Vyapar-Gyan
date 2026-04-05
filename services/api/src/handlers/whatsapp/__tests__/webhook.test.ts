@@ -1,7 +1,7 @@
 import { handler } from '../webhook';
 import { mockClient } from 'aws-sdk-client-mock';
 import { EventBridgeClient, PutEventsCommand } from '@aws-sdk/client-eventbridge';
-import { DynamoDBClient, PutItemCommand, ConditionalCheckFailedException } from '@aws-sdk/client-dynamodb';
+import { DynamoDBClient, PutItemCommand, UpdateItemCommand, ConditionalCheckFailedException } from '@aws-sdk/client-dynamodb';
 import type { APIGatewayProxyEvent } from 'aws-lambda';
 
 const eventBridgeMock = mockClient(EventBridgeClient);
@@ -27,6 +27,12 @@ jest.mock('../../../utils/config', () => ({
     documentsBucket: 'test-docs',
     logLevel: 'info',
   }),
+  getWebhookConfig: jest.fn().mockResolvedValue({
+    environment: 'dev',
+    tableName: 'test-table',
+    eventBusName: 'test-event-bus',
+    twilioAuthToken: 'test-auth-token',
+  }),
 }));
 
 jest.mock('../../../utils/logger', () => ({
@@ -44,6 +50,10 @@ jest.mock('../../../repositories/user-repository', () => ({
   UserRepository: jest.fn().mockImplementation(() => ({
     getUserByPhone: jest.fn().mockResolvedValue(null),
   })),
+}));
+
+jest.mock('../../../services/user-lookup', () => ({
+  resolveUserByPhone: jest.fn().mockResolvedValue(null),
 }));
 
 function buildTwilioBody(p: Record<string, string>): string {
@@ -81,6 +91,7 @@ describe('WhatsApp Webhook Handler (Twilio)', () => {
     eventBridgeMock.reset();
     dynamoDBMock.reset();
     dynamoDBMock.on(PutItemCommand).resolves({});
+    dynamoDBMock.on(UpdateItemCommand).resolves({});
     eventBridgeMock.on(PutEventsCommand).resolves({
       FailedEntryCount: 0,
       Entries: [{ EventId: 'evt-123' }],
@@ -181,6 +192,7 @@ describe('WhatsApp Webhook Handler (Twilio)', () => {
     dynamoDBMock.on(PutItemCommand).rejects(
       new ConditionalCheckFailedException({ message: 'Duplicate', $metadata: {} })
     );
+    dynamoDBMock.on(UpdateItemCommand).resolves({});
     const result2 = await handler(event);
     expect(result2.statusCode).toBe(200);
     expect(result2.body).toContain('<Response>');

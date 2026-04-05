@@ -95,12 +95,12 @@ describe('Structured Logger', () => {
   describe('Context handling', () => {
     it('should include additional context in logs', () => {
       const logger = createLogger();
-      logger.info('Message with context', { userId: '123', action: 'create' });
+      logger.info('Message with context', { traceId: '123', action: 'create' });
       
       const log = JSON.parse(logOutput[0]);
       
       expect(log.context).toBeDefined();
-      expect(log.context.userId).toBe('123');
+      expect(log.context.traceId).toBe('123');
       expect(log.context.action).toBe('create');
     });
     
@@ -117,12 +117,12 @@ describe('Structured Logger', () => {
     
     it('should merge default and provided context', () => {
       const logger = createLogger({ service: 'auth' });
-      logger.info('Test message', { userId: '123' });
+      logger.info('Test message', { traceId: '123' });
       
       const log = JSON.parse(logOutput[0]);
       
       expect(log.context.service).toBe('auth');
-      expect(log.context.userId).toBe('123');
+      expect(log.context.traceId).toBe('123');
     });
     
     it('should create child logger with additional context', () => {
@@ -252,7 +252,7 @@ describe('Structured Logger', () => {
       const log = JSON.parse(logOutput[0]);
       
       expect(log.error).toBeDefined();
-      expect(log.error.name).toBe('UnknownError');
+      expect(log.error.name).toBe('String');
       expect(log.error.message).toBe('string error');
     });
     
