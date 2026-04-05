@@ -42,8 +42,8 @@ function LoginContent() {
 
   const demoAccounts = [
     { role: 'Admin (Platform)', phone: '9000000001', password: 'DemoAdmin@123' },
-    { role: 'Seller (Dragon Store)', phone: '9000000002', password: 'DemoSeller@123' },
-    { role: 'Customer', phone: '9000000003', password: 'DemoCustomer@123' },
+    { role: 'Seller (Dragon Store Owner)', phone: '8927049085', password: 'DemoSeller@123' },
+    { role: 'Customer (Enigma)', phone: '7001124396', password: 'DemoCustomer@123' },
   ];
 
   const fillDemoAccount = (demoPhone: string, demoPassword: string) => {
