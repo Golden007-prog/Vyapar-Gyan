@@ -75,7 +75,7 @@ async function getAuthToken(): Promise<string | null> {
   try {
     const { fetchAuthSession } = await import('aws-amplify/auth');
     const session = await fetchAuthSession();
-    return session.tokens?.accessToken?.toString() ?? null;
+    return session.tokens?.idToken?.toString() ?? null;
   } catch {
     return null;
   }

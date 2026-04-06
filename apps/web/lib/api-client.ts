@@ -26,7 +26,7 @@ export async function fetchWithAuth<T = any>(
   try {
     // Get the current user's session and extract the JWT token
     const session = await fetchAuthSession();
-    const token = session.tokens?.accessToken?.toString();
+    const token = session.tokens?.idToken?.toString();
 
     if (!token) {
       throw new ApiError('No authentication token available', 401);

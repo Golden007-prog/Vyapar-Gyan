@@ -68,7 +68,7 @@ async function getOptionalToken(): Promise<string | null> {
       fetchAuthSession(),
       new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Auth timeout')), 2000)),
     ]);
-    return session.tokens?.accessToken?.toString() ?? null;
+    return session.tokens?.idToken?.toString() ?? null;
   } catch {
     return null;
   }
