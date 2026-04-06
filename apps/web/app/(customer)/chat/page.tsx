@@ -145,6 +145,26 @@ function ChatContent() {
       .catch(() => setCart(getDemoCart(sellerId)));
   }, [storeName, sellerId]);
 
+  // Try to load message history from backend API
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { getHistory } = await import('@/lib/api-chat');
+        const history = await getHistory();
+        if (!cancelled && history.messages.length > 0) {
+          setLocalMessages(prev => {
+            const merged = deduplicateMessages([...history.messages, ...prev]) as ChatMessage[];
+            return merged;
+          });
+        }
+      } catch {
+        // API unavailable — bridge messages are the fallback
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   // Poll bridge for seller replies every 1.5s (suppressed when WebSocket connected)
   useEffect(() => {
     if (connectionState === 'connected') {
@@ -172,7 +192,7 @@ function ChatContent() {
     const msgId = `cust-${Date.now()}`;
     const timestamp = new Date().toISOString();
 
-    // Write to bridge (seller perspective: inbound = from customer)
+    // Optimistic UI update via bridge
     appendMessage(DEMO_SESSION_ID, {
       id: msgId,
       direction: 'inbound',
@@ -185,7 +205,15 @@ function ChatContent() {
     const bridgeMsgs = getSessionMessages(DEMO_SESSION_ID);
     setLocalMessages(bridgeToCustomer(bridgeMsgs));
 
-    // Also send via WebSocket if connected
+    // PRIMARY: Send via HTTP API to backend
+    try {
+      const { sendMessage } = await import('@/lib/api-chat');
+      await sendMessage({ content: text, messageType: 'text', sellerId });
+    } catch (err) {
+      console.warn('API send failed, message saved locally', err);
+    }
+
+    // SECONDARY: Also send via WebSocket for real-time delivery
     if (connectionState === 'connected') {
       wsSendMessage(sellerId, { body: text }, 'text');
     }

@@ -93,7 +93,37 @@ export default function InboxPage() {
     presenceMap,
   } = useWebSocket(authToken);
 
-  useEffect(() => { setSessions(buildSeedSessions()); }, []);
+  useEffect(() => {
+    // Start with seed data as fallback
+    setSessions(buildSeedSessions());
+
+    // Try to load real conversations from API
+    (async () => {
+      try {
+        const { fetchWithAuth } = await import('@/lib/api-client');
+        const data = await fetchWithAuth('/api/v1/seller/inbox');
+        if (data.conversations && data.conversations.length > 0) {
+          const apiSessions: InboxSession[] = data.conversations.map((c: any) => ({
+            id: c.threadId || c.customerId,
+            customerName: c.customerName || 'Customer',
+            phone: c.phone || '',
+            channel: c.channel || 'web',
+            lastMessage: c.lastMessage || '',
+            lastMessageTime: c.lastMessageTime || new Date().toISOString(),
+            unread: c.unreadCount || 0,
+            messages: [],
+          }));
+          setSessions(prev => {
+            const seedIds = new Set(prev.map(s => s.id));
+            const newSessions = apiSessions.filter(s => !seedIds.has(s.id));
+            return [...prev, ...newSessions];
+          });
+        }
+      } catch {
+        // API unavailable — seed data is the fallback
+      }
+    })();
+  }, []);
 
   // Poll bridge for new customer messages every 1.5s (suppressed when WebSocket connected)
   useEffect(() => {
@@ -132,7 +162,7 @@ export default function InboxPage() {
     setSessions(prev => prev.map(s => s.id === id ? { ...s, unread: 0 } : s));
   }, []);
 
-  const handleSend = useCallback(() => {
+  const handleSend = useCallback(async () => {
     if (!messageInput.trim() || !selectedId || sending) return;
     setSending(true);
     const text = messageInput.trim();
@@ -151,7 +181,23 @@ export default function InboxPage() {
       lastMessage: text,
       lastMessageTime: timestamp,
     }));
-    // Also send via WebSocket if connected
+
+    // PRIMARY: Send via HTTP API to backend
+    try {
+      const { fetchWithAuth } = await import('@/lib/api-client');
+      await fetchWithAuth('/api/v1/seller/reply', {
+        method: 'POST',
+        body: JSON.stringify({
+          customerId: selectedId,
+          content: text,
+          channel: selectedSession?.channel || 'web',
+        }),
+      });
+    } catch {
+      // API unavailable — message saved in bridge as fallback
+    }
+
+    // SECONDARY: Also send via WebSocket if connected
     if (connectionState === 'connected' && selectedSession) {
       wsSendMessage(selectedSession.id, { body: text }, 'text');
     }
