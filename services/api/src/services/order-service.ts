@@ -3,7 +3,7 @@ import { EventBridgeClient, PutEventsCommand } from '@aws-sdk/client-eventbridge
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
 import { randomUUID } from 'crypto';
 import { logger } from '../utils/logger';
-import { getConfig } from '../utils/config';
+import { getBasicConfig } from '../utils/config';
 import { CartItem } from '../repositories/session-repository';
 import type { OrderStatus, TransitionActor } from './order-state-machine';
 import { validateTransition, requiresStockUnreservation, requiresStockFinalization } from './order-state-machine';
@@ -133,7 +133,7 @@ export class OrderService {
     if (this.tableName) {
       return this.tableName;
     }
-    const config = await getConfig();
+    const config = getBasicConfig();
     this.tableName = config.tableName;
     return this.tableName;
   }

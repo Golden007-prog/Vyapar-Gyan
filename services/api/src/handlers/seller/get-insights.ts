@@ -2,7 +2,7 @@ import { APIGatewayProxyHandler, APIGatewayProxyEvent, APIGatewayProxyResult } f
 import { DynamoDBClient, QueryCommand, UpdateItemCommand } from '@aws-sdk/client-dynamodb';
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
 import { logger } from '../../utils/logger';
-import { getConfig } from '../../utils/config';
+import { getBasicConfig } from '../../utils/config';
 
 const dynamoDBClient = new DynamoDBClient({});
 
@@ -68,7 +68,7 @@ export const handler: APIGatewayProxyHandler = async (
       return respond(401, { error: 'Unauthorized', message: 'Seller ID not found in token' });
     }
 
-    const config = await getConfig();
+    const config = getBasicConfig();
 
     // Route based on HTTP method and path
     if (event.httpMethod === 'POST' && event.path.endsWith('/dismiss')) {
@@ -206,6 +206,11 @@ function extractSellerIdFromEvent(event: APIGatewayProxyEvent): string | null {
   const authorizerContext = event.requestContext.authorizer;
 
   if (authorizerContext) {
+    // HTTP API v2 JWT authorizer: claims are in authorizer.jwt.claims
+    const jwtClaims = (authorizerContext as any)?.jwt?.claims;
+    if (jwtClaims?.sub) return jwtClaims.sub;
+
+    // REST API v1 authorizer fallback
     const claims = authorizerContext.claims || authorizerContext;
     if (claims['custom:userId']) return claims['custom:userId'];
     if (claims.sub) return claims.sub;

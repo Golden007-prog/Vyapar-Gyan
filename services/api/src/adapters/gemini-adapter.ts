@@ -9,6 +9,20 @@ function serializeError(err: unknown): string {
   try { return JSON.stringify(err); } catch { return String(err); }
 }
 
+/** Default timeout for Gemini API calls (30 seconds) */
+const GEMINI_TIMEOUT_MS = 30_000;
+
+/** Wrap a promise with a timeout. Rejects with a descriptive error if the promise doesn't resolve in time. */
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    promise.then(
+      (val) => { clearTimeout(timer); resolve(val); },
+      (err) => { clearTimeout(timer); reject(err); },
+    );
+  });
+}
+
 /** Supported languages for voice transcription */
 const SUPPORTED_LANGUAGES = [
   'English', 'Hindi', 'Tamil', 'Telugu', 'Marathi', 'Bengali', 'Gujarati', 'Kannada',
@@ -165,7 +179,11 @@ Return JSON:
   "reasoning": "Column 0 contains product names, column 2 has numeric prices..."
 }`;
 
-      const result = await model.generateContent(prompt);
+      const result = await withTimeout(
+        model.generateContent(prompt),
+        GEMINI_TIMEOUT_MS,
+        'Gemini CSV mapping',
+      );
       const text = result.response.text();
       const cleanText = this.cleanJsonText(text);
       const parsed = JSON.parse(cleanText);
@@ -242,15 +260,19 @@ Example output format:
 Now extract the products from this Khata book image:`;
 
       // Generate content with image
-      const result = await model.generateContent([
-        prompt,
-        {
-          inlineData: {
-            data: base64Image,
-            mimeType,
+      const result = await withTimeout(
+        model.generateContent([
+          prompt,
+          {
+            inlineData: {
+              data: base64Image,
+              mimeType,
+            },
           },
-        },
-      ]);
+        ]),
+        GEMINI_TIMEOUT_MS,
+        'Gemini OCR',
+      );
 
       const response = result.response;
       const text = response.text();
@@ -394,15 +416,19 @@ Return JSON in this exact format:
   "detectedLanguage": "Hindi"
 }`;
 
-      const result = await model.generateContent([
-        prompt,
-        {
-          inlineData: {
-            data: base64Audio,
-            mimeType: 'audio/ogg',
+      const result = await withTimeout(
+        model.generateContent([
+          prompt,
+          {
+            inlineData: {
+              data: base64Audio,
+              mimeType: 'audio/ogg',
+            },
           },
-        },
-      ]);
+        ]),
+        GEMINI_TIMEOUT_MS,
+        'Gemini voice transcription',
+      );
 
       const response = result.response;
       const text = response.text();
@@ -502,7 +528,11 @@ Return JSON in this exact format:
 
       const prompt = `Say in a ${voiceStyle} tone in ${language}:\n${text}`;
 
-      const result = await model.generateContent(prompt);
+      const result = await withTimeout(
+        model.generateContent(prompt),
+        GEMINI_TIMEOUT_MS,
+        'Gemini TTS generation',
+      );
       const response = result.response;
 
       // Extract audio data from the response inline data
@@ -578,15 +608,19 @@ Return JSON in this exact format:
   "description": "A red cotton kurta with traditional embroidery patterns"
 }`;
 
-      const result = await model.generateContent([
-        prompt,
-        {
-          inlineData: {
-            data: base64Image,
-            mimeType,
+      const result = await withTimeout(
+        model.generateContent([
+          prompt,
+          {
+            inlineData: {
+              data: base64Image,
+              mimeType,
+            },
           },
-        },
-      ]);
+        ]),
+        GEMINI_TIMEOUT_MS,
+        'Gemini image analysis',
+      );
 
       const response = result.response;
       const text = response.text();

@@ -2,7 +2,7 @@ import { APIGatewayProxyHandler, APIGatewayProxyEvent, APIGatewayProxyResult } f
 import { DynamoDBClient, QueryCommand } from '@aws-sdk/client-dynamodb';
 import { unmarshall } from '@aws-sdk/util-dynamodb';
 import { logger } from '../../utils/logger';
-import { getConfig } from '../../utils/config';
+import { getBasicConfig } from '../../utils/config';
 
 const dynamoDBClient = new DynamoDBClient({});
 
@@ -100,7 +100,7 @@ export const handler: APIGatewayProxyHandler = async (
     });
 
     // Query campaigns from DynamoDB
-    const config = await getConfig();
+    const config = getBasicConfig();
     const campaigns = await queryCampaigns(
       config.tableName,
       sellerId,
@@ -157,19 +157,20 @@ export const handler: APIGatewayProxyHandler = async (
  * The seller ID should be in the JWT token claims, set by the authorizer
  */
 function extractSellerIdFromEvent(event: APIGatewayProxyEvent): string | null {
-  // Check authorizer context first
   const authorizerContext = event.requestContext.authorizer;
-  
+
   if (authorizerContext) {
-    // For JWT authorizer, claims are in authorizer.claims
+    // HTTP API v2 JWT authorizer: claims are in authorizer.jwt.claims
+    const jwtClaims = (authorizerContext as any)?.jwt?.claims;
+    if (jwtClaims?.sub) {
+      return jwtClaims.sub;
+    }
+
+    // REST API v1 authorizer: claims are in authorizer.claims
     const claims = authorizerContext.claims || authorizerContext;
-    
-    // Try to get seller ID from custom attribute
     if (claims['custom:userId']) {
       return claims['custom:userId'];
     }
-    
-    // Fallback to sub (Cognito user ID)
     if (claims.sub) {
       return claims.sub;
     }

@@ -142,7 +142,9 @@ async function routeCustomerMessageToSeller(
     deliveryStatus: 'delivered',
     createdAt: createdAt || now.toISOString(),
     expiresAt: ttlEpoch,
-  });
+    counterpartUserId: userId,
+    customerUserId: userId,
+  } as any);
 
   logger.info('Message stored in seller THREAD', {
     sellerId,

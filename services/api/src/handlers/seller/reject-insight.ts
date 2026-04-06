@@ -2,7 +2,7 @@ import { APIGatewayProxyHandler, APIGatewayProxyEvent, APIGatewayProxyResult } f
 import { DynamoDBClient, UpdateItemCommand, GetItemCommand } from '@aws-sdk/client-dynamodb';
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
 import { logger } from '../../utils/logger';
-import { getConfig } from '../../utils/config';
+import { getBasicConfig } from '../../utils/config';
 
 const dynamoDBClient = new DynamoDBClient({});
 
@@ -61,7 +61,7 @@ export const handler: APIGatewayProxyHandler = async (
       };
     }
 
-    const config = await getConfig();
+    const config = getBasicConfig();
 
     // Verify insight exists and belongs to seller
     const existingInsight = await getInsight(config.tableName, sellerId, insightId);

@@ -149,7 +149,7 @@ export class EventsStack extends cdk.Stack {
       architecture: Architecture.ARM_64,
       handler: 'handlers/whatsapp/worker.handler',
       code: Code.fromAsset('../../services/api/dist'),
-      timeout: Duration.seconds(120),
+      timeout: Duration.seconds(180),
       memorySize: 1024,
       environment: {
         ENVIRONMENT: config.environment,
@@ -204,6 +204,18 @@ export class EventsStack extends cdk.Stack {
           `arn:aws:ssm:${config.region}:${config.account}:parameter/${config.environment}/gemini/*`,
           `arn:aws:ssm:${config.region}:${config.account}:parameter/${config.environment}/grok/*`,
         ],
+      })
+    );
+
+    // Grant CloudWatch metrics permissions for voice pipeline telemetry
+    this.whatsappWorkerFunction.addToRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['cloudwatch:PutMetricData'],
+        resources: ['*'],
+        conditions: {
+          StringLike: { 'cloudwatch:namespace': 'VyaparGyan/*' },
+        },
       })
     );
 

@@ -12,7 +12,7 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { logger } from '../../utils/logger';
 import { extractUserId, UnauthorizedError } from '../../core/auth';
-import { getConfig } from '../../utils/config';
+import { getBasicConfig } from '../../utils/config';
 import type { MessageThread } from '../../adapters/dynamodb-adapter';
 
 const ddbClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
@@ -44,7 +44,7 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
 
     logger.info('Seller inbox request', { requestId, sellerId, limit });
 
-    const config = await getConfig();
+    const config = getBasicConfig();
 
     // Query all messages in THREAD#{sellerId} — most recent first
     const res = await ddbClient.send(

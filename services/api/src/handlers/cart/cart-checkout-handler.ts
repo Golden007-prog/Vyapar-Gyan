@@ -13,7 +13,7 @@ import { EventBridgeClient, PutEventsCommand } from '@aws-sdk/client-eventbridge
 import { logger } from '../../utils/logger';
 import { extractUserId, UnauthorizedError } from '../../core/auth';
 import { validateCheckout, clearCart } from '../../services/cart-service';
-import { getConfig } from '../../utils/config';
+import { getBasicConfig } from '../../utils/config';
 import { cancelTimer } from '../../services/cart-abandonment-scheduler';
 
 const eventBridgeClient = new EventBridgeClient({});
@@ -32,7 +32,7 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
 
     // Generate order ID and publish CheckoutInitiated event
     const orderId = randomUUID();
-    const config = await getConfig();
+    const config = getBasicConfig();
 
     await eventBridgeClient.send(
       new PutEventsCommand({

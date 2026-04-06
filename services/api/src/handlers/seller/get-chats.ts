@@ -2,7 +2,7 @@ import { APIGatewayProxyHandler, APIGatewayProxyEvent, APIGatewayProxyResult } f
 import { DynamoDBClient, QueryCommand, ScanCommand } from '@aws-sdk/client-dynamodb';
 import { unmarshall } from '@aws-sdk/util-dynamodb';
 import { logger } from '../../utils/logger';
-import { getConfig } from '../../utils/config';
+import { getBasicConfig } from '../../utils/config';
 
 const dynamoDBClient = new DynamoDBClient({});
 
@@ -99,7 +99,7 @@ export const handler: APIGatewayProxyHandler = async (
     });
 
     // Query chat sessions from DynamoDB
-    const config = await getConfig();
+    const config = getBasicConfig();
     const sessions = await queryChatSessions(
       config.tableName,
       sellerId,
@@ -205,7 +205,7 @@ export const getMessagesHandler: APIGatewayProxyHandler = async (
     });
 
     // Query messages from DynamoDB
-    const config = await getConfig();
+    const config = getBasicConfig();
     const messages = await queryMessages(config.tableName, sessionId);
 
     logger.info('Messages retrieved successfully', {

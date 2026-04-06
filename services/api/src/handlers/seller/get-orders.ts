@@ -2,7 +2,7 @@ import { APIGatewayProxyHandler, APIGatewayProxyEvent, APIGatewayProxyResult } f
 import { DynamoDBClient, QueryCommand } from '@aws-sdk/client-dynamodb';
 import { unmarshall } from '@aws-sdk/util-dynamodb';
 import { logger } from '../../utils/logger';
-import { getConfig } from '../../utils/config';
+import { getBasicConfig } from '../../utils/config';
 
 const dynamoDBClient = new DynamoDBClient({});
 
@@ -96,7 +96,7 @@ export const handler: APIGatewayProxyHandler = async (
     });
 
     // Query orders from DynamoDB
-    const config = await getConfig();
+    const config = getBasicConfig();
     const orders = await queryOrders(
       config.tableName,
       sellerId,

@@ -12,7 +12,7 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { logger } from '../../utils/logger';
 import { extractUserId, UnauthorizedError } from '../../core/auth';
-import { getConfig } from '../../utils/config';
+import { getBasicConfig } from '../../utils/config';
 
 const ddbClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 
@@ -29,7 +29,7 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
 
     logger.info('Mark conversation read', { requestId, sellerId, customerUserId });
 
-    const config = await getConfig();
+    const config = getBasicConfig();
 
     // Query all messages in THREAD#{sellerId} that are inbound from this customer
     const res = await ddbClient.send(

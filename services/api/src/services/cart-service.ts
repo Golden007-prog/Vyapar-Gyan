@@ -18,7 +18,7 @@
 
 import { EventBridgeClient, PutEventsCommand } from '@aws-sdk/client-eventbridge';
 import { logger } from '../utils/logger';
-import { getConfig } from '../utils/config';
+import { getBasicConfig } from '../utils/config';
 import {
   getCart as dbGetCart,
   putCart,
@@ -62,7 +62,7 @@ function recalculate(items: UnifiedCartItem[]): { subtotal: number; itemCount: n
 /** Publish a CartUpdated event to EventBridge. */
 async function publishCartUpdated(cart: Cart): Promise<void> {
   try {
-    const config = await getConfig();
+    const config = getBasicConfig();
     await eventBridgeClient.send(
       new PutEventsCommand({
         Entries: [

@@ -12,7 +12,7 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
 import { logger } from '../../utils/logger';
 import { extractUserId, UnauthorizedError } from '../../core/auth';
-import { getConfig } from '../../utils/config';
+import { getBasicConfig } from '../../utils/config';
 
 const docClient = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
   marshallOptions: { removeUndefinedValues: true },
@@ -27,7 +27,7 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
   try {
     const userId = extractUserId(event);
 
-    const config = await getConfig();
+    const config = getBasicConfig();
     const now = new Date();
     const expiresAt = Math.floor(now.getTime() / 1000) + TYPING_TTL_SECONDS;
 

@@ -766,6 +766,12 @@ export class APIStack extends cdk.Stack {
       methods: [HttpMethod.GET],
       integration: getInsightsIntegration,
     });
+    this.httpApi.addRoutes({
+      path: '/api/v1/seller/insights',
+      methods: [HttpMethod.GET],
+      integration: getInsightsIntegration,
+      authorizer: this.jwtAuthorizer,
+    });
 
     this.httpApi.addRoutes({
       path: '/api/insights/{insightId}/approve',
@@ -860,11 +866,23 @@ export class APIStack extends cdk.Stack {
       methods: [HttpMethod.GET],
       integration: getProductsIntegration,
     });
+    this.httpApi.addRoutes({
+      path: '/api/v1/seller/products',
+      methods: [HttpMethod.GET],
+      integration: getProductsIntegration,
+      authorizer: this.jwtAuthorizer,
+    });
 
     this.httpApi.addRoutes({
       path: '/api/seller/campaigns',
       methods: [HttpMethod.GET],
       integration: getCampaignsIntegration,
+    });
+    this.httpApi.addRoutes({
+      path: '/api/v1/seller/campaigns',
+      methods: [HttpMethod.GET],
+      integration: getCampaignsIntegration,
+      authorizer: this.jwtAuthorizer,
     });
 
     this.httpApi.addRoutes({

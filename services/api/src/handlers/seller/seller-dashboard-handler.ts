@@ -15,7 +15,7 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { logger } from '../../utils/logger';
 import { extractUserId, UnauthorizedError } from '../../core/auth';
-import { getConfig } from '../../utils/config';
+import { getBasicConfig } from '../../utils/config';
 
 const ddbClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 
@@ -26,7 +26,7 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     const sellerId = extractUserId(event);
     logger.info('Fetching seller dashboard', { sellerId, requestId });
 
-    const config = await getConfig();
+    const config = getBasicConfig();
     const tableName = config.tableName;
 
     // Run queries in parallel for performance

@@ -13,7 +13,7 @@ import { randomUUID } from 'crypto';
 import { EventBridgeClient, PutEventsCommand } from '@aws-sdk/client-eventbridge';
 import { logger } from '../../utils/logger';
 import { extractUserId, UnauthorizedError } from '../../core/auth';
-import { getConfig } from '../../utils/config';
+import { getBasicConfig } from '../../utils/config';
 import { putMessage, getSession, type MessageThread } from '../../adapters/dynamodb-adapter';
 import { startHandoff, extendHandoff, endHandoff, shouldBypassAI } from '../../services/session-service';
 
@@ -120,7 +120,7 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     }
 
     // Publish SellerReplySent event for notification router (backward compat)
-    const config = await getConfig();
+    const config = getBasicConfig();
     await ebClient.send(
       new PutEventsCommand({
         Entries: [

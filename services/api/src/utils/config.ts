@@ -82,6 +82,38 @@ export interface VoicePipelineConfig {
 }
 
 /**
+ * Basic config that only reads environment variables — no Secrets Manager calls.
+ * Use this in handlers that only need tableName, eventBusName, etc.
+ * Avoids the "getConfig loads ALL secrets" problem that crashes handlers
+ * without full Secrets Manager permissions.
+ */
+export interface BasicConfig {
+  environment: string;
+  region: string;
+  tableName: string;
+  eventBusName: string;
+  userPoolId: string;
+  userPoolClientId: string;
+  productImagesBucket: string;
+  documentsBucket: string;
+  logLevel: string;
+}
+
+export function getBasicConfig(): BasicConfig {
+  return {
+    environment: process.env.ENVIRONMENT || 'dev',
+    region: process.env.AWS_REGION || 'ap-south-1',
+    tableName: process.env.TABLE_NAME!,
+    eventBusName: process.env.EVENT_BUS_NAME || '',
+    userPoolId: process.env.USER_POOL_ID || '',
+    userPoolClientId: process.env.USER_POOL_CLIENT_ID || '',
+    productImagesBucket: process.env.PRODUCT_IMAGES_BUCKET || '',
+    documentsBucket: process.env.DOCUMENTS_BUCKET || '',
+    logLevel: process.env.LOG_LEVEL || 'info',
+  };
+}
+
+/**
  * Cached configuration to avoid repeated AWS API calls
  */
 let cachedConfig: Config | null = null;

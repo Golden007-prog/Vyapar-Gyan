@@ -2,7 +2,7 @@ import { APIGatewayProxyHandler, APIGatewayProxyEvent, APIGatewayProxyResult } f
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { logger } from '../../utils/logger';
-import { getConfig } from '../../utils/config';
+import { getBasicConfig } from '../../utils/config';
 
 /**
  * Request body schema
@@ -138,7 +138,7 @@ export const handler: APIGatewayProxyHandler = async (
     });
 
     // Get configuration
-    const config = await getConfig();
+    const config = getBasicConfig();
 
     // Create S3 client
     const s3Client = new S3Client({});
