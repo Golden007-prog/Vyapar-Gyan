@@ -229,6 +229,7 @@ cd tools/mcp/commerce-admin && pnpm install && pnpm build
 - Order lifecycle management with commission-based payment splitting (Razorpay Route)
 - Admin dashboard: 10 pages including customers, disputes, financials, campaigns, catalog manager with multilingual aliases and merge operations
 - AI assistance for catalog extraction, voice transcription, multilingual support, and product intent extraction
+- Omnichannel pipeline reliability: 7 interconnected bug fixes ensuring end-to-end message delivery between web chat, WhatsApp, and seller Inbox — verified with property-based testing (bug condition methodology)
 
 ## Development Workflow
 

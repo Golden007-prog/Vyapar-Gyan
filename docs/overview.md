@@ -225,13 +225,32 @@ Seven features that extend VyaparGyan into a fully omnichannel, AI-driven commer
 - Cart nudge message content, nudge channel selection
 - Financial query intent mapping, financial response language formatting
 
+### Phase 6 — Omnichannel Pipeline Bugfix (7 Interconnected Fixes)
+
+Systematic fix of 7 interconnected bugs that broke the end-to-end omnichannel message flow between customers (WhatsApp and web chat) and sellers (web Inbox). Used property-based testing with bug condition methodology to surface, verify, and preserve behavior.
+
+**Bug Fixes:**
+1. Frontend demo mode disabled in production (`NEXT_PUBLIC_DEMO_MODE=false`) — web chat messages now always POST to backend API
+2. `chat-send-handler.ts` now publishes both `CustomerMessageSent` and `message.created` EventBridge events — fan-out Lambda receives web-originated messages
+3. WhatsApp greeting detection added to `customer-discovery.ts` — "Hello", "Hi", "Namaste" etc. show Store Discovery menu instead of triggering store search
+4. DynamoDB scan fallback for store name search — when GSI city search and OpenSearch return empty, scans seller profiles by `storeName`/`businessName`
+5. `EVENT_BUS_NAME` validation in WhatsApp worker and chat-send-handler — structured error logging when empty, publish skipped gracefully
+6. `getUserByPhone()` fixed with `begins_with(GSI1SK, 'USER#')` query filter and `Limit: 1` — SESSION records never returned
+7. `WEBSOCKET_API_ENDPOINT` sentinel value (`PENDING_WEBSOCKET_STACK`) in events-stack CDK + error-level logging in fan-out Lambda
+
+**Property-Based Tests (15 tests, fast-check):**
+- 6 bug condition exploration tests (confirm bugs exist on unfixed code, verify fixes work)
+- 9 preservation property tests (confirm no regressions after fixes)
+  - Direct intent bypass, numeric reply routing, pincode classification
+  - State-based handler routing, message storage independence, seller routing
+
 ## Test Coverage
 
 | Area | Suites | Tests |
 |------|--------|-------|
-| Backend (services/api) | 51 | 674 |
+| Backend (services/api) | 65 | 809 |
 | Frontend (apps/web) | 11 | 72 |
-| **Total** | **62** | **746** |
+| **Total** | **76** | **881** |
 
 ## Deployment
 

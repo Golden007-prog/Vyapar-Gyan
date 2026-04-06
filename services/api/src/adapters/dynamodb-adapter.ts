@@ -286,21 +286,15 @@ export async function getUserByPhone(phoneNumber: string): Promise<UserProfile |
     new QueryCommand({
       TableName: table,
       IndexName: 'GSI1',
-      KeyConditionExpression: 'GSI1PK = :pk',
-      ExpressionAttributeValues: { ':pk': `PHONE#${phoneNumber}` },
-      Limit: 10,
+      KeyConditionExpression: 'GSI1PK = :pk AND begins_with(GSI1SK, :userPrefix)',
+      ExpressionAttributeValues: {
+        ':pk': `PHONE#${phoneNumber}`,
+        ':userPrefix': 'USER#',
+      },
+      Limit: 1,
     }),
   );
-  // Prioritize USER PROFILE records over SESSION records
-  // USER profiles have PK starting with "USER#" and SK = "PROFILE"
-  const items = res.Items ?? [];
-  const profileItem = items.find(
-    (item: any) => typeof item.PK === 'string' && item.PK.startsWith('USER#') && item.SK === 'PROFILE',
-  );
-  if (profileItem) return profileItem as UserProfile;
-  // Fallback: return first item with a role field (legacy compat)
-  const withRole = items.find((item: any) => item.role);
-  return (withRole as UserProfile) ?? null;
+  return (res.Items?.[0] as UserProfile) ?? null;
 }
 
 export async function updateUserProfile(

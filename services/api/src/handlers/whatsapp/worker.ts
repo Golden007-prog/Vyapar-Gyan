@@ -528,42 +528,50 @@ async function handleCustomerMessage(context: {
     const eventBusName = process.env.EVENT_BUS_NAME ?? '';
     const messageContent = message.text?.body || '';
 
-    // Publish to vyapargyan.chat (CustomerMessageSent) for notification router
-    await ebClient.send(
-      new PutEventsCommand({
-        Entries: [
-          {
-            Source: 'vyapargyan.chat',
-            DetailType: 'CustomerMessageSent',
-            Detail: JSON.stringify({
-              userId,
-              messageId: message.id,
-              channel: 'whatsapp',
-              sellerId: recipientSellerId,
-              content: messageContent,
-              messageType: message.type || 'text',
-              createdAt: new Date().toISOString(),
-            }),
-            EventBusName: eventBusName,
-          },
-          // Also publish message.created for fan-out Lambda (WebSocket push)
-          {
-            Source: 'vyapargyan.messaging',
-            DetailType: 'message.created',
-            Detail: JSON.stringify({
-              messageId: message.id,
-              threadId: `THREAD#${userId}`,
-              senderUserId: userId,
-              senderType: 'customer',
-              recipientUserId: recipientSellerId,
-              channel: 'whatsapp',
-              content: messageContent,
-            }),
-            EventBusName: eventBusName,
-          },
-        ],
-      }),
-    );
+    if (!eventBusName) {
+      logger.error('EVENT_BUS_NAME is empty — skipping EventBridge publish', undefined, {
+        messageId: message.id,
+        userId,
+        recipientSellerId,
+      });
+    } else {
+      // Publish to vyapargyan.chat (CustomerMessageSent) for notification router
+      await ebClient.send(
+        new PutEventsCommand({
+          Entries: [
+            {
+              Source: 'vyapargyan.chat',
+              DetailType: 'CustomerMessageSent',
+              Detail: JSON.stringify({
+                userId,
+                messageId: message.id,
+                channel: 'whatsapp',
+                sellerId: recipientSellerId,
+                content: messageContent,
+                messageType: message.type || 'text',
+                createdAt: new Date().toISOString(),
+              }),
+              EventBusName: eventBusName,
+            },
+            // Also publish message.created for fan-out Lambda (WebSocket push)
+            {
+              Source: 'vyapargyan.messaging',
+              DetailType: 'message.created',
+              Detail: JSON.stringify({
+                messageId: message.id,
+                threadId: `THREAD#${userId}`,
+                senderUserId: userId,
+                senderType: 'customer',
+                recipientUserId: recipientSellerId,
+                channel: 'whatsapp',
+                content: messageContent,
+              }),
+              EventBusName: eventBusName,
+            },
+          ],
+        }),
+      );
+    }
   } catch (ebErr) {
     // Fire-and-forget — don't fail message processing if fan-out publish fails
     logger.error('Failed to publish message events', ebErr, {

@@ -120,8 +120,8 @@ async function pushToWebSocket(
   tableName: string,
 ): Promise<void> {
   const wsEndpoint = process.env.WEBSOCKET_API_ENDPOINT;
-  if (!wsEndpoint) {
-    logger.warn('WEBSOCKET_API_ENDPOINT not set — skipping WebSocket push');
+  if (!wsEndpoint || wsEndpoint === 'PENDING_WEBSOCKET_STACK') {
+    logger.error('WEBSOCKET_API_ENDPOINT not configured — cannot push to WebSocket', undefined, { recipientUserId, wsEndpoint });
     return;
   }
 

@@ -520,7 +520,7 @@ export class EventsStack extends cdk.Stack {
         ENVIRONMENT: config.environment,
         TABLE_NAME: table.tableName,
         EVENT_BUS_NAME: this.eventBus.eventBusName,
-        WEBSOCKET_API_ENDPOINT: props.webSocketEndpoint || '',
+        WEBSOCKET_API_ENDPOINT: props.webSocketEndpoint || 'PENDING_WEBSOCKET_STACK',
         LOG_LEVEL: 'info',
         TWILIO_ACCOUNT_SID: fanoutTwilioAccountSid,
         TWILIO_AUTH_TOKEN: fanoutTwilioAuthToken,

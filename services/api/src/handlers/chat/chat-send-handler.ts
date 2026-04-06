@@ -16,7 +16,6 @@ import { SendMessageSchema } from '../../shared/schemas';
 import { putMessage } from '../../adapters/dynamodb-adapter';
 
 const ebClient = new EventBridgeClient({});
-const EVENT_BUS_NAME = process.env.EVENT_BUS_NAME || 'default';
 
 export async function handler(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResultV2> {
   const requestId = event.requestContext.requestId;
@@ -52,27 +51,50 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
       expiresAt: Math.floor(Date.now() / 1000) + MESSAGE_TTL_SECONDS,
     });
 
-    // Publish CustomerMessageSent event for cross-channel routing
-    await ebClient.send(
-      new PutEventsCommand({
-        Entries: [
-          {
-            Source: 'vyapargyan.chat',
-            DetailType: 'CustomerMessageSent',
-            EventBusName: EVENT_BUS_NAME,
-            Detail: JSON.stringify({
-              userId,
-              messageId,
-              channel: 'web',
-              sellerId: sellerId ?? null,
-              content,
-              messageType,
-              createdAt,
-            }),
-          },
-        ],
-      }),
-    );
+    // Publish CustomerMessageSent + message.created events for cross-channel routing
+    const EVENT_BUS_NAME = process.env.EVENT_BUS_NAME ?? '';
+    if (!EVENT_BUS_NAME) {
+      logger.error('EVENT_BUS_NAME is empty — skipping EventBridge publish', undefined, {
+        messageId,
+        userId,
+        sellerId: sellerId ?? null,
+      });
+    } else {
+      await ebClient.send(
+        new PutEventsCommand({
+          Entries: [
+            {
+              Source: 'vyapargyan.chat',
+              DetailType: 'CustomerMessageSent',
+              EventBusName: EVENT_BUS_NAME,
+              Detail: JSON.stringify({
+                userId,
+                messageId,
+                channel: 'web',
+                sellerId: sellerId ?? null,
+                content,
+                messageType,
+                createdAt,
+              }),
+            },
+            {
+              Source: 'vyapargyan.messaging',
+              DetailType: 'message.created',
+              EventBusName: EVENT_BUS_NAME,
+              Detail: JSON.stringify({
+                messageId,
+                threadId: `THREAD#${userId}`,
+                senderUserId: userId,
+                senderType: 'customer',
+                recipientUserId: sellerId ?? 'seller-123',
+                channel: 'web',
+                content,
+              }),
+            },
+          ],
+        }),
+      );
+    }
 
     logger.info('Chat message sent', { userId, messageId, requestId });
 

@@ -11,6 +11,7 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import {
   DynamoDBDocumentClient,
   QueryCommand,
+  ScanCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { logger } from '../../utils/logger';
 import { whatsappSender } from '../../services/whatsapp-sender';
@@ -92,6 +93,16 @@ export async function transitionToBrowsing(
 }
 
 // ---------------------------------------------------------------------------
+// Greeting detection pattern (Bug 1.3 fix)
+// ---------------------------------------------------------------------------
+
+/**
+ * Regex pattern for common greetings. Case-insensitive, anchored.
+ * Exported for test verification.
+ */
+export const GREETING_PATTERN = /^(hi|hello|hey|namaste|namaskar|hola|good\s*(morning|afternoon|evening)|howdy|sup|yo)$/i;
+
+// ---------------------------------------------------------------------------
 // Main handler
 // ---------------------------------------------------------------------------
 
@@ -108,6 +119,12 @@ export async function handleCustomerDiscovery(ctx: CustomerDiscoveryContext): Pr
 
   // Menu / home command → show home menu
   if (!text || lower === 'menu' || lower === 'home' || lower === 'discover' || lower === 'stores') {
+    await sendHomeMenu(phoneNumber, sessionId);
+    return;
+  }
+
+  // Greeting detection → show home menu (Bug 1.3 fix)
+  if (GREETING_PATTERN.test(lower)) {
     await sendHomeMenu(phoneNumber, sessionId);
     return;
   }
@@ -178,6 +195,13 @@ export async function handleCustomerDiscovery(ctx: CustomerDiscoveryContext): Pr
     return;
   }
 
+  // DynamoDB scan fallback for store name search (Bug 1.4 fix)
+  const scanResults = await searchByStoreName(text);
+  if (scanResults.length > 0) {
+    await sendStoreResults(phoneNumber, sessionId, scanResults, `stores matching "${text}"`);
+    return;
+  }
+
   // No results found (Requirement 6.8)
   await whatsappSender.sendMessage(
     phoneNumber,
@@ -192,8 +216,9 @@ export async function handleCustomerDiscovery(ctx: CustomerDiscoveryContext): Pr
 
 /**
  * Send the customer home menu (Requirement 6.1).
+ * Exported for test verification (Bug 1.3).
  */
-async function sendHomeMenu(phoneNumber: string, sessionId: string): Promise<void> {
+export async function sendHomeMenu(phoneNumber: string, sessionId: string): Promise<void> {
   await whatsappSender.sendMessage(
     phoneNumber,
     {
@@ -430,6 +455,45 @@ async function searchGlobal(query: string): Promise<StoreResult[]> {
     }));
   } catch (err) {
     logger.error('Global search failed', { query, error: err instanceof Error ? err.message : String(err) });
+    return [];
+  }
+}
+
+/**
+ * Fallback: scan DynamoDB for sellers matching storeName or businessName (Bug 1.4 fix).
+ * Uses `contains` filter on lowercased query for case-insensitive matching.
+ * Limited to 20 results to prevent runaway reads.
+ */
+async function searchByStoreName(query: string): Promise<StoreResult[]> {
+  try {
+    const table = await tableName();
+    const lowerQuery = query.toLowerCase();
+    const res = await docClient.send(
+      new ScanCommand({
+        TableName: table,
+        FilterExpression:
+          'begins_with(PK, :userPrefix) AND SK = :profile AND ' +
+          '(contains(#sn, :q) OR contains(#bn, :q))',
+        ExpressionAttributeNames: {
+          '#sn': 'storeName',
+          '#bn': 'businessName',
+        },
+        ExpressionAttributeValues: {
+          ':userPrefix': 'USER#',
+          ':profile': 'PROFILE',
+          ':q': lowerQuery,
+        },
+        Limit: 20,
+      }),
+    );
+    return (res.Items ?? []).map(item => ({
+      sellerId: (item.userId || item.PK?.toString().replace('USER#', '')) as string,
+      storeName: (item.storeName || item.businessName || 'Unknown Store') as string,
+      ...(item.city != null ? { city: item.city as string } : {}),
+      ...(item.pincode != null ? { pincode: item.pincode as string } : {}),
+    }));
+  } catch (err) {
+    logger.error('Store name scan failed', { query, error: err instanceof Error ? err.message : String(err) });
     return [];
   }
 }
