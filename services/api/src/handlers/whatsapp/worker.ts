@@ -248,18 +248,31 @@ async function processMessageChange(
 
     // Route based on resolved user role
     if (!userProfile) {
-      // Unregistered phone — route to onboarding, NOT customer discovery
-      logger.info('Unregistered phone, routing to onboarding', { phoneNumber });
-      const { resolveOrCreateOnboardingSession: resolveOnboarding, markOnboardingWelcomeSent: markWelcome } = await import('../../services/session-service.js');
-      const { onboardingHandler } = await import('./states/onboarding-handler.js');
-      const { session: onboardingSession } = await resolveOnboarding(phoneNumber);
-      await onboardingHandler({
-        phoneNumber,
-        welcomeSent: onboardingSession.welcomeSent,
-        sessionId: `onboarding-${phoneNumber}`,
-      });
-      if (!onboardingSession.welcomeSent) {
-        await markWelcome(phoneNumber);
+      // Check legacy CUSTOMER# pattern before routing to onboarding
+      // Some customers (e.g. Enigma) were seeded with CUSTOMER#+91... PK, not USER#
+      let isLegacyCustomer = false;
+      try {
+        const legacyCustomer = await customerRepository.getByPhoneNumber(phoneNumber);
+        isLegacyCustomer = !!legacyCustomer;
+      } catch { /* ignore */ }
+
+      if (isLegacyCustomer) {
+        logger.info('Legacy customer found, routing to customer flow', { phoneNumber });
+        await handleCustomerMessage({ message, phoneNumber, profileName, contact, requestId });
+      } else {
+        // Truly unregistered phone — route to onboarding
+        logger.info('Unregistered phone, routing to onboarding', { phoneNumber });
+        const { resolveOrCreateOnboardingSession: resolveOnboarding, markOnboardingWelcomeSent: markWelcome } = await import('../../services/session-service.js');
+        const { onboardingHandler } = await import('./states/onboarding-handler.js');
+        const { session: onboardingSession } = await resolveOnboarding(phoneNumber);
+        await onboardingHandler({
+          phoneNumber,
+          welcomeSent: onboardingSession.welcomeSent,
+          sessionId: `onboarding-${phoneNumber}`,
+        });
+        if (!onboardingSession.welcomeSent) {
+          await markWelcome(phoneNumber);
+        }
       }
     } else if (isSeller) {
       await handleSellerMessage({
