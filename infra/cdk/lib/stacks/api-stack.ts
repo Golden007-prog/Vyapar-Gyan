@@ -146,7 +146,7 @@ export class APIStack extends cdk.Stack {
           CorsHttpMethod.DELETE,
           CorsHttpMethod.OPTIONS,
         ],
-        allowHeaders: ['Content-Type', 'Authorization', 'X-Request-ID'],
+        allowHeaders: ['Content-Type', 'Authorization', 'X-Request-ID', 'X-User-Id', 'X-User-Role', 'X-Amz-Date', 'X-Api-Key', 'X-Amz-Security-Token'],
         maxAge: Duration.hours(1),
       },
       
