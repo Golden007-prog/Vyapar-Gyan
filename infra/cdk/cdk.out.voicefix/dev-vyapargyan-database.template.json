@@ -1,0 +1,364 @@
+{
+ "Description": "Database infrastructure for VyaparGyan dev environment",
+ "Resources": {
+  "MainTable74195DAB": {
+   "Type": "AWS::DynamoDB::Table",
+   "Properties": {
+    "AttributeDefinitions": [
+     {
+      "AttributeName": "PK",
+      "AttributeType": "S"
+     },
+     {
+      "AttributeName": "SK",
+      "AttributeType": "S"
+     },
+     {
+      "AttributeName": "GSI1PK",
+      "AttributeType": "S"
+     },
+     {
+      "AttributeName": "GSI1SK",
+      "AttributeType": "S"
+     },
+     {
+      "AttributeName": "GSI2PK",
+      "AttributeType": "S"
+     },
+     {
+      "AttributeName": "GSI2SK",
+      "AttributeType": "S"
+     },
+     {
+      "AttributeName": "GSI3PK",
+      "AttributeType": "S"
+     },
+     {
+      "AttributeName": "GSI3SK",
+      "AttributeType": "S"
+     },
+     {
+      "AttributeName": "phoneNumber",
+      "AttributeType": "S"
+     },
+     {
+      "AttributeName": "channelType",
+      "AttributeType": "S"
+     },
+     {
+      "AttributeName": "categoryId",
+      "AttributeType": "S"
+     },
+     {
+      "AttributeName": "createdAt",
+      "AttributeType": "S"
+     },
+     {
+      "AttributeName": "sellerId",
+      "AttributeType": "S"
+     },
+     {
+      "AttributeName": "stockAddedDate",
+      "AttributeType": "S"
+     },
+     {
+      "AttributeName": "customerId",
+      "AttributeType": "S"
+     }
+    ],
+    "BillingMode": "PAY_PER_REQUEST",
+    "DeletionProtectionEnabled": false,
+    "GlobalSecondaryIndexes": [
+     {
+      "IndexName": "GSI1",
+      "KeySchema": [
+       {
+        "AttributeName": "GSI1PK",
+        "KeyType": "HASH"
+       },
+       {
+        "AttributeName": "GSI1SK",
+        "KeyType": "RANGE"
+       }
+      ],
+      "Projection": {
+       "ProjectionType": "ALL"
+      }
+     },
+     {
+      "IndexName": "GSI2",
+      "KeySchema": [
+       {
+        "AttributeName": "GSI2PK",
+        "KeyType": "HASH"
+       },
+       {
+        "AttributeName": "GSI2SK",
+        "KeyType": "RANGE"
+       }
+      ],
+      "Projection": {
+       "ProjectionType": "ALL"
+      }
+     },
+     {
+      "IndexName": "GSI3",
+      "KeySchema": [
+       {
+        "AttributeName": "GSI3PK",
+        "KeyType": "HASH"
+       },
+       {
+        "AttributeName": "GSI3SK",
+        "KeyType": "RANGE"
+       }
+      ],
+      "Projection": {
+       "ProjectionType": "ALL"
+      }
+     },
+     {
+      "IndexName": "PhoneIndex",
+      "KeySchema": [
+       {
+        "AttributeName": "phoneNumber",
+        "KeyType": "HASH"
+       },
+       {
+        "AttributeName": "channelType",
+        "KeyType": "RANGE"
+       }
+      ],
+      "Projection": {
+       "ProjectionType": "ALL"
+      }
+     },
+     {
+      "IndexName": "CategoryIndex",
+      "KeySchema": [
+       {
+        "AttributeName": "categoryId",
+        "KeyType": "HASH"
+       },
+       {
+        "AttributeName": "createdAt",
+        "KeyType": "RANGE"
+       }
+      ],
+      "Projection": {
+       "ProjectionType": "ALL"
+      }
+     },
+     {
+      "IndexName": "SellerStockIndex",
+      "KeySchema": [
+       {
+        "AttributeName": "sellerId",
+        "KeyType": "HASH"
+       },
+       {
+        "AttributeName": "stockAddedDate",
+        "KeyType": "RANGE"
+       }
+      ],
+      "Projection": {
+       "ProjectionType": "ALL"
+      }
+     },
+     {
+      "IndexName": "SellerOrdersIndex",
+      "KeySchema": [
+       {
+        "AttributeName": "sellerId",
+        "KeyType": "HASH"
+       },
+       {
+        "AttributeName": "createdAt",
+        "KeyType": "RANGE"
+       }
+      ],
+      "Projection": {
+       "ProjectionType": "ALL"
+      }
+     },
+     {
+      "IndexName": "CustomerOrdersIndex",
+      "KeySchema": [
+       {
+        "AttributeName": "customerId",
+        "KeyType": "HASH"
+       },
+       {
+        "AttributeName": "createdAt",
+        "KeyType": "RANGE"
+       }
+      ],
+      "Projection": {
+       "ProjectionType": "ALL"
+      }
+     }
+    ],
+    "KeySchema": [
+     {
+      "AttributeName": "PK",
+      "KeyType": "HASH"
+     },
+     {
+      "AttributeName": "SK",
+      "KeyType": "RANGE"
+     }
+    ],
+    "PointInTimeRecoverySpecification": {
+     "PointInTimeRecoveryEnabled": false
+    },
+    "StreamSpecification": {
+     "StreamViewType": "NEW_AND_OLD_IMAGES"
+    },
+    "TableName": "dev-vyapargyan-main",
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Name",
+      "Value": "dev-vyapargyan-main-table"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     },
+     {
+      "Key": "Service",
+      "Value": "database"
+     }
+    ],
+    "TimeToLiveSpecification": {
+     "AttributeName": "expiresAt",
+     "Enabled": true
+    }
+   },
+   "UpdateReplacePolicy": "Delete",
+   "DeletionPolicy": "Delete",
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-database/MainTable/Resource"
+   }
+  },
+  "CDKMetadata": {
+   "Type": "AWS::CDK::Metadata",
+   "Properties": {
+    "Analytics": "v2:deflate64:H4sIAAAAAAAA/yXISwqAIBRA0bU011dJraAFBNU8np/APho9TSLae1Cje7gCRFVAkWEirvTCVyvh7gOqhWGiUV8ON68l3APK1bBmch8e1hny8VDfamPYY3iY89rATPkpahBQZjNZy4/ogt0MdH9fPs0RfHEAAAA="
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-database/CDKMetadata/Default"
+   }
+  }
+ },
+ "Outputs": {
+  "TableName": {
+   "Description": "DynamoDB table name",
+   "Value": {
+    "Ref": "MainTable74195DAB"
+   },
+   "Export": {
+    "Name": "dev-vyapargyan-table-name"
+   }
+  },
+  "TableArn": {
+   "Description": "DynamoDB table ARN",
+   "Value": {
+    "Fn::GetAtt": [
+     "MainTable74195DAB",
+     "Arn"
+    ]
+   },
+   "Export": {
+    "Name": "dev-vyapargyan-table-arn"
+   }
+  },
+  "TableStreamArn": {
+   "Description": "DynamoDB table stream ARN",
+   "Value": {
+    "Fn::GetAtt": [
+     "MainTable74195DAB",
+     "StreamArn"
+    ]
+   },
+   "Export": {
+    "Name": "dev-vyapargyan-table-stream-arn"
+   }
+  },
+  "ExportsOutputFnGetAttMainTable74195DABArnE0EC388B": {
+   "Value": {
+    "Fn::GetAtt": [
+     "MainTable74195DAB",
+     "Arn"
+    ]
+   },
+   "Export": {
+    "Name": "dev-vyapargyan-database:ExportsOutputFnGetAttMainTable74195DABArnE0EC388B"
+   }
+  },
+  "ExportsOutputRefMainTable74195DAB4503BD7E": {
+   "Value": {
+    "Ref": "MainTable74195DAB"
+   },
+   "Export": {
+    "Name": "dev-vyapargyan-database:ExportsOutputRefMainTable74195DAB4503BD7E"
+   }
+  },
+  "ExportsOutputFnGetAttMainTable74195DABStreamArn036B5B89": {
+   "Value": {
+    "Fn::GetAtt": [
+     "MainTable74195DAB",
+     "StreamArn"
+    ]
+   },
+   "Export": {
+    "Name": "dev-vyapargyan-database:ExportsOutputFnGetAttMainTable74195DABStreamArn036B5B89"
+   }
+  }
+ },
+ "Parameters": {
+  "BootstrapVersion": {
+   "Type": "AWS::SSM::Parameter::Value<String>",
+   "Default": "/cdk-bootstrap/hnb659fds/version",
+   "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]"
+  }
+ },
+ "Rules": {
+  "CheckBootstrapVersion": {
+   "Assertions": [
+    {
+     "Assert": {
+      "Fn::Not": [
+       {
+        "Fn::Contains": [
+         [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5"
+         ],
+         {
+          "Ref": "BootstrapVersion"
+         }
+        ]
+       }
+      ]
+     },
+     "AssertDescription": "CDK bootstrap stack version 6 required. Please run 'cdk bootstrap' with a recent version of the CDK CLI."
+    }
+   ]
+  }
+ }
+}

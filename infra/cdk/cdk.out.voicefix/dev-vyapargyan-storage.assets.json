@@ -1,0 +1,51 @@
+{
+  "version": "50.0.0",
+  "files": {
+    "faa95a81ae7d7373f3e1f242268f904eb748d8d0fdd306e8a6fe515a1905a7d6": {
+      "displayName": "dev-vyapargyan-storage/Custom::S3AutoDeleteObjectsCustomResourceProvider Code",
+      "source": {
+        "path": "asset.faa95a81ae7d7373f3e1f242268f904eb748d8d0fdd306e8a6fe515a1905a7d6",
+        "packaging": "zip"
+      },
+      "destinations": {
+        "856888988795-ap-south-1-f1bef047": {
+          "bucketName": "cdk-hnb659fds-assets-856888988795-ap-south-1",
+          "objectKey": "faa95a81ae7d7373f3e1f242268f904eb748d8d0fdd306e8a6fe515a1905a7d6.zip",
+          "region": "ap-south-1",
+          "assumeRoleArn": "arn:${AWS::Partition}:iam::856888988795:role/cdk-hnb659fds-file-publishing-role-856888988795-ap-south-1"
+        }
+      }
+    },
+    "0c2c1826d9aa7a48f002caa7b4341bb3cb469ecd4b357bfa3733533e3b60b555": {
+      "displayName": "InventoryUploadFunction/Code",
+      "source": {
+        "path": "asset.0c2c1826d9aa7a48f002caa7b4341bb3cb469ecd4b357bfa3733533e3b60b555",
+        "packaging": "zip"
+      },
+      "destinations": {
+        "856888988795-ap-south-1-740dc318": {
+          "bucketName": "cdk-hnb659fds-assets-856888988795-ap-south-1",
+          "objectKey": "0c2c1826d9aa7a48f002caa7b4341bb3cb469ecd4b357bfa3733533e3b60b555.zip",
+          "region": "ap-south-1",
+          "assumeRoleArn": "arn:${AWS::Partition}:iam::856888988795:role/cdk-hnb659fds-file-publishing-role-856888988795-ap-south-1"
+        }
+      }
+    },
+    "24641da58f4f79f969bdd3308d04bf10dd5df62ff553c095f955661d21f060e5": {
+      "displayName": "dev-vyapargyan-storage Template",
+      "source": {
+        "path": "dev-vyapargyan-storage.template.json",
+        "packaging": "file"
+      },
+      "destinations": {
+        "856888988795-ap-south-1-4907ca97": {
+          "bucketName": "cdk-hnb659fds-assets-856888988795-ap-south-1",
+          "objectKey": "24641da58f4f79f969bdd3308d04bf10dd5df62ff553c095f955661d21f060e5.json",
+          "region": "ap-south-1",
+          "assumeRoleArn": "arn:${AWS::Partition}:iam::856888988795:role/cdk-hnb659fds-file-publishing-role-856888988795-ap-south-1"
+        }
+      }
+    }
+  },
+  "dockerImages": {}
+}

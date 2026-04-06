@@ -1,0 +1,5683 @@
+{
+ "Description": "Event processing infrastructure for VyaparGyan dev environment",
+ "Resources": {
+  "EventBus7B8748AA": {
+   "Type": "AWS::Events::EventBus",
+   "Properties": {
+    "Name": "dev-vyapargyan-events",
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Name",
+      "Value": "dev-vyapargyan-event-bus"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     },
+     {
+      "Key": "Service",
+      "Value": "events"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/EventBus/Resource"
+   }
+  },
+  "WhatsAppMessagesDLQFF5B4E5B": {
+   "Type": "AWS::SQS::Queue",
+   "Properties": {
+    "MessageRetentionPeriod": 1209600,
+    "QueueName": "dev-vyapargyan-whatsapp-messages-dlq",
+    "SqsManagedSseEnabled": false,
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     }
+    ]
+   },
+   "UpdateReplacePolicy": "Delete",
+   "DeletionPolicy": "Delete",
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/WhatsAppMessagesDLQ/Resource"
+   }
+  },
+  "WhatsAppMessagesQueue9E6CF061": {
+   "Type": "AWS::SQS::Queue",
+   "Properties": {
+    "MessageRetentionPeriod": 345600,
+    "QueueName": "dev-vyapargyan-whatsapp-messages",
+    "RedrivePolicy": {
+     "deadLetterTargetArn": {
+      "Fn::GetAtt": [
+       "WhatsAppMessagesDLQFF5B4E5B",
+       "Arn"
+      ]
+     },
+     "maxReceiveCount": 3
+    },
+    "SqsManagedSseEnabled": false,
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Name",
+      "Value": "dev-vyapargyan-whatsapp-queue"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     },
+     {
+      "Key": "Service",
+      "Value": "events"
+     }
+    ],
+    "VisibilityTimeout": 360
+   },
+   "UpdateReplacePolicy": "Delete",
+   "DeletionPolicy": "Delete",
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/WhatsAppMessagesQueue/Resource"
+   }
+  },
+  "WhatsAppMessagesQueuePolicy3ADCFC60": {
+   "Type": "AWS::SQS::QueuePolicy",
+   "Properties": {
+    "PolicyDocument": {
+     "Statement": [
+      {
+       "Action": [
+        "sqs:GetQueueAttributes",
+        "sqs:GetQueueUrl",
+        "sqs:SendMessage"
+       ],
+       "Condition": {
+        "ArnEquals": {
+         "aws:SourceArn": {
+          "Fn::GetAtt": [
+           "WhatsAppWebhookRuleC6145066",
+           "Arn"
+          ]
+         }
+        }
+       },
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "events.amazonaws.com"
+       },
+       "Resource": {
+        "Fn::GetAtt": [
+         "WhatsAppMessagesQueue9E6CF061",
+         "Arn"
+        ]
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "Queues": [
+     {
+      "Ref": "WhatsAppMessagesQueue9E6CF061"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/WhatsAppMessagesQueue/Policy/Resource"
+   }
+  },
+  "WhatsAppWebhookRuleC6145066": {
+   "Type": "AWS::Events::Rule",
+   "Properties": {
+    "Description": "Route incoming WhatsApp webhooks to SQS for processing",
+    "EventBusName": {
+     "Ref": "EventBus7B8748AA"
+    },
+    "EventPattern": {
+     "source": [
+      "vyapargyan.whatsapp"
+     ],
+     "detail-type": [
+      "IncomingWhatsAppWebhook"
+     ]
+    },
+    "Name": "dev-vyapargyan-whatsapp-webhook",
+    "State": "ENABLED",
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     }
+    ],
+    "Targets": [
+     {
+      "Arn": {
+       "Fn::GetAtt": [
+        "WhatsAppMessagesQueue9E6CF061",
+        "Arn"
+       ]
+      },
+      "Id": "Target0",
+      "InputPath": "$"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/WhatsAppWebhookRule/Resource"
+   }
+  },
+  "WhatsAppWorkerFunctionServiceRole0B3B4450": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "lambda.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "ManagedPolicyArns": [
+     {
+      "Fn::Join": [
+       "",
+       [
+        "arn:",
+        {
+         "Ref": "AWS::Partition"
+        },
+        ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+       ]
+      ]
+     }
+    ],
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/WhatsAppWorkerFunction/ServiceRole/Resource"
+   }
+  },
+  "WhatsAppWorkerFunctionServiceRoleDefaultPolicy47927141": {
+   "Type": "AWS::IAM::Policy",
+   "Properties": {
+    "PolicyDocument": {
+     "Statement": [
+      {
+       "Action": [
+        "dynamodb:BatchGetItem",
+        "dynamodb:BatchWriteItem",
+        "dynamodb:ConditionCheckItem",
+        "dynamodb:DeleteItem",
+        "dynamodb:DescribeTable",
+        "dynamodb:GetItem",
+        "dynamodb:GetRecords",
+        "dynamodb:GetShardIterator",
+        "dynamodb:PutItem",
+        "dynamodb:Query",
+        "dynamodb:Scan",
+        "dynamodb:UpdateItem"
+       ],
+       "Effect": "Allow",
+       "Resource": [
+        {
+         "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputFnGetAttMainTable74195DABArnE0EC388B"
+        },
+        {
+         "Fn::Join": [
+          "",
+          [
+           {
+            "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputFnGetAttMainTable74195DABArnE0EC388B"
+           },
+           "/index/*"
+          ]
+         ]
+        }
+       ]
+      },
+      {
+       "Action": "events:PutEvents",
+       "Effect": "Allow",
+       "Resource": {
+        "Fn::GetAtt": [
+         "EventBus7B8748AA",
+         "Arn"
+        ]
+       }
+      },
+      {
+       "Action": [
+        "s3:Abort*",
+        "s3:DeleteObject*",
+        "s3:GetBucket*",
+        "s3:GetObject*",
+        "s3:List*",
+        "s3:PutObject",
+        "s3:PutObjectLegalHold",
+        "s3:PutObjectRetention",
+        "s3:PutObjectTagging",
+        "s3:PutObjectVersionTagging"
+       ],
+       "Effect": "Allow",
+       "Resource": [
+        {
+         "Fn::ImportValue": "dev-vyapargyan-storage:ExportsOutputFnGetAttProductImagesBucket03BDA4C8Arn5AA48756"
+        },
+        {
+         "Fn::Join": [
+          "",
+          [
+           {
+            "Fn::ImportValue": "dev-vyapargyan-storage:ExportsOutputFnGetAttProductImagesBucket03BDA4C8Arn5AA48756"
+           },
+           "/*"
+          ]
+         ]
+        }
+       ]
+      },
+      {
+       "Action": [
+        "s3:GetBucket*",
+        "s3:GetObject*",
+        "s3:List*"
+       ],
+       "Effect": "Allow",
+       "Resource": [
+        {
+         "Fn::ImportValue": "dev-vyapargyan-storage:ExportsOutputFnGetAttDocumentsBucket9EC9DEB9ArnEA5095A7"
+        },
+        {
+         "Fn::Join": [
+          "",
+          [
+           {
+            "Fn::ImportValue": "dev-vyapargyan-storage:ExportsOutputFnGetAttDocumentsBucket9EC9DEB9ArnEA5095A7"
+           },
+           "/*"
+          ]
+         ]
+        }
+       ]
+      },
+      {
+       "Action": "secretsmanager:GetSecretValue",
+       "Effect": "Allow",
+       "Resource": [
+        "arn:aws:secretsmanager:ap-south-1:856888988795:secret:/dev/gemini/*",
+        "arn:aws:secretsmanager:ap-south-1:856888988795:secret:/dev/grok/*",
+        "arn:aws:secretsmanager:ap-south-1:856888988795:secret:/dev/razorpay/*",
+        "arn:aws:secretsmanager:ap-south-1:856888988795:secret:/dev/twilio/*",
+        "arn:aws:secretsmanager:ap-south-1:856888988795:secret:GEMINI_API_KEY*",
+        "arn:aws:secretsmanager:ap-south-1:856888988795:secret:GROK_API_KEY*"
+       ]
+      },
+      {
+       "Action": [
+        "ssm:GetParameter",
+        "ssm:GetParametersByPath"
+       ],
+       "Effect": "Allow",
+       "Resource": [
+        "arn:aws:ssm:ap-south-1:856888988795:parameter/dev/gemini/*",
+        "arn:aws:ssm:ap-south-1:856888988795:parameter/dev/grok/*",
+        "arn:aws:ssm:ap-south-1:856888988795:parameter/dev/razorpay/*",
+        "arn:aws:ssm:ap-south-1:856888988795:parameter/dev/twilio/*"
+       ]
+      },
+      {
+       "Action": "cloudwatch:PutMetricData",
+       "Condition": {
+        "StringLike": {
+         "cloudwatch:namespace": "VyaparGyan/*"
+        }
+       },
+       "Effect": "Allow",
+       "Resource": "*"
+      },
+      {
+       "Action": "bedrock:InvokeModel",
+       "Effect": "Allow",
+       "Resource": "arn:aws:bedrock:*::foundation-model/amazon.nova-lite-v1:0"
+      },
+      {
+       "Action": [
+        "sqs:ChangeMessageVisibility",
+        "sqs:DeleteMessage",
+        "sqs:GetQueueAttributes",
+        "sqs:GetQueueUrl",
+        "sqs:ReceiveMessage"
+       ],
+       "Effect": "Allow",
+       "Resource": {
+        "Fn::GetAtt": [
+         "WhatsAppMessagesQueue9E6CF061",
+         "Arn"
+        ]
+       }
+      },
+      {
+       "Action": [
+        "scheduler:CreateSchedule",
+        "scheduler:DeleteSchedule",
+        "scheduler:GetSchedule",
+        "scheduler:UpdateSchedule"
+       ],
+       "Effect": "Allow",
+       "Resource": "arn:aws:scheduler:ap-south-1:856888988795:schedule/default/vyapargyan-dev-trend-*"
+      },
+      {
+       "Action": "iam:PassRole",
+       "Condition": {
+        "StringEquals": {
+         "iam:PassedToService": "scheduler.amazonaws.com"
+        }
+       },
+       "Effect": "Allow",
+       "Resource": [
+        {
+         "Fn::GetAtt": [
+          "OrderNudgeSchedulerRole5811DF0E",
+          "Arn"
+         ]
+        },
+        {
+         "Fn::GetAtt": [
+          "TrendSchedulerRole7739A642",
+          "Arn"
+         ]
+        }
+       ]
+      },
+      {
+       "Action": [
+        "sqs:GetQueueAttributes",
+        "sqs:GetQueueUrl",
+        "sqs:SendMessage"
+       ],
+       "Effect": "Allow",
+       "Resource": {
+        "Fn::GetAtt": [
+         "MediaProcessingQueue56039BA9",
+         "Arn"
+        ]
+       }
+      },
+      {
+       "Action": [
+        "scheduler:CreateSchedule",
+        "scheduler:DeleteSchedule",
+        "scheduler:GetSchedule"
+       ],
+       "Effect": "Allow",
+       "Resource": "arn:aws:scheduler:ap-south-1:856888988795:schedule/default/order-*"
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "PolicyName": "WhatsAppWorkerFunctionServiceRoleDefaultPolicy47927141",
+    "Roles": [
+     {
+      "Ref": "WhatsAppWorkerFunctionServiceRole0B3B4450"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/WhatsAppWorkerFunction/ServiceRole/DefaultPolicy/Resource"
+   }
+  },
+  "WhatsAppWorkerFunctionE3E30471": {
+   "Type": "AWS::Lambda::Function",
+   "Properties": {
+    "Architectures": [
+     "arm64"
+    ],
+    "Code": {
+     "S3Bucket": "cdk-hnb659fds-assets-856888988795-ap-south-1",
+     "S3Key": "0c2c1826d9aa7a48f002caa7b4341bb3cb469ecd4b357bfa3733533e3b60b555.zip"
+    },
+    "Environment": {
+     "Variables": {
+      "ENVIRONMENT": "dev",
+      "TABLE_NAME": {
+       "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputRefMainTable74195DAB4503BD7E"
+      },
+      "EVENT_BUS_NAME": {
+       "Ref": "EventBus7B8748AA"
+      },
+      "USER_POOL_ID": {
+       "Fn::ImportValue": "dev-vyapargyan-auth:ExportsOutputRefUserPool6BA7E5F296FD7236"
+      },
+      "USER_POOL_CLIENT_ID": {
+       "Fn::ImportValue": "dev-vyapargyan-auth:ExportsOutputRefUserPoolApiServiceClient5BA9AA545B52E018"
+      },
+      "PRODUCT_IMAGES_BUCKET": {
+       "Fn::ImportValue": "dev-vyapargyan-storage:ExportsOutputRefProductImagesBucket03BDA4C8A4D6E2D0"
+      },
+      "DOCUMENTS_BUCKET": {
+       "Fn::ImportValue": "dev-vyapargyan-storage:ExportsOutputRefDocumentsBucket9EC9DEB9131399C0"
+      },
+      "LOG_LEVEL": "info",
+      "TWILIO_ACCOUNT_SID": "{{resolve:secretsmanager:arn:aws:secretsmanager:ap-south-1:856888988795:secret:dev-vyapargyan-twilio-credentials:SecretString:accountSid::}}",
+      "TWILIO_AUTH_TOKEN": "{{resolve:secretsmanager:arn:aws:secretsmanager:ap-south-1:856888988795:secret:dev-vyapargyan-twilio-credentials:SecretString:authToken::}}",
+      "TWILIO_PHONE_NUMBER": "{{resolve:secretsmanager:arn:aws:secretsmanager:ap-south-1:856888988795:secret:dev-vyapargyan-twilio-credentials:SecretString:phoneNumber::}}",
+      "FORCE_DEPLOY_TIME": "2026-03-10T00:30:00.000Z",
+      "TREND_SCHEDULER_ROLE_ARN": {
+       "Fn::GetAtt": [
+        "TrendSchedulerRole7739A642",
+        "Arn"
+       ]
+      },
+      "TREND_ANALYZER_FUNCTION_ARN": {
+       "Fn::GetAtt": [
+        "TrendAnalyzerFunction43AD65BB",
+        "Arn"
+       ]
+      },
+      "MEDIA_PROCESSING_QUEUE_URL": {
+       "Ref": "MediaProcessingQueue56039BA9"
+      },
+      "SCHEDULER_ROLE_ARN": {
+       "Fn::GetAtt": [
+        "OrderNudgeSchedulerRole5811DF0E",
+        "Arn"
+       ]
+      },
+      "NOTIFICATION_ROUTER_ARN": {
+       "Fn::GetAtt": [
+        "NotificationRouterFunction75EB813D",
+        "Arn"
+       ]
+      }
+     }
+    },
+    "FunctionName": "dev-vyapargyan-whatsapp-worker",
+    "Handler": "handlers/whatsapp/worker.handler",
+    "MemorySize": 1024,
+    "Role": {
+     "Fn::GetAtt": [
+      "WhatsAppWorkerFunctionServiceRole0B3B4450",
+      "Arn"
+     ]
+    },
+    "Runtime": "nodejs20.x",
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     }
+    ],
+    "Timeout": 180
+   },
+   "DependsOn": [
+    "WhatsAppWorkerFunctionServiceRoleDefaultPolicy47927141",
+    "WhatsAppWorkerFunctionServiceRole0B3B4450"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/WhatsAppWorkerFunction/Resource",
+    "aws:asset:path": "asset.0c2c1826d9aa7a48f002caa7b4341bb3cb469ecd4b357bfa3733533e3b60b555",
+    "aws:asset:is-bundled": false,
+    "aws:asset:property": "Code"
+   }
+  },
+  "WhatsAppWorkerFunctionSqsEventSourcedevvyapargyaneventsWhatsAppMessagesQueue648D39F7B81EB4D8": {
+   "Type": "AWS::Lambda::EventSourceMapping",
+   "Properties": {
+    "BatchSize": 10,
+    "EventSourceArn": {
+     "Fn::GetAtt": [
+      "WhatsAppMessagesQueue9E6CF061",
+      "Arn"
+     ]
+    },
+    "FunctionName": {
+     "Ref": "WhatsAppWorkerFunctionE3E30471"
+    },
+    "FunctionResponseTypes": [
+     "ReportBatchItemFailures"
+    ],
+    "MaximumBatchingWindowInSeconds": 5,
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/WhatsAppWorkerFunction/SqsEventSource:devvyapargyaneventsWhatsAppMessagesQueue648D39F7/Resource"
+   }
+  },
+  "TrendAnalyzerFunctionServiceRole43D4B7FF": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "lambda.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "ManagedPolicyArns": [
+     {
+      "Fn::Join": [
+       "",
+       [
+        "arn:",
+        {
+         "Ref": "AWS::Partition"
+        },
+        ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+       ]
+      ]
+     }
+    ],
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Name",
+      "Value": "dev-vyapargyan-trend-analyzer"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     },
+     {
+      "Key": "Service",
+      "Value": "ai-insights"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/TrendAnalyzerFunction/ServiceRole/Resource"
+   }
+  },
+  "TrendAnalyzerFunctionServiceRoleDefaultPolicy560D7245": {
+   "Type": "AWS::IAM::Policy",
+   "Properties": {
+    "PolicyDocument": {
+     "Statement": [
+      {
+       "Action": [
+        "dynamodb:BatchGetItem",
+        "dynamodb:BatchWriteItem",
+        "dynamodb:ConditionCheckItem",
+        "dynamodb:DeleteItem",
+        "dynamodb:DescribeTable",
+        "dynamodb:GetItem",
+        "dynamodb:GetRecords",
+        "dynamodb:GetShardIterator",
+        "dynamodb:PutItem",
+        "dynamodb:Query",
+        "dynamodb:Scan",
+        "dynamodb:UpdateItem"
+       ],
+       "Effect": "Allow",
+       "Resource": [
+        {
+         "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputFnGetAttMainTable74195DABArnE0EC388B"
+        },
+        {
+         "Fn::Join": [
+          "",
+          [
+           {
+            "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputFnGetAttMainTable74195DABArnE0EC388B"
+           },
+           "/index/*"
+          ]
+         ]
+        }
+       ]
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "PolicyName": "TrendAnalyzerFunctionServiceRoleDefaultPolicy560D7245",
+    "Roles": [
+     {
+      "Ref": "TrendAnalyzerFunctionServiceRole43D4B7FF"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/TrendAnalyzerFunction/ServiceRole/DefaultPolicy/Resource"
+   }
+  },
+  "TrendAnalyzerFunction43AD65BB": {
+   "Type": "AWS::Lambda::Function",
+   "Properties": {
+    "Architectures": [
+     "arm64"
+    ],
+    "Code": {
+     "S3Bucket": "cdk-hnb659fds-assets-856888988795-ap-south-1",
+     "S3Key": "0c2c1826d9aa7a48f002caa7b4341bb3cb469ecd4b357bfa3733533e3b60b555.zip"
+    },
+    "Environment": {
+     "Variables": {
+      "ENVIRONMENT": "dev",
+      "TABLE_NAME": {
+       "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputRefMainTable74195DAB4503BD7E"
+      },
+      "LOG_LEVEL": "info"
+     }
+    },
+    "FunctionName": "dev-vyapargyan-trend-analyzer",
+    "Handler": "handlers/ai/trend-analyzer-worker.handler",
+    "MemorySize": 1024,
+    "Role": {
+     "Fn::GetAtt": [
+      "TrendAnalyzerFunctionServiceRole43D4B7FF",
+      "Arn"
+     ]
+    },
+    "Runtime": "nodejs20.x",
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Name",
+      "Value": "dev-vyapargyan-trend-analyzer"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     },
+     {
+      "Key": "Service",
+      "Value": "ai-insights"
+     }
+    ],
+    "Timeout": 300
+   },
+   "DependsOn": [
+    "TrendAnalyzerFunctionServiceRoleDefaultPolicy560D7245",
+    "TrendAnalyzerFunctionServiceRole43D4B7FF"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/TrendAnalyzerFunction/Resource",
+    "aws:asset:path": "asset.0c2c1826d9aa7a48f002caa7b4341bb3cb469ecd4b357bfa3733533e3b60b555",
+    "aws:asset:is-bundled": false,
+    "aws:asset:property": "Code"
+   }
+  },
+  "TrendAnalyzerSchedule3B33CF16": {
+   "Type": "AWS::Events::Rule",
+   "Properties": {
+    "Description": "Daily scheduled trigger for market trend analysis and dead stock detection",
+    "Name": "dev-vyapargyan-trend-analyzer-schedule",
+    "ScheduleExpression": "cron(30 20 * * ? *)",
+    "State": "ENABLED",
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     }
+    ],
+    "Targets": [
+     {
+      "Arn": {
+       "Fn::GetAtt": [
+        "TrendAnalyzerFunction43AD65BB",
+        "Arn"
+       ]
+      },
+      "Id": "Target0"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/TrendAnalyzerSchedule/Resource"
+   }
+  },
+  "TrendAnalyzerScheduleAllowEventRuledevvyapargyaneventsTrendAnalyzerFunction51447D6988ED7E3F": {
+   "Type": "AWS::Lambda::Permission",
+   "Properties": {
+    "Action": "lambda:InvokeFunction",
+    "FunctionName": {
+     "Fn::GetAtt": [
+      "TrendAnalyzerFunction43AD65BB",
+      "Arn"
+     ]
+    },
+    "Principal": "events.amazonaws.com",
+    "SourceArn": {
+     "Fn::GetAtt": [
+      "TrendAnalyzerSchedule3B33CF16",
+      "Arn"
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/TrendAnalyzerSchedule/AllowEventRuledevvyapargyaneventsTrendAnalyzerFunction51447D69"
+   }
+  },
+  "TrendSchedulerRole7739A642": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "scheduler.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "Description": "Role assumed by EventBridge Scheduler to invoke trend analyzer Lambda",
+    "RoleName": "dev-vyapargyan-trend-scheduler-role",
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Name",
+      "Value": "dev-vyapargyan-trend-scheduler-role"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     },
+     {
+      "Key": "Service",
+      "Value": "ai-insights"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/TrendSchedulerRole/Resource"
+   }
+  },
+  "TrendSchedulerRoleDefaultPolicyE1C0ECB2": {
+   "Type": "AWS::IAM::Policy",
+   "Properties": {
+    "PolicyDocument": {
+     "Statement": [
+      {
+       "Action": "lambda:InvokeFunction",
+       "Effect": "Allow",
+       "Resource": [
+        {
+         "Fn::GetAtt": [
+          "TrendAnalyzerFunction43AD65BB",
+          "Arn"
+         ]
+        },
+        {
+         "Fn::Join": [
+          "",
+          [
+           {
+            "Fn::GetAtt": [
+             "TrendAnalyzerFunction43AD65BB",
+             "Arn"
+            ]
+           },
+           ":*"
+          ]
+         ]
+        }
+       ]
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "PolicyName": "TrendSchedulerRoleDefaultPolicyE1C0ECB2",
+    "Roles": [
+     {
+      "Ref": "TrendSchedulerRole7739A642"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/TrendSchedulerRole/DefaultPolicy/Resource"
+   }
+  },
+  "CampaignWorkerFunctionServiceRole71030359": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "lambda.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "ManagedPolicyArns": [
+     {
+      "Fn::Join": [
+       "",
+       [
+        "arn:",
+        {
+         "Ref": "AWS::Partition"
+        },
+        ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+       ]
+      ]
+     }
+    ],
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Name",
+      "Value": "dev-vyapargyan-campaign-worker"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     },
+     {
+      "Key": "Service",
+      "Value": "ai-campaigns"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/CampaignWorkerFunction/ServiceRole/Resource"
+   }
+  },
+  "CampaignWorkerFunctionServiceRoleDefaultPolicy34BE888F": {
+   "Type": "AWS::IAM::Policy",
+   "Properties": {
+    "PolicyDocument": {
+     "Statement": [
+      {
+       "Action": [
+        "dynamodb:BatchGetItem",
+        "dynamodb:BatchWriteItem",
+        "dynamodb:ConditionCheckItem",
+        "dynamodb:DeleteItem",
+        "dynamodb:DescribeTable",
+        "dynamodb:GetItem",
+        "dynamodb:GetRecords",
+        "dynamodb:GetShardIterator",
+        "dynamodb:PutItem",
+        "dynamodb:Query",
+        "dynamodb:Scan",
+        "dynamodb:UpdateItem"
+       ],
+       "Effect": "Allow",
+       "Resource": [
+        {
+         "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputFnGetAttMainTable74195DABArnE0EC388B"
+        },
+        {
+         "Fn::Join": [
+          "",
+          [
+           {
+            "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputFnGetAttMainTable74195DABArnE0EC388B"
+           },
+           "/index/*"
+          ]
+         ]
+        }
+       ]
+      },
+      {
+       "Action": "dynamodb:ListStreams",
+       "Effect": "Allow",
+       "Resource": "*"
+      },
+      {
+       "Action": [
+        "dynamodb:DescribeStream",
+        "dynamodb:GetRecords",
+        "dynamodb:GetShardIterator"
+       ],
+       "Effect": "Allow",
+       "Resource": {
+        "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputFnGetAttMainTable74195DABStreamArn036B5B89"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "PolicyName": "CampaignWorkerFunctionServiceRoleDefaultPolicy34BE888F",
+    "Roles": [
+     {
+      "Ref": "CampaignWorkerFunctionServiceRole71030359"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/CampaignWorkerFunction/ServiceRole/DefaultPolicy/Resource"
+   }
+  },
+  "CampaignWorkerFunction8F40201B": {
+   "Type": "AWS::Lambda::Function",
+   "Properties": {
+    "Architectures": [
+     "arm64"
+    ],
+    "Code": {
+     "S3Bucket": "cdk-hnb659fds-assets-856888988795-ap-south-1",
+     "S3Key": "0c2c1826d9aa7a48f002caa7b4341bb3cb469ecd4b357bfa3733533e3b60b555.zip"
+    },
+    "Environment": {
+     "Variables": {
+      "ENVIRONMENT": "dev",
+      "TABLE_NAME": {
+       "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputRefMainTable74195DAB4503BD7E"
+      },
+      "LOG_LEVEL": "info"
+     }
+    },
+    "FunctionName": "dev-vyapargyan-campaign-worker",
+    "Handler": "handlers/ai/campaign-worker.handler",
+    "MemorySize": 1024,
+    "Role": {
+     "Fn::GetAtt": [
+      "CampaignWorkerFunctionServiceRole71030359",
+      "Arn"
+     ]
+    },
+    "Runtime": "nodejs20.x",
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Name",
+      "Value": "dev-vyapargyan-campaign-worker"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     },
+     {
+      "Key": "Service",
+      "Value": "ai-campaigns"
+     }
+    ],
+    "Timeout": 300
+   },
+   "DependsOn": [
+    "CampaignWorkerFunctionServiceRoleDefaultPolicy34BE888F",
+    "CampaignWorkerFunctionServiceRole71030359"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/CampaignWorkerFunction/Resource",
+    "aws:asset:path": "asset.0c2c1826d9aa7a48f002caa7b4341bb3cb469ecd4b357bfa3733533e3b60b555",
+    "aws:asset:is-bundled": false,
+    "aws:asset:property": "Code"
+   }
+  },
+  "CampaignWorkerFunctionDynamoDBEventSourcedevvyapargyandatabaseMainTableD34083267455F324": {
+   "Type": "AWS::Lambda::EventSourceMapping",
+   "Properties": {
+    "BatchSize": 10,
+    "EventSourceArn": {
+     "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputFnGetAttMainTable74195DABStreamArn036B5B89"
+    },
+    "FilterCriteria": {
+     "Filters": [
+      {
+       "Pattern": "{\"dynamodb\":{\"NewImage\":{\"SK\":{\"S\":[{\"prefix\":\"INSIGHT#\"}]}}}}"
+      }
+     ]
+    },
+    "FunctionName": {
+     "Ref": "CampaignWorkerFunction8F40201B"
+    },
+    "MaximumBatchingWindowInSeconds": 5,
+    "MaximumRetryAttempts": 2,
+    "StartingPosition": "LATEST",
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Name",
+      "Value": "dev-vyapargyan-campaign-worker"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     },
+     {
+      "Key": "Service",
+      "Value": "ai-campaigns"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/CampaignWorkerFunction/DynamoDBEventSource:devvyapargyandatabaseMainTableD3408326/Resource"
+   }
+  },
+  "NotificationRouterFunctionServiceRoleF48321D6": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "lambda.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "ManagedPolicyArns": [
+     {
+      "Fn::Join": [
+       "",
+       [
+        "arn:",
+        {
+         "Ref": "AWS::Partition"
+        },
+        ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+       ]
+      ]
+     }
+    ],
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Name",
+      "Value": "dev-vyapargyan-notification-router"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     },
+     {
+      "Key": "Service",
+      "Value": "messaging"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/NotificationRouterFunction/ServiceRole/Resource"
+   }
+  },
+  "NotificationRouterFunctionServiceRoleDefaultPolicy3A79A933": {
+   "Type": "AWS::IAM::Policy",
+   "Properties": {
+    "PolicyDocument": {
+     "Statement": [
+      {
+       "Action": [
+        "xray:PutTelemetryRecords",
+        "xray:PutTraceSegments"
+       ],
+       "Effect": "Allow",
+       "Resource": "*"
+      },
+      {
+       "Action": [
+        "dynamodb:BatchGetItem",
+        "dynamodb:BatchWriteItem",
+        "dynamodb:ConditionCheckItem",
+        "dynamodb:DeleteItem",
+        "dynamodb:DescribeTable",
+        "dynamodb:GetItem",
+        "dynamodb:GetRecords",
+        "dynamodb:GetShardIterator",
+        "dynamodb:PutItem",
+        "dynamodb:Query",
+        "dynamodb:Scan",
+        "dynamodb:UpdateItem"
+       ],
+       "Effect": "Allow",
+       "Resource": [
+        {
+         "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputFnGetAttMainTable74195DABArnE0EC388B"
+        },
+        {
+         "Fn::Join": [
+          "",
+          [
+           {
+            "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputFnGetAttMainTable74195DABArnE0EC388B"
+           },
+           "/index/*"
+          ]
+         ]
+        }
+       ]
+      },
+      {
+       "Action": "secretsmanager:GetSecretValue",
+       "Effect": "Allow",
+       "Resource": "arn:aws:secretsmanager:ap-south-1:856888988795:secret:/dev/twilio/*"
+      },
+      {
+       "Action": [
+        "ssm:GetParameter",
+        "ssm:GetParametersByPath"
+       ],
+       "Effect": "Allow",
+       "Resource": "arn:aws:ssm:ap-south-1:856888988795:parameter/dev/twilio/*"
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "PolicyName": "NotificationRouterFunctionServiceRoleDefaultPolicy3A79A933",
+    "Roles": [
+     {
+      "Ref": "NotificationRouterFunctionServiceRoleF48321D6"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/NotificationRouterFunction/ServiceRole/DefaultPolicy/Resource"
+   }
+  },
+  "NotificationRouterFunction75EB813D": {
+   "Type": "AWS::Lambda::Function",
+   "Properties": {
+    "Architectures": [
+     "arm64"
+    ],
+    "Code": {
+     "S3Bucket": "cdk-hnb659fds-assets-856888988795-ap-south-1",
+     "S3Key": "0c2c1826d9aa7a48f002caa7b4341bb3cb469ecd4b357bfa3733533e3b60b555.zip"
+    },
+    "Environment": {
+     "Variables": {
+      "ENVIRONMENT": "dev",
+      "TABLE_NAME": {
+       "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputRefMainTable74195DAB4503BD7E"
+      },
+      "EVENT_BUS_NAME": {
+       "Ref": "EventBus7B8748AA"
+      },
+      "LOG_LEVEL": "info",
+      "TWILIO_ACCOUNT_SID": "{{resolve:secretsmanager:arn:aws:secretsmanager:ap-south-1:856888988795:secret:dev-vyapargyan-twilio-credentials:SecretString:accountSid::}}",
+      "TWILIO_AUTH_TOKEN": "{{resolve:secretsmanager:arn:aws:secretsmanager:ap-south-1:856888988795:secret:dev-vyapargyan-twilio-credentials:SecretString:authToken::}}",
+      "TWILIO_PHONE_NUMBER": "{{resolve:secretsmanager:arn:aws:secretsmanager:ap-south-1:856888988795:secret:dev-vyapargyan-twilio-credentials:SecretString:phoneNumber::}}"
+     }
+    },
+    "FunctionName": "dev-vyapargyan-notification-router",
+    "Handler": "handlers/workers/notification-router-worker.handler",
+    "MemorySize": 256,
+    "Role": {
+     "Fn::GetAtt": [
+      "NotificationRouterFunctionServiceRoleF48321D6",
+      "Arn"
+     ]
+    },
+    "Runtime": "nodejs20.x",
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Name",
+      "Value": "dev-vyapargyan-notification-router"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     },
+     {
+      "Key": "Service",
+      "Value": "messaging"
+     }
+    ],
+    "Timeout": 30,
+    "TracingConfig": {
+     "Mode": "Active"
+    }
+   },
+   "DependsOn": [
+    "NotificationRouterFunctionServiceRoleDefaultPolicy3A79A933",
+    "NotificationRouterFunctionServiceRoleF48321D6"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/NotificationRouterFunction/Resource",
+    "aws:asset:path": "asset.0c2c1826d9aa7a48f002caa7b4341bb3cb469ecd4b357bfa3733533e3b60b555",
+    "aws:asset:is-bundled": false,
+    "aws:asset:property": "Code"
+   }
+  },
+  "CustomerMessageRouteRule481D89C8": {
+   "Type": "AWS::Events::Rule",
+   "Properties": {
+    "Description": "Route customer messages to seller preferred channel via notification router",
+    "EventBusName": {
+     "Ref": "EventBus7B8748AA"
+    },
+    "EventPattern": {
+     "source": [
+      "vyapargyan.chat"
+     ],
+     "detail-type": [
+      "CustomerMessageSent"
+     ]
+    },
+    "Name": "dev-vyapargyan-customer-message-route",
+    "State": "ENABLED",
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     }
+    ],
+    "Targets": [
+     {
+      "Arn": {
+       "Fn::GetAtt": [
+        "NotificationRouterFunction75EB813D",
+        "Arn"
+       ]
+      },
+      "Id": "Target0"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/CustomerMessageRouteRule/Resource"
+   }
+  },
+  "CustomerMessageRouteRuleAllowEventRuledevvyapargyaneventsNotificationRouterFunction21BDD83CD3C8E4D9": {
+   "Type": "AWS::Lambda::Permission",
+   "Properties": {
+    "Action": "lambda:InvokeFunction",
+    "FunctionName": {
+     "Fn::GetAtt": [
+      "NotificationRouterFunction75EB813D",
+      "Arn"
+     ]
+    },
+    "Principal": "events.amazonaws.com",
+    "SourceArn": {
+     "Fn::GetAtt": [
+      "CustomerMessageRouteRule481D89C8",
+      "Arn"
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/CustomerMessageRouteRule/AllowEventRuledevvyapargyaneventsNotificationRouterFunction21BDD83C"
+   }
+  },
+  "OrderEventNotificationRuleC263A3D5": {
+   "Type": "AWS::Events::Rule",
+   "Properties": {
+    "Description": "Route order lifecycle events to notification router for customer and seller notifications",
+    "EventBusName": {
+     "Ref": "EventBus7B8748AA"
+    },
+    "EventPattern": {
+     "source": [
+      "vyapargyan.orders"
+     ],
+     "detail-type": [
+      "order.created",
+      "order.confirmed",
+      "order.payment_pending",
+      "order.paid",
+      "order.preparing",
+      "order.shipped",
+      "order.delivered",
+      "order.rejected",
+      "order.cancelled",
+      "order.expired",
+      "order.payment_failed"
+     ]
+    },
+    "Name": "dev-vyapargyan-order-notification",
+    "State": "ENABLED",
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     }
+    ],
+    "Targets": [
+     {
+      "Arn": {
+       "Fn::GetAtt": [
+        "NotificationRouterFunction75EB813D",
+        "Arn"
+       ]
+      },
+      "Id": "Target0"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/OrderEventNotificationRule/Resource"
+   }
+  },
+  "OrderEventNotificationRuleAllowEventRuledevvyapargyaneventsNotificationRouterFunction21BDD83C2F76FF79": {
+   "Type": "AWS::Lambda::Permission",
+   "Properties": {
+    "Action": "lambda:InvokeFunction",
+    "FunctionName": {
+     "Fn::GetAtt": [
+      "NotificationRouterFunction75EB813D",
+      "Arn"
+     ]
+    },
+    "Principal": "events.amazonaws.com",
+    "SourceArn": {
+     "Fn::GetAtt": [
+      "OrderEventNotificationRuleC263A3D5",
+      "Arn"
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/OrderEventNotificationRule/AllowEventRuledevvyapargyaneventsNotificationRouterFunction21BDD83C"
+   }
+  },
+  "OrderNudgeSchedulerRole5811DF0E": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "scheduler.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "Description": "Role assumed by EventBridge Scheduler to invoke notification router for order nudges",
+    "RoleName": "dev-vyapargyan-order-nudge-scheduler-role",
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Name",
+      "Value": "dev-vyapargyan-order-nudge-scheduler-role"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     },
+     {
+      "Key": "Service",
+      "Value": "order-nudges"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/OrderNudgeSchedulerRole/Resource"
+   }
+  },
+  "OrderNudgeSchedulerRoleDefaultPolicy12DE6AAF": {
+   "Type": "AWS::IAM::Policy",
+   "Properties": {
+    "PolicyDocument": {
+     "Statement": [
+      {
+       "Action": "lambda:InvokeFunction",
+       "Effect": "Allow",
+       "Resource": [
+        {
+         "Fn::GetAtt": [
+          "NotificationRouterFunction75EB813D",
+          "Arn"
+         ]
+        },
+        {
+         "Fn::Join": [
+          "",
+          [
+           {
+            "Fn::GetAtt": [
+             "NotificationRouterFunction75EB813D",
+             "Arn"
+            ]
+           },
+           ":*"
+          ]
+         ]
+        }
+       ]
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "PolicyName": "OrderNudgeSchedulerRoleDefaultPolicy12DE6AAF",
+    "Roles": [
+     {
+      "Ref": "OrderNudgeSchedulerRole5811DF0E"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/OrderNudgeSchedulerRole/DefaultPolicy/Resource"
+   }
+  },
+  "MessageFanoutFunctionServiceRole2821CD87": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "lambda.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "ManagedPolicyArns": [
+     {
+      "Fn::Join": [
+       "",
+       [
+        "arn:",
+        {
+         "Ref": "AWS::Partition"
+        },
+        ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+       ]
+      ]
+     }
+    ],
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Name",
+      "Value": "dev-vyapargyan-message-fanout"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     },
+     {
+      "Key": "Service",
+      "Value": "messaging"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/MessageFanoutFunction/ServiceRole/Resource"
+   }
+  },
+  "MessageFanoutFunctionServiceRoleDefaultPolicy06D05CEC": {
+   "Type": "AWS::IAM::Policy",
+   "Properties": {
+    "PolicyDocument": {
+     "Statement": [
+      {
+       "Action": [
+        "execute-api:ManageConnections",
+        "xray:PutTelemetryRecords",
+        "xray:PutTraceSegments"
+       ],
+       "Effect": "Allow",
+       "Resource": "*"
+      },
+      {
+       "Action": [
+        "dynamodb:BatchGetItem",
+        "dynamodb:BatchWriteItem",
+        "dynamodb:ConditionCheckItem",
+        "dynamodb:DeleteItem",
+        "dynamodb:DescribeTable",
+        "dynamodb:GetItem",
+        "dynamodb:GetRecords",
+        "dynamodb:GetShardIterator",
+        "dynamodb:PutItem",
+        "dynamodb:Query",
+        "dynamodb:Scan",
+        "dynamodb:UpdateItem"
+       ],
+       "Effect": "Allow",
+       "Resource": [
+        {
+         "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputFnGetAttMainTable74195DABArnE0EC388B"
+        },
+        {
+         "Fn::Join": [
+          "",
+          [
+           {
+            "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputFnGetAttMainTable74195DABArnE0EC388B"
+           },
+           "/index/*"
+          ]
+         ]
+        }
+       ]
+      },
+      {
+       "Action": "secretsmanager:GetSecretValue",
+       "Effect": "Allow",
+       "Resource": "arn:aws:secretsmanager:ap-south-1:856888988795:secret:/dev/twilio/*"
+      },
+      {
+       "Action": [
+        "ssm:GetParameter",
+        "ssm:GetParametersByPath"
+       ],
+       "Effect": "Allow",
+       "Resource": "arn:aws:ssm:ap-south-1:856888988795:parameter/dev/twilio/*"
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "PolicyName": "MessageFanoutFunctionServiceRoleDefaultPolicy06D05CEC",
+    "Roles": [
+     {
+      "Ref": "MessageFanoutFunctionServiceRole2821CD87"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/MessageFanoutFunction/ServiceRole/DefaultPolicy/Resource"
+   }
+  },
+  "MessageFanoutFunction39FCA2BD": {
+   "Type": "AWS::Lambda::Function",
+   "Properties": {
+    "Architectures": [
+     "arm64"
+    ],
+    "Code": {
+     "S3Bucket": "cdk-hnb659fds-assets-856888988795-ap-south-1",
+     "S3Key": "0c2c1826d9aa7a48f002caa7b4341bb3cb469ecd4b357bfa3733533e3b60b555.zip"
+    },
+    "Environment": {
+     "Variables": {
+      "ENVIRONMENT": "dev",
+      "TABLE_NAME": {
+       "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputRefMainTable74195DAB4503BD7E"
+      },
+      "EVENT_BUS_NAME": {
+       "Ref": "EventBus7B8748AA"
+      },
+      "WEBSOCKET_API_ENDPOINT": {
+       "Fn::Join": [
+        "",
+        [
+         "https://",
+         {
+          "Fn::ImportValue": "dev-vyapargyan-websocket:ExportsOutputRefWebSocketApi6DDF9954"
+         },
+         ".execute-api.ap-south-1.amazonaws.com/dev"
+        ]
+       ]
+      },
+      "LOG_LEVEL": "info",
+      "TWILIO_ACCOUNT_SID": "{{resolve:secretsmanager:arn:aws:secretsmanager:ap-south-1:856888988795:secret:dev-vyapargyan-twilio-credentials:SecretString:accountSid::}}",
+      "TWILIO_AUTH_TOKEN": "{{resolve:secretsmanager:arn:aws:secretsmanager:ap-south-1:856888988795:secret:dev-vyapargyan-twilio-credentials:SecretString:authToken::}}",
+      "TWILIO_PHONE_NUMBER": "{{resolve:secretsmanager:arn:aws:secretsmanager:ap-south-1:856888988795:secret:dev-vyapargyan-twilio-credentials:SecretString:phoneNumber::}}"
+     }
+    },
+    "FunctionName": "dev-vyapargyan-message-fanout",
+    "Handler": "handlers/messaging/fanout.handler",
+    "MemorySize": 256,
+    "Role": {
+     "Fn::GetAtt": [
+      "MessageFanoutFunctionServiceRole2821CD87",
+      "Arn"
+     ]
+    },
+    "Runtime": "nodejs20.x",
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Name",
+      "Value": "dev-vyapargyan-message-fanout"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     },
+     {
+      "Key": "Service",
+      "Value": "messaging"
+     }
+    ],
+    "Timeout": 30,
+    "TracingConfig": {
+     "Mode": "Active"
+    }
+   },
+   "DependsOn": [
+    "MessageFanoutFunctionServiceRoleDefaultPolicy06D05CEC",
+    "MessageFanoutFunctionServiceRole2821CD87"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/MessageFanoutFunction/Resource",
+    "aws:asset:path": "asset.0c2c1826d9aa7a48f002caa7b4341bb3cb469ecd4b357bfa3733533e3b60b555",
+    "aws:asset:is-bundled": false,
+    "aws:asset:property": "Code"
+   }
+  },
+  "MessageCreatedFanoutRuleCF98DE56": {
+   "Type": "AWS::Events::Rule",
+   "Properties": {
+    "Description": "Route message.created events to fan-out Lambda for bi-directional push",
+    "EventBusName": {
+     "Ref": "EventBus7B8748AA"
+    },
+    "EventPattern": {
+     "source": [
+      "vyapargyan.messaging"
+     ],
+     "detail-type": [
+      "message.created"
+     ]
+    },
+    "Name": "dev-vyapargyan-message-created-fanout",
+    "State": "ENABLED",
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     }
+    ],
+    "Targets": [
+     {
+      "Arn": {
+       "Fn::GetAtt": [
+        "MessageFanoutFunction39FCA2BD",
+        "Arn"
+       ]
+      },
+      "Id": "Target0"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/MessageCreatedFanoutRule/Resource"
+   }
+  },
+  "MessageCreatedFanoutRuleAllowEventRuledevvyapargyaneventsMessageFanoutFunction643ABEC787B2554E": {
+   "Type": "AWS::Lambda::Permission",
+   "Properties": {
+    "Action": "lambda:InvokeFunction",
+    "FunctionName": {
+     "Fn::GetAtt": [
+      "MessageFanoutFunction39FCA2BD",
+      "Arn"
+     ]
+    },
+    "Principal": "events.amazonaws.com",
+    "SourceArn": {
+     "Fn::GetAtt": [
+      "MessageCreatedFanoutRuleCF98DE56",
+      "Arn"
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/MessageCreatedFanoutRule/AllowEventRuledevvyapargyaneventsMessageFanoutFunction643ABEC7"
+   }
+  },
+  "DisputeAutoFlagFunctionServiceRoleDC10A4A3": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "lambda.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "ManagedPolicyArns": [
+     {
+      "Fn::Join": [
+       "",
+       [
+        "arn:",
+        {
+         "Ref": "AWS::Partition"
+        },
+        ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+       ]
+      ]
+     }
+    ],
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Name",
+      "Value": "dev-vyapargyan-dispute-auto-flag"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     },
+     {
+      "Key": "Service",
+      "Value": "disputes"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/DisputeAutoFlagFunction/ServiceRole/Resource"
+   }
+  },
+  "DisputeAutoFlagFunctionServiceRoleDefaultPolicy66F21380": {
+   "Type": "AWS::IAM::Policy",
+   "Properties": {
+    "PolicyDocument": {
+     "Statement": [
+      {
+       "Action": [
+        "xray:PutTelemetryRecords",
+        "xray:PutTraceSegments"
+       ],
+       "Effect": "Allow",
+       "Resource": "*"
+      },
+      {
+       "Action": [
+        "dynamodb:BatchGetItem",
+        "dynamodb:BatchWriteItem",
+        "dynamodb:ConditionCheckItem",
+        "dynamodb:DeleteItem",
+        "dynamodb:DescribeTable",
+        "dynamodb:GetItem",
+        "dynamodb:GetRecords",
+        "dynamodb:GetShardIterator",
+        "dynamodb:PutItem",
+        "dynamodb:Query",
+        "dynamodb:Scan",
+        "dynamodb:UpdateItem"
+       ],
+       "Effect": "Allow",
+       "Resource": [
+        {
+         "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputFnGetAttMainTable74195DABArnE0EC388B"
+        },
+        {
+         "Fn::Join": [
+          "",
+          [
+           {
+            "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputFnGetAttMainTable74195DABArnE0EC388B"
+           },
+           "/index/*"
+          ]
+         ]
+        }
+       ]
+      },
+      {
+       "Action": "secretsmanager:GetSecretValue",
+       "Effect": "Allow",
+       "Resource": [
+        "arn:aws:secretsmanager:ap-south-1:856888988795:secret:/dev/razorpay/*",
+        "arn:aws:secretsmanager:ap-south-1:856888988795:secret:/dev/twilio/*",
+        "arn:aws:secretsmanager:ap-south-1:856888988795:secret:GEMINI_API_KEY-*",
+        "arn:aws:secretsmanager:ap-south-1:856888988795:secret:GROK_API_KEY-*"
+       ]
+      },
+      {
+       "Action": [
+        "ssm:GetParameter",
+        "ssm:GetParameters"
+       ],
+       "Effect": "Allow",
+       "Resource": "arn:aws:ssm:ap-south-1:856888988795:parameter/dev/*"
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "PolicyName": "DisputeAutoFlagFunctionServiceRoleDefaultPolicy66F21380",
+    "Roles": [
+     {
+      "Ref": "DisputeAutoFlagFunctionServiceRoleDC10A4A3"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/DisputeAutoFlagFunction/ServiceRole/DefaultPolicy/Resource"
+   }
+  },
+  "DisputeAutoFlagFunctionB91E822C": {
+   "Type": "AWS::Lambda::Function",
+   "Properties": {
+    "Architectures": [
+     "arm64"
+    ],
+    "Code": {
+     "S3Bucket": "cdk-hnb659fds-assets-856888988795-ap-south-1",
+     "S3Key": "0c2c1826d9aa7a48f002caa7b4341bb3cb469ecd4b357bfa3733533e3b60b555.zip"
+    },
+    "Environment": {
+     "Variables": {
+      "ENVIRONMENT": "dev",
+      "TABLE_NAME": {
+       "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputRefMainTable74195DAB4503BD7E"
+      },
+      "LOG_LEVEL": "info"
+     }
+    },
+    "FunctionName": "dev-vyapargyan-dispute-auto-flag",
+    "Handler": "handlers/admin/disputes.autoFlagHandler",
+    "MemorySize": 256,
+    "Role": {
+     "Fn::GetAtt": [
+      "DisputeAutoFlagFunctionServiceRoleDC10A4A3",
+      "Arn"
+     ]
+    },
+    "Runtime": "nodejs20.x",
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Name",
+      "Value": "dev-vyapargyan-dispute-auto-flag"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     },
+     {
+      "Key": "Service",
+      "Value": "disputes"
+     }
+    ],
+    "Timeout": 15,
+    "TracingConfig": {
+     "Mode": "Active"
+    }
+   },
+   "DependsOn": [
+    "DisputeAutoFlagFunctionServiceRoleDefaultPolicy66F21380",
+    "DisputeAutoFlagFunctionServiceRoleDC10A4A3"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/DisputeAutoFlagFunction/Resource",
+    "aws:asset:path": "asset.0c2c1826d9aa7a48f002caa7b4341bb3cb469ecd4b357bfa3733533e3b60b555",
+    "aws:asset:is-bundled": false,
+    "aws:asset:property": "Code"
+   }
+  },
+  "DisputeAutoFlagRule199633D3": {
+   "Type": "AWS::Events::Rule",
+   "Properties": {
+    "Description": "Auto-flag orders with negative feedback, payment failures, or delivery delays as disputes",
+    "EventBusName": {
+     "Ref": "EventBus7B8748AA"
+    },
+    "EventPattern": {
+     "source": [
+      "vyapargyan.orders"
+     ],
+     "detail-type": [
+      "order.payment_failed",
+      "order.delivery_delayed",
+      "order.feedback_negative"
+     ]
+    },
+    "Name": "dev-vyapargyan-dispute-auto-flag",
+    "State": "ENABLED",
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     }
+    ],
+    "Targets": [
+     {
+      "Arn": {
+       "Fn::GetAtt": [
+        "DisputeAutoFlagFunctionB91E822C",
+        "Arn"
+       ]
+      },
+      "Id": "Target0"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/DisputeAutoFlagRule/Resource"
+   }
+  },
+  "DisputeAutoFlagRuleAllowEventRuledevvyapargyaneventsDisputeAutoFlagFunction13DEDA8DC571FCE7": {
+   "Type": "AWS::Lambda::Permission",
+   "Properties": {
+    "Action": "lambda:InvokeFunction",
+    "FunctionName": {
+     "Fn::GetAtt": [
+      "DisputeAutoFlagFunctionB91E822C",
+      "Arn"
+     ]
+    },
+    "Principal": "events.amazonaws.com",
+    "SourceArn": {
+     "Fn::GetAtt": [
+      "DisputeAutoFlagRule199633D3",
+      "Arn"
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/DisputeAutoFlagRule/AllowEventRuledevvyapargyaneventsDisputeAutoFlagFunction13DEDA8D"
+   }
+  },
+  "ApprovalExecutionWorkerFunctionServiceRole73A993BA": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "lambda.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "ManagedPolicyArns": [
+     {
+      "Fn::Join": [
+       "",
+       [
+        "arn:",
+        {
+         "Ref": "AWS::Partition"
+        },
+        ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+       ]
+      ]
+     }
+    ],
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Name",
+      "Value": "dev-vyapargyan-approval-execution-worker"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     },
+     {
+      "Key": "Service",
+      "Value": "approval-engine"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/ApprovalExecutionWorkerFunction/ServiceRole/Resource"
+   }
+  },
+  "ApprovalExecutionWorkerFunctionServiceRoleDefaultPolicy13AB0E38": {
+   "Type": "AWS::IAM::Policy",
+   "Properties": {
+    "PolicyDocument": {
+     "Statement": [
+      {
+       "Action": [
+        "dynamodb:BatchGetItem",
+        "dynamodb:BatchWriteItem",
+        "dynamodb:ConditionCheckItem",
+        "dynamodb:DeleteItem",
+        "dynamodb:DescribeTable",
+        "dynamodb:GetItem",
+        "dynamodb:GetRecords",
+        "dynamodb:GetShardIterator",
+        "dynamodb:PutItem",
+        "dynamodb:Query",
+        "dynamodb:Scan",
+        "dynamodb:UpdateItem"
+       ],
+       "Effect": "Allow",
+       "Resource": [
+        {
+         "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputFnGetAttMainTable74195DABArnE0EC388B"
+        },
+        {
+         "Fn::Join": [
+          "",
+          [
+           {
+            "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputFnGetAttMainTable74195DABArnE0EC388B"
+           },
+           "/index/*"
+          ]
+         ]
+        }
+       ]
+      },
+      {
+       "Action": "events:PutEvents",
+       "Effect": "Allow",
+       "Resource": {
+        "Fn::GetAtt": [
+         "EventBus7B8748AA",
+         "Arn"
+        ]
+       }
+      },
+      {
+       "Action": "secretsmanager:GetSecretValue",
+       "Effect": "Allow",
+       "Resource": [
+        "arn:aws:secretsmanager:ap-south-1:856888988795:secret:/dev/razorpay/*",
+        "arn:aws:secretsmanager:ap-south-1:856888988795:secret:/dev/twilio/*",
+        "arn:aws:secretsmanager:ap-south-1:856888988795:secret:GEMINI_API_KEY-*",
+        "arn:aws:secretsmanager:ap-south-1:856888988795:secret:GROK_API_KEY-*"
+       ]
+      },
+      {
+       "Action": [
+        "ssm:GetParameter",
+        "ssm:GetParameters"
+       ],
+       "Effect": "Allow",
+       "Resource": "arn:aws:ssm:ap-south-1:856888988795:parameter/dev/*"
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "PolicyName": "ApprovalExecutionWorkerFunctionServiceRoleDefaultPolicy13AB0E38",
+    "Roles": [
+     {
+      "Ref": "ApprovalExecutionWorkerFunctionServiceRole73A993BA"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/ApprovalExecutionWorkerFunction/ServiceRole/DefaultPolicy/Resource"
+   }
+  },
+  "ApprovalExecutionWorkerFunctionBD4B938E": {
+   "Type": "AWS::Lambda::Function",
+   "Properties": {
+    "Architectures": [
+     "arm64"
+    ],
+    "Code": {
+     "S3Bucket": "cdk-hnb659fds-assets-856888988795-ap-south-1",
+     "S3Key": "0c2c1826d9aa7a48f002caa7b4341bb3cb469ecd4b357bfa3733533e3b60b555.zip"
+    },
+    "Environment": {
+     "Variables": {
+      "ENVIRONMENT": "dev",
+      "TABLE_NAME": {
+       "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputRefMainTable74195DAB4503BD7E"
+      },
+      "EVENT_BUS_NAME": {
+       "Ref": "EventBus7B8748AA"
+      },
+      "USER_POOL_ID": {
+       "Fn::ImportValue": "dev-vyapargyan-auth:ExportsOutputRefUserPool6BA7E5F296FD7236"
+      },
+      "USER_POOL_CLIENT_ID": {
+       "Fn::ImportValue": "dev-vyapargyan-auth:ExportsOutputRefUserPoolApiServiceClient5BA9AA545B52E018"
+      },
+      "PRODUCT_IMAGES_BUCKET": {
+       "Fn::ImportValue": "dev-vyapargyan-storage:ExportsOutputRefProductImagesBucket03BDA4C8A4D6E2D0"
+      },
+      "DOCUMENTS_BUCKET": {
+       "Fn::ImportValue": "dev-vyapargyan-storage:ExportsOutputRefDocumentsBucket9EC9DEB9131399C0"
+      },
+      "LOG_LEVEL": "info"
+     }
+    },
+    "FunctionName": "dev-vyapargyan-approval-execution-worker",
+    "Handler": "handlers/workers/approval-execution-worker.handler",
+    "MemorySize": 512,
+    "Role": {
+     "Fn::GetAtt": [
+      "ApprovalExecutionWorkerFunctionServiceRole73A993BA",
+      "Arn"
+     ]
+    },
+    "Runtime": "nodejs20.x",
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Name",
+      "Value": "dev-vyapargyan-approval-execution-worker"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     },
+     {
+      "Key": "Service",
+      "Value": "approval-engine"
+     }
+    ],
+    "Timeout": 60
+   },
+   "DependsOn": [
+    "ApprovalExecutionWorkerFunctionServiceRoleDefaultPolicy13AB0E38",
+    "ApprovalExecutionWorkerFunctionServiceRole73A993BA"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/ApprovalExecutionWorkerFunction/Resource",
+    "aws:asset:path": "asset.0c2c1826d9aa7a48f002caa7b4341bb3cb469ecd4b357bfa3733533e3b60b555",
+    "aws:asset:is-bundled": false,
+    "aws:asset:property": "Code"
+   }
+  },
+  "ApprovalExecutionRuleA8818697": {
+   "Type": "AWS::Events::Rule",
+   "Properties": {
+    "Description": "Route approved approval events to execution worker",
+    "EventBusName": {
+     "Ref": "EventBus7B8748AA"
+    },
+    "EventPattern": {
+     "source": [
+      "vyapargyan.approval"
+     ],
+     "detail-type": [
+      "ApprovalApproved",
+      "ApprovalEditedApproved"
+     ]
+    },
+    "Name": "dev-vyapargyan-approval-execution",
+    "State": "ENABLED",
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     }
+    ],
+    "Targets": [
+     {
+      "Arn": {
+       "Fn::GetAtt": [
+        "ApprovalExecutionWorkerFunctionBD4B938E",
+        "Arn"
+       ]
+      },
+      "Id": "Target0"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/ApprovalExecutionRule/Resource"
+   }
+  },
+  "ApprovalExecutionRuleAllowEventRuledevvyapargyaneventsApprovalExecutionWorkerFunction2E57B89A763AE9F1": {
+   "Type": "AWS::Lambda::Permission",
+   "Properties": {
+    "Action": "lambda:InvokeFunction",
+    "FunctionName": {
+     "Fn::GetAtt": [
+      "ApprovalExecutionWorkerFunctionBD4B938E",
+      "Arn"
+     ]
+    },
+    "Principal": "events.amazonaws.com",
+    "SourceArn": {
+     "Fn::GetAtt": [
+      "ApprovalExecutionRuleA8818697",
+      "Arn"
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/ApprovalExecutionRule/AllowEventRuledevvyapargyaneventsApprovalExecutionWorkerFunction2E57B89A"
+   }
+  },
+  "CampaignExecutionWorkerFunctionServiceRole25156E80": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "lambda.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "ManagedPolicyArns": [
+     {
+      "Fn::Join": [
+       "",
+       [
+        "arn:",
+        {
+         "Ref": "AWS::Partition"
+        },
+        ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+       ]
+      ]
+     }
+    ],
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Name",
+      "Value": "dev-vyapargyan-campaign-execution-worker"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     },
+     {
+      "Key": "Service",
+      "Value": "campaigns"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/CampaignExecutionWorkerFunction/ServiceRole/Resource"
+   }
+  },
+  "CampaignExecutionWorkerFunctionServiceRoleDefaultPolicyF3F57CC7": {
+   "Type": "AWS::IAM::Policy",
+   "Properties": {
+    "PolicyDocument": {
+     "Statement": [
+      {
+       "Action": [
+        "dynamodb:BatchGetItem",
+        "dynamodb:BatchWriteItem",
+        "dynamodb:ConditionCheckItem",
+        "dynamodb:DeleteItem",
+        "dynamodb:DescribeTable",
+        "dynamodb:GetItem",
+        "dynamodb:GetRecords",
+        "dynamodb:GetShardIterator",
+        "dynamodb:PutItem",
+        "dynamodb:Query",
+        "dynamodb:Scan",
+        "dynamodb:UpdateItem"
+       ],
+       "Effect": "Allow",
+       "Resource": [
+        {
+         "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputFnGetAttMainTable74195DABArnE0EC388B"
+        },
+        {
+         "Fn::Join": [
+          "",
+          [
+           {
+            "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputFnGetAttMainTable74195DABArnE0EC388B"
+           },
+           "/index/*"
+          ]
+         ]
+        }
+       ]
+      },
+      {
+       "Action": "secretsmanager:GetSecretValue",
+       "Effect": "Allow",
+       "Resource": [
+        "arn:aws:secretsmanager:ap-south-1:856888988795:secret:/dev/razorpay/*",
+        "arn:aws:secretsmanager:ap-south-1:856888988795:secret:/dev/twilio/*",
+        "arn:aws:secretsmanager:ap-south-1:856888988795:secret:GEMINI_API_KEY-*",
+        "arn:aws:secretsmanager:ap-south-1:856888988795:secret:GROK_API_KEY-*"
+       ]
+      },
+      {
+       "Action": [
+        "ssm:GetParameter",
+        "ssm:GetParameters"
+       ],
+       "Effect": "Allow",
+       "Resource": "arn:aws:ssm:ap-south-1:856888988795:parameter/dev/*"
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "PolicyName": "CampaignExecutionWorkerFunctionServiceRoleDefaultPolicyF3F57CC7",
+    "Roles": [
+     {
+      "Ref": "CampaignExecutionWorkerFunctionServiceRole25156E80"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/CampaignExecutionWorkerFunction/ServiceRole/DefaultPolicy/Resource"
+   }
+  },
+  "CampaignExecutionWorkerFunction9C20D446": {
+   "Type": "AWS::Lambda::Function",
+   "Properties": {
+    "Architectures": [
+     "arm64"
+    ],
+    "Code": {
+     "S3Bucket": "cdk-hnb659fds-assets-856888988795-ap-south-1",
+     "S3Key": "0c2c1826d9aa7a48f002caa7b4341bb3cb469ecd4b357bfa3733533e3b60b555.zip"
+    },
+    "Environment": {
+     "Variables": {
+      "ENVIRONMENT": "dev",
+      "TABLE_NAME": {
+       "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputRefMainTable74195DAB4503BD7E"
+      },
+      "EVENT_BUS_NAME": {
+       "Ref": "EventBus7B8748AA"
+      },
+      "LOG_LEVEL": "info"
+     }
+    },
+    "FunctionName": "dev-vyapargyan-campaign-execution-worker",
+    "Handler": "handlers/workers/campaign-execution-worker.handler",
+    "MemorySize": 1024,
+    "Role": {
+     "Fn::GetAtt": [
+      "CampaignExecutionWorkerFunctionServiceRole25156E80",
+      "Arn"
+     ]
+    },
+    "Runtime": "nodejs20.x",
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Name",
+      "Value": "dev-vyapargyan-campaign-execution-worker"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     },
+     {
+      "Key": "Service",
+      "Value": "campaigns"
+     }
+    ],
+    "Timeout": 300
+   },
+   "DependsOn": [
+    "CampaignExecutionWorkerFunctionServiceRoleDefaultPolicyF3F57CC7",
+    "CampaignExecutionWorkerFunctionServiceRole25156E80"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/CampaignExecutionWorkerFunction/Resource",
+    "aws:asset:path": "asset.0c2c1826d9aa7a48f002caa7b4341bb3cb469ecd4b357bfa3733533e3b60b555",
+    "aws:asset:is-bundled": false,
+    "aws:asset:property": "Code"
+   }
+  },
+  "CampaignExecutionRule3393628A": {
+   "Type": "AWS::Events::Rule",
+   "Properties": {
+    "Description": "Route CampaignScheduled events to campaign execution worker",
+    "EventBusName": {
+     "Ref": "EventBus7B8748AA"
+    },
+    "EventPattern": {
+     "source": [
+      "vyapargyan.campaign"
+     ],
+     "detail-type": [
+      "CampaignScheduled"
+     ]
+    },
+    "Name": "dev-vyapargyan-campaign-execution",
+    "State": "ENABLED",
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     }
+    ],
+    "Targets": [
+     {
+      "Arn": {
+       "Fn::GetAtt": [
+        "CampaignExecutionWorkerFunction9C20D446",
+        "Arn"
+       ]
+      },
+      "Id": "Target0"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/CampaignExecutionRule/Resource"
+   }
+  },
+  "CampaignExecutionRuleAllowEventRuledevvyapargyaneventsCampaignExecutionWorkerFunction99FE13E6559B1525": {
+   "Type": "AWS::Lambda::Permission",
+   "Properties": {
+    "Action": "lambda:InvokeFunction",
+    "FunctionName": {
+     "Fn::GetAtt": [
+      "CampaignExecutionWorkerFunction9C20D446",
+      "Arn"
+     ]
+    },
+    "Principal": "events.amazonaws.com",
+    "SourceArn": {
+     "Fn::GetAtt": [
+      "CampaignExecutionRule3393628A",
+      "Arn"
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/CampaignExecutionRule/AllowEventRuledevvyapargyaneventsCampaignExecutionWorkerFunction99FE13E6"
+   }
+  },
+  "MediaProcessingDLQ38BEDAF3": {
+   "Type": "AWS::SQS::Queue",
+   "Properties": {
+    "MessageRetentionPeriod": 1209600,
+    "QueueName": "dev-vyapargyan-media-processing-dlq",
+    "SqsManagedSseEnabled": false,
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Name",
+      "Value": "dev-vyapargyan-media-processing-dlq"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     },
+     {
+      "Key": "Service",
+      "Value": "media-processing"
+     }
+    ]
+   },
+   "UpdateReplacePolicy": "Delete",
+   "DeletionPolicy": "Delete",
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/MediaProcessingDLQ/Resource"
+   }
+  },
+  "MediaProcessingQueue56039BA9": {
+   "Type": "AWS::SQS::Queue",
+   "Properties": {
+    "MessageRetentionPeriod": 345600,
+    "QueueName": "dev-vyapargyan-media-processing-retry",
+    "RedrivePolicy": {
+     "deadLetterTargetArn": {
+      "Fn::GetAtt": [
+       "MediaProcessingDLQ38BEDAF3",
+       "Arn"
+      ]
+     },
+     "maxReceiveCount": 3
+    },
+    "SqsManagedSseEnabled": false,
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Name",
+      "Value": "dev-vyapargyan-media-processing-retry"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     },
+     {
+      "Key": "Service",
+      "Value": "media-processing"
+     }
+    ],
+    "VisibilityTimeout": 300
+   },
+   "UpdateReplacePolicy": "Delete",
+   "DeletionPolicy": "Delete",
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/MediaProcessingQueue/Resource"
+   }
+  },
+  "MediaProcessingQueuePolicy2D0F0068": {
+   "Type": "AWS::SQS::QueuePolicy",
+   "Properties": {
+    "PolicyDocument": {
+     "Statement": [
+      {
+       "Action": [
+        "sqs:GetQueueAttributes",
+        "sqs:GetQueueUrl",
+        "sqs:SendMessage"
+       ],
+       "Condition": {
+        "ArnEquals": {
+         "aws:SourceArn": {
+          "Fn::GetAtt": [
+           "MediaProcessingRuleEAB4C1B4",
+           "Arn"
+          ]
+         }
+        }
+       },
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "events.amazonaws.com"
+       },
+       "Resource": {
+        "Fn::GetAtt": [
+         "MediaProcessingQueue56039BA9",
+         "Arn"
+        ]
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "Queues": [
+     {
+      "Ref": "MediaProcessingQueue56039BA9"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/MediaProcessingQueue/Policy/Resource"
+   }
+  },
+  "MediaProcessingWorkerFunctionServiceRoleCC84ECB2": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "lambda.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "ManagedPolicyArns": [
+     {
+      "Fn::Join": [
+       "",
+       [
+        "arn:",
+        {
+         "Ref": "AWS::Partition"
+        },
+        ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+       ]
+      ]
+     }
+    ],
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Name",
+      "Value": "dev-vyapargyan-media-processing-worker"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     },
+     {
+      "Key": "Service",
+      "Value": "media-processing"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/MediaProcessingWorkerFunction/ServiceRole/Resource"
+   }
+  },
+  "MediaProcessingWorkerFunctionServiceRoleDefaultPolicy560B42DF": {
+   "Type": "AWS::IAM::Policy",
+   "Properties": {
+    "PolicyDocument": {
+     "Statement": [
+      {
+       "Action": [
+        "xray:PutTelemetryRecords",
+        "xray:PutTraceSegments"
+       ],
+       "Effect": "Allow",
+       "Resource": "*"
+      },
+      {
+       "Action": [
+        "dynamodb:BatchGetItem",
+        "dynamodb:BatchWriteItem",
+        "dynamodb:ConditionCheckItem",
+        "dynamodb:DeleteItem",
+        "dynamodb:DescribeTable",
+        "dynamodb:GetItem",
+        "dynamodb:GetRecords",
+        "dynamodb:GetShardIterator",
+        "dynamodb:PutItem",
+        "dynamodb:Query",
+        "dynamodb:Scan",
+        "dynamodb:UpdateItem"
+       ],
+       "Effect": "Allow",
+       "Resource": [
+        {
+         "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputFnGetAttMainTable74195DABArnE0EC388B"
+        },
+        {
+         "Fn::Join": [
+          "",
+          [
+           {
+            "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputFnGetAttMainTable74195DABArnE0EC388B"
+           },
+           "/index/*"
+          ]
+         ]
+        }
+       ]
+      },
+      {
+       "Action": "events:PutEvents",
+       "Effect": "Allow",
+       "Resource": {
+        "Fn::GetAtt": [
+         "EventBus7B8748AA",
+         "Arn"
+        ]
+       }
+      },
+      {
+       "Action": [
+        "s3:GetBucket*",
+        "s3:GetObject*",
+        "s3:List*"
+       ],
+       "Effect": "Allow",
+       "Resource": [
+        {
+         "Fn::ImportValue": "dev-vyapargyan-storage:ExportsOutputFnGetAttDocumentsBucket9EC9DEB9ArnEA5095A7"
+        },
+        {
+         "Fn::ImportValue": "dev-vyapargyan-storage:ExportsOutputFnGetAttProductImagesBucket03BDA4C8Arn5AA48756"
+        },
+        {
+         "Fn::Join": [
+          "",
+          [
+           {
+            "Fn::ImportValue": "dev-vyapargyan-storage:ExportsOutputFnGetAttDocumentsBucket9EC9DEB9ArnEA5095A7"
+           },
+           "/*"
+          ]
+         ]
+        },
+        {
+         "Fn::Join": [
+          "",
+          [
+           {
+            "Fn::ImportValue": "dev-vyapargyan-storage:ExportsOutputFnGetAttProductImagesBucket03BDA4C8Arn5AA48756"
+           },
+           "/*"
+          ]
+         ]
+        }
+       ]
+      },
+      {
+       "Action": "secretsmanager:GetSecretValue",
+       "Effect": "Allow",
+       "Resource": [
+        "arn:aws:secretsmanager:ap-south-1:856888988795:secret:/dev/twilio/*",
+        "arn:aws:secretsmanager:ap-south-1:856888988795:secret:GEMINI_API_KEY-*"
+       ]
+      },
+      {
+       "Action": [
+        "ssm:GetParameter",
+        "ssm:GetParameters"
+       ],
+       "Effect": "Allow",
+       "Resource": "arn:aws:ssm:ap-south-1:856888988795:parameter/dev/*"
+      },
+      {
+       "Action": [
+        "sqs:ChangeMessageVisibility",
+        "sqs:DeleteMessage",
+        "sqs:GetQueueAttributes",
+        "sqs:GetQueueUrl",
+        "sqs:ReceiveMessage"
+       ],
+       "Effect": "Allow",
+       "Resource": {
+        "Fn::GetAtt": [
+         "MediaProcessingQueue56039BA9",
+         "Arn"
+        ]
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "PolicyName": "MediaProcessingWorkerFunctionServiceRoleDefaultPolicy560B42DF",
+    "Roles": [
+     {
+      "Ref": "MediaProcessingWorkerFunctionServiceRoleCC84ECB2"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/MediaProcessingWorkerFunction/ServiceRole/DefaultPolicy/Resource"
+   }
+  },
+  "MediaProcessingWorkerFunction93D17194": {
+   "Type": "AWS::Lambda::Function",
+   "Properties": {
+    "Architectures": [
+     "arm64"
+    ],
+    "Code": {
+     "S3Bucket": "cdk-hnb659fds-assets-856888988795-ap-south-1",
+     "S3Key": "0c2c1826d9aa7a48f002caa7b4341bb3cb469ecd4b357bfa3733533e3b60b555.zip"
+    },
+    "Environment": {
+     "Variables": {
+      "ENVIRONMENT": "dev",
+      "TABLE_NAME": {
+       "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputRefMainTable74195DAB4503BD7E"
+      },
+      "EVENT_BUS_NAME": {
+       "Ref": "EventBus7B8748AA"
+      },
+      "PRODUCT_IMAGES_BUCKET": {
+       "Fn::ImportValue": "dev-vyapargyan-storage:ExportsOutputRefProductImagesBucket03BDA4C8A4D6E2D0"
+      },
+      "DOCUMENTS_BUCKET": {
+       "Fn::ImportValue": "dev-vyapargyan-storage:ExportsOutputRefDocumentsBucket9EC9DEB9131399C0"
+      },
+      "LOG_LEVEL": "info"
+     }
+    },
+    "FunctionName": "dev-vyapargyan-media-processing-worker",
+    "Handler": "handlers/workers/media-processing-worker.handler",
+    "MemorySize": 1024,
+    "Role": {
+     "Fn::GetAtt": [
+      "MediaProcessingWorkerFunctionServiceRoleCC84ECB2",
+      "Arn"
+     ]
+    },
+    "Runtime": "nodejs20.x",
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Name",
+      "Value": "dev-vyapargyan-media-processing-worker"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     },
+     {
+      "Key": "Service",
+      "Value": "media-processing"
+     }
+    ],
+    "Timeout": 120,
+    "TracingConfig": {
+     "Mode": "Active"
+    }
+   },
+   "DependsOn": [
+    "MediaProcessingWorkerFunctionServiceRoleDefaultPolicy560B42DF",
+    "MediaProcessingWorkerFunctionServiceRoleCC84ECB2"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/MediaProcessingWorkerFunction/Resource",
+    "aws:asset:path": "asset.0c2c1826d9aa7a48f002caa7b4341bb3cb469ecd4b357bfa3733533e3b60b555",
+    "aws:asset:is-bundled": false,
+    "aws:asset:property": "Code"
+   }
+  },
+  "MediaProcessingWorkerFunctionSqsEventSourcedevvyapargyaneventsMediaProcessingQueue82C93F862342590C": {
+   "Type": "AWS::Lambda::EventSourceMapping",
+   "Properties": {
+    "BatchSize": 1,
+    "EventSourceArn": {
+     "Fn::GetAtt": [
+      "MediaProcessingQueue56039BA9",
+      "Arn"
+     ]
+    },
+    "FunctionName": {
+     "Ref": "MediaProcessingWorkerFunction93D17194"
+    },
+    "FunctionResponseTypes": [
+     "ReportBatchItemFailures"
+    ],
+    "MaximumBatchingWindowInSeconds": 0,
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Name",
+      "Value": "dev-vyapargyan-media-processing-worker"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     },
+     {
+      "Key": "Service",
+      "Value": "media-processing"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/MediaProcessingWorkerFunction/SqsEventSource:devvyapargyaneventsMediaProcessingQueue82C93F86/Resource"
+   }
+  },
+  "ScheduledMessagesDLQ03E34148": {
+   "Type": "AWS::SQS::Queue",
+   "Properties": {
+    "MessageRetentionPeriod": 1209600,
+    "QueueName": "dev-vyapargyan-scheduled-messages-dlq",
+    "SqsManagedSseEnabled": false,
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Name",
+      "Value": "dev-vyapargyan-scheduled-messages-dlq"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     },
+     {
+      "Key": "Service",
+      "Value": "scheduled-messages"
+     }
+    ]
+   },
+   "UpdateReplacePolicy": "Delete",
+   "DeletionPolicy": "Delete",
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/ScheduledMessagesDLQ/Resource"
+   }
+  },
+  "ScheduledMessagesQueueC355CD70": {
+   "Type": "AWS::SQS::Queue",
+   "Properties": {
+    "MessageRetentionPeriod": 604800,
+    "QueueName": "dev-vyapargyan-scheduled-messages",
+    "RedrivePolicy": {
+     "deadLetterTargetArn": {
+      "Fn::GetAtt": [
+       "ScheduledMessagesDLQ03E34148",
+       "Arn"
+      ]
+     },
+     "maxReceiveCount": 3
+    },
+    "SqsManagedSseEnabled": false,
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Name",
+      "Value": "dev-vyapargyan-scheduled-messages"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     },
+     {
+      "Key": "Service",
+      "Value": "scheduled-messages"
+     }
+    ],
+    "VisibilityTimeout": 60
+   },
+   "UpdateReplacePolicy": "Delete",
+   "DeletionPolicy": "Delete",
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/ScheduledMessagesQueue/Resource"
+   }
+  },
+  "MediaProcessingRuleEAB4C1B4": {
+   "Type": "AWS::Events::Rule",
+   "Properties": {
+    "Description": "Route media events (voice notes, image search) to media processing retry queue",
+    "EventBusName": {
+     "Ref": "EventBus7B8748AA"
+    },
+    "EventPattern": {
+     "source": [
+      "vyapargyan.media"
+     ]
+    },
+    "Name": "dev-vyapargyan-media-processing",
+    "State": "ENABLED",
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     }
+    ],
+    "Targets": [
+     {
+      "Arn": {
+       "Fn::GetAtt": [
+        "MediaProcessingQueue56039BA9",
+        "Arn"
+       ]
+      },
+      "Id": "Target0",
+      "InputPath": "$.detail"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/MediaProcessingRule/Resource"
+   }
+  },
+  "PaymentReminderWorkerFunctionServiceRoleC1E49BBD": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "lambda.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "ManagedPolicyArns": [
+     {
+      "Fn::Join": [
+       "",
+       [
+        "arn:",
+        {
+         "Ref": "AWS::Partition"
+        },
+        ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+       ]
+      ]
+     }
+    ],
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Name",
+      "Value": "dev-vyapargyan-payment-reminder-worker"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     },
+     {
+      "Key": "Service",
+      "Value": "scheduled-workers"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/PaymentReminderWorkerFunction/ServiceRole/Resource"
+   }
+  },
+  "PaymentReminderWorkerFunctionServiceRoleDefaultPolicyE19DE83D": {
+   "Type": "AWS::IAM::Policy",
+   "Properties": {
+    "PolicyDocument": {
+     "Statement": [
+      {
+       "Action": [
+        "dynamodb:BatchGetItem",
+        "dynamodb:BatchWriteItem",
+        "dynamodb:ConditionCheckItem",
+        "dynamodb:DeleteItem",
+        "dynamodb:DescribeTable",
+        "dynamodb:GetItem",
+        "dynamodb:GetRecords",
+        "dynamodb:GetShardIterator",
+        "dynamodb:PutItem",
+        "dynamodb:Query",
+        "dynamodb:Scan",
+        "dynamodb:UpdateItem"
+       ],
+       "Effect": "Allow",
+       "Resource": [
+        {
+         "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputFnGetAttMainTable74195DABArnE0EC388B"
+        },
+        {
+         "Fn::Join": [
+          "",
+          [
+           {
+            "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputFnGetAttMainTable74195DABArnE0EC388B"
+           },
+           "/index/*"
+          ]
+         ]
+        }
+       ]
+      },
+      {
+       "Action": "events:PutEvents",
+       "Effect": "Allow",
+       "Resource": {
+        "Fn::GetAtt": [
+         "EventBus7B8748AA",
+         "Arn"
+        ]
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "PolicyName": "PaymentReminderWorkerFunctionServiceRoleDefaultPolicyE19DE83D",
+    "Roles": [
+     {
+      "Ref": "PaymentReminderWorkerFunctionServiceRoleC1E49BBD"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/PaymentReminderWorkerFunction/ServiceRole/DefaultPolicy/Resource"
+   }
+  },
+  "PaymentReminderWorkerFunction7888C614": {
+   "Type": "AWS::Lambda::Function",
+   "Properties": {
+    "Architectures": [
+     "arm64"
+    ],
+    "Code": {
+     "S3Bucket": "cdk-hnb659fds-assets-856888988795-ap-south-1",
+     "S3Key": "0c2c1826d9aa7a48f002caa7b4341bb3cb469ecd4b357bfa3733533e3b60b555.zip"
+    },
+    "Environment": {
+     "Variables": {
+      "ENVIRONMENT": "dev",
+      "TABLE_NAME": {
+       "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputRefMainTable74195DAB4503BD7E"
+      },
+      "EVENT_BUS_NAME": {
+       "Ref": "EventBus7B8748AA"
+      },
+      "LOG_LEVEL": "info"
+     }
+    },
+    "FunctionName": "dev-vyapargyan-payment-reminder-worker",
+    "Handler": "handlers/workers/payment-reminder-worker.handler",
+    "MemorySize": 256,
+    "Role": {
+     "Fn::GetAtt": [
+      "PaymentReminderWorkerFunctionServiceRoleC1E49BBD",
+      "Arn"
+     ]
+    },
+    "Runtime": "nodejs20.x",
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Name",
+      "Value": "dev-vyapargyan-payment-reminder-worker"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     },
+     {
+      "Key": "Service",
+      "Value": "scheduled-workers"
+     }
+    ],
+    "Timeout": 60
+   },
+   "DependsOn": [
+    "PaymentReminderWorkerFunctionServiceRoleDefaultPolicyE19DE83D",
+    "PaymentReminderWorkerFunctionServiceRoleC1E49BBD"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/PaymentReminderWorkerFunction/Resource",
+    "aws:asset:path": "asset.0c2c1826d9aa7a48f002caa7b4341bb3cb469ecd4b357bfa3733533e3b60b555",
+    "aws:asset:is-bundled": false,
+    "aws:asset:property": "Code"
+   }
+  },
+  "PaymentReminderRule6D5A1DB8": {
+   "Type": "AWS::Events::Rule",
+   "Properties": {
+    "Description": "Send payment reminders for pending orders every 15 minutes",
+    "Name": "dev-vyapargyan-payment-reminder",
+    "ScheduleExpression": "rate(15 minutes)",
+    "State": "ENABLED",
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     }
+    ],
+    "Targets": [
+     {
+      "Arn": {
+       "Fn::GetAtt": [
+        "PaymentReminderWorkerFunction7888C614",
+        "Arn"
+       ]
+      },
+      "Id": "Target0"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/PaymentReminderRule/Resource"
+   }
+  },
+  "PaymentReminderRuleAllowEventRuledevvyapargyaneventsPaymentReminderWorkerFunction043E5F0ABDD8B925": {
+   "Type": "AWS::Lambda::Permission",
+   "Properties": {
+    "Action": "lambda:InvokeFunction",
+    "FunctionName": {
+     "Fn::GetAtt": [
+      "PaymentReminderWorkerFunction7888C614",
+      "Arn"
+     ]
+    },
+    "Principal": "events.amazonaws.com",
+    "SourceArn": {
+     "Fn::GetAtt": [
+      "PaymentReminderRule6D5A1DB8",
+      "Arn"
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/PaymentReminderRule/AllowEventRuledevvyapargyaneventsPaymentReminderWorkerFunction043E5F0A"
+   }
+  },
+  "CartAbandonmentWorkerFunctionServiceRole9DC8926A": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "lambda.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "ManagedPolicyArns": [
+     {
+      "Fn::Join": [
+       "",
+       [
+        "arn:",
+        {
+         "Ref": "AWS::Partition"
+        },
+        ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+       ]
+      ]
+     }
+    ],
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Name",
+      "Value": "dev-vyapargyan-cart-abandonment-worker"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     },
+     {
+      "Key": "Service",
+      "Value": "scheduled-workers"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/CartAbandonmentWorkerFunction/ServiceRole/Resource"
+   }
+  },
+  "CartAbandonmentWorkerFunctionServiceRoleDefaultPolicy6CF20E6D": {
+   "Type": "AWS::IAM::Policy",
+   "Properties": {
+    "PolicyDocument": {
+     "Statement": [
+      {
+       "Action": [
+        "dynamodb:BatchGetItem",
+        "dynamodb:BatchWriteItem",
+        "dynamodb:ConditionCheckItem",
+        "dynamodb:DeleteItem",
+        "dynamodb:DescribeTable",
+        "dynamodb:GetItem",
+        "dynamodb:GetRecords",
+        "dynamodb:GetShardIterator",
+        "dynamodb:PutItem",
+        "dynamodb:Query",
+        "dynamodb:Scan",
+        "dynamodb:UpdateItem"
+       ],
+       "Effect": "Allow",
+       "Resource": [
+        {
+         "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputFnGetAttMainTable74195DABArnE0EC388B"
+        },
+        {
+         "Fn::Join": [
+          "",
+          [
+           {
+            "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputFnGetAttMainTable74195DABArnE0EC388B"
+           },
+           "/index/*"
+          ]
+         ]
+        }
+       ]
+      },
+      {
+       "Action": "events:PutEvents",
+       "Effect": "Allow",
+       "Resource": {
+        "Fn::GetAtt": [
+         "EventBus7B8748AA",
+         "Arn"
+        ]
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "PolicyName": "CartAbandonmentWorkerFunctionServiceRoleDefaultPolicy6CF20E6D",
+    "Roles": [
+     {
+      "Ref": "CartAbandonmentWorkerFunctionServiceRole9DC8926A"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/CartAbandonmentWorkerFunction/ServiceRole/DefaultPolicy/Resource"
+   }
+  },
+  "CartAbandonmentWorkerFunction4B4B6372": {
+   "Type": "AWS::Lambda::Function",
+   "Properties": {
+    "Architectures": [
+     "arm64"
+    ],
+    "Code": {
+     "S3Bucket": "cdk-hnb659fds-assets-856888988795-ap-south-1",
+     "S3Key": "0c2c1826d9aa7a48f002caa7b4341bb3cb469ecd4b357bfa3733533e3b60b555.zip"
+    },
+    "Environment": {
+     "Variables": {
+      "ENVIRONMENT": "dev",
+      "TABLE_NAME": {
+       "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputRefMainTable74195DAB4503BD7E"
+      },
+      "EVENT_BUS_NAME": {
+       "Ref": "EventBus7B8748AA"
+      },
+      "LOG_LEVEL": "info"
+     }
+    },
+    "FunctionName": "dev-vyapargyan-cart-abandonment-worker",
+    "Handler": "handlers/workers/cart-abandonment-worker.handler",
+    "MemorySize": 512,
+    "Role": {
+     "Fn::GetAtt": [
+      "CartAbandonmentWorkerFunctionServiceRole9DC8926A",
+      "Arn"
+     ]
+    },
+    "Runtime": "nodejs20.x",
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Name",
+      "Value": "dev-vyapargyan-cart-abandonment-worker"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     },
+     {
+      "Key": "Service",
+      "Value": "scheduled-workers"
+     }
+    ],
+    "Timeout": 120
+   },
+   "DependsOn": [
+    "CartAbandonmentWorkerFunctionServiceRoleDefaultPolicy6CF20E6D",
+    "CartAbandonmentWorkerFunctionServiceRole9DC8926A"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/CartAbandonmentWorkerFunction/Resource",
+    "aws:asset:path": "asset.0c2c1826d9aa7a48f002caa7b4341bb3cb469ecd4b357bfa3733533e3b60b555",
+    "aws:asset:is-bundled": false,
+    "aws:asset:property": "Code"
+   }
+  },
+  "CartAbandonmentRuleF2820F9C": {
+   "Type": "AWS::Events::Rule",
+   "Properties": {
+    "Description": "Send cart abandonment reminders daily at 8:30 PM IST (15:00 UTC)",
+    "Name": "dev-vyapargyan-cart-abandonment",
+    "ScheduleExpression": "cron(0 15 * * ? *)",
+    "State": "ENABLED",
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     }
+    ],
+    "Targets": [
+     {
+      "Arn": {
+       "Fn::GetAtt": [
+        "CartAbandonmentWorkerFunction4B4B6372",
+        "Arn"
+       ]
+      },
+      "Id": "Target0"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/CartAbandonmentRule/Resource"
+   }
+  },
+  "CartAbandonmentRuleAllowEventRuledevvyapargyaneventsCartAbandonmentWorkerFunction17842B397B710B64": {
+   "Type": "AWS::Lambda::Permission",
+   "Properties": {
+    "Action": "lambda:InvokeFunction",
+    "FunctionName": {
+     "Fn::GetAtt": [
+      "CartAbandonmentWorkerFunction4B4B6372",
+      "Arn"
+     ]
+    },
+    "Principal": "events.amazonaws.com",
+    "SourceArn": {
+     "Fn::GetAtt": [
+      "CartAbandonmentRuleF2820F9C",
+      "Arn"
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/CartAbandonmentRule/AllowEventRuledevvyapargyaneventsCartAbandonmentWorkerFunction17842B39"
+   }
+  },
+  "SessionCleanupWorkerFunctionServiceRoleB35737AA": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "lambda.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "ManagedPolicyArns": [
+     {
+      "Fn::Join": [
+       "",
+       [
+        "arn:",
+        {
+         "Ref": "AWS::Partition"
+        },
+        ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+       ]
+      ]
+     }
+    ],
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Name",
+      "Value": "dev-vyapargyan-session-cleanup-worker"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     },
+     {
+      "Key": "Service",
+      "Value": "scheduled-workers"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/SessionCleanupWorkerFunction/ServiceRole/Resource"
+   }
+  },
+  "SessionCleanupWorkerFunctionServiceRoleDefaultPolicyF53697DF": {
+   "Type": "AWS::IAM::Policy",
+   "Properties": {
+    "PolicyDocument": {
+     "Statement": [
+      {
+       "Action": [
+        "dynamodb:BatchGetItem",
+        "dynamodb:BatchWriteItem",
+        "dynamodb:ConditionCheckItem",
+        "dynamodb:DeleteItem",
+        "dynamodb:DescribeTable",
+        "dynamodb:GetItem",
+        "dynamodb:GetRecords",
+        "dynamodb:GetShardIterator",
+        "dynamodb:PutItem",
+        "dynamodb:Query",
+        "dynamodb:Scan",
+        "dynamodb:UpdateItem"
+       ],
+       "Effect": "Allow",
+       "Resource": [
+        {
+         "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputFnGetAttMainTable74195DABArnE0EC388B"
+        },
+        {
+         "Fn::Join": [
+          "",
+          [
+           {
+            "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputFnGetAttMainTable74195DABArnE0EC388B"
+           },
+           "/index/*"
+          ]
+         ]
+        }
+       ]
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "PolicyName": "SessionCleanupWorkerFunctionServiceRoleDefaultPolicyF53697DF",
+    "Roles": [
+     {
+      "Ref": "SessionCleanupWorkerFunctionServiceRoleB35737AA"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/SessionCleanupWorkerFunction/ServiceRole/DefaultPolicy/Resource"
+   }
+  },
+  "SessionCleanupWorkerFunction0D0AEA79": {
+   "Type": "AWS::Lambda::Function",
+   "Properties": {
+    "Architectures": [
+     "arm64"
+    ],
+    "Code": {
+     "S3Bucket": "cdk-hnb659fds-assets-856888988795-ap-south-1",
+     "S3Key": "0c2c1826d9aa7a48f002caa7b4341bb3cb469ecd4b357bfa3733533e3b60b555.zip"
+    },
+    "Environment": {
+     "Variables": {
+      "ENVIRONMENT": "dev",
+      "TABLE_NAME": {
+       "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputRefMainTable74195DAB4503BD7E"
+      },
+      "EVENT_BUS_NAME": {
+       "Ref": "EventBus7B8748AA"
+      },
+      "LOG_LEVEL": "info"
+     }
+    },
+    "FunctionName": "dev-vyapargyan-session-cleanup-worker",
+    "Handler": "handlers/workers/session-cleanup-worker.handler",
+    "MemorySize": 256,
+    "Role": {
+     "Fn::GetAtt": [
+      "SessionCleanupWorkerFunctionServiceRoleB35737AA",
+      "Arn"
+     ]
+    },
+    "Runtime": "nodejs20.x",
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Name",
+      "Value": "dev-vyapargyan-session-cleanup-worker"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     },
+     {
+      "Key": "Service",
+      "Value": "scheduled-workers"
+     }
+    ],
+    "Timeout": 120
+   },
+   "DependsOn": [
+    "SessionCleanupWorkerFunctionServiceRoleDefaultPolicyF53697DF",
+    "SessionCleanupWorkerFunctionServiceRoleB35737AA"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/SessionCleanupWorkerFunction/Resource",
+    "aws:asset:path": "asset.0c2c1826d9aa7a48f002caa7b4341bb3cb469ecd4b357bfa3733533e3b60b555",
+    "aws:asset:is-bundled": false,
+    "aws:asset:property": "Code"
+   }
+  },
+  "SessionCleanupRule801DEE6F": {
+   "Type": "AWS::Events::Rule",
+   "Properties": {
+    "Description": "Clean up expired sessions daily at 11:30 PM IST (18:00 UTC)",
+    "Name": "dev-vyapargyan-session-cleanup",
+    "ScheduleExpression": "cron(0 18 * * ? *)",
+    "State": "ENABLED",
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     }
+    ],
+    "Targets": [
+     {
+      "Arn": {
+       "Fn::GetAtt": [
+        "SessionCleanupWorkerFunction0D0AEA79",
+        "Arn"
+       ]
+      },
+      "Id": "Target0"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/SessionCleanupRule/Resource"
+   }
+  },
+  "SessionCleanupRuleAllowEventRuledevvyapargyaneventsSessionCleanupWorkerFunctionE39EA17117CB8006": {
+   "Type": "AWS::Lambda::Permission",
+   "Properties": {
+    "Action": "lambda:InvokeFunction",
+    "FunctionName": {
+     "Fn::GetAtt": [
+      "SessionCleanupWorkerFunction0D0AEA79",
+      "Arn"
+     ]
+    },
+    "Principal": "events.amazonaws.com",
+    "SourceArn": {
+     "Fn::GetAtt": [
+      "SessionCleanupRule801DEE6F",
+      "Arn"
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/SessionCleanupRule/AllowEventRuledevvyapargyaneventsSessionCleanupWorkerFunctionE39EA171"
+   }
+  },
+  "HealthCheckWorkerFunctionServiceRoleAA5EBF12": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "lambda.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "ManagedPolicyArns": [
+     {
+      "Fn::Join": [
+       "",
+       [
+        "arn:",
+        {
+         "Ref": "AWS::Partition"
+        },
+        ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+       ]
+      ]
+     }
+    ],
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Name",
+      "Value": "dev-vyapargyan-health-check-worker"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     },
+     {
+      "Key": "Service",
+      "Value": "scheduled-workers"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/HealthCheckWorkerFunction/ServiceRole/Resource"
+   }
+  },
+  "HealthCheckWorkerFunctionServiceRoleDefaultPolicy975751CA": {
+   "Type": "AWS::IAM::Policy",
+   "Properties": {
+    "PolicyDocument": {
+     "Statement": [
+      {
+       "Action": [
+        "dynamodb:BatchGetItem",
+        "dynamodb:ConditionCheckItem",
+        "dynamodb:DescribeTable",
+        "dynamodb:GetItem",
+        "dynamodb:GetRecords",
+        "dynamodb:GetShardIterator",
+        "dynamodb:Query",
+        "dynamodb:Scan"
+       ],
+       "Effect": "Allow",
+       "Resource": [
+        {
+         "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputFnGetAttMainTable74195DABArnE0EC388B"
+        },
+        {
+         "Fn::Join": [
+          "",
+          [
+           {
+            "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputFnGetAttMainTable74195DABArnE0EC388B"
+           },
+           "/index/*"
+          ]
+         ]
+        }
+       ]
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "PolicyName": "HealthCheckWorkerFunctionServiceRoleDefaultPolicy975751CA",
+    "Roles": [
+     {
+      "Ref": "HealthCheckWorkerFunctionServiceRoleAA5EBF12"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/HealthCheckWorkerFunction/ServiceRole/DefaultPolicy/Resource"
+   }
+  },
+  "HealthCheckWorkerFunction1FEB43BC": {
+   "Type": "AWS::Lambda::Function",
+   "Properties": {
+    "Architectures": [
+     "arm64"
+    ],
+    "Code": {
+     "S3Bucket": "cdk-hnb659fds-assets-856888988795-ap-south-1",
+     "S3Key": "0c2c1826d9aa7a48f002caa7b4341bb3cb469ecd4b357bfa3733533e3b60b555.zip"
+    },
+    "Environment": {
+     "Variables": {
+      "ENVIRONMENT": "dev",
+      "TABLE_NAME": {
+       "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputRefMainTable74195DAB4503BD7E"
+      },
+      "EVENT_BUS_NAME": {
+       "Ref": "EventBus7B8748AA"
+      },
+      "LOG_LEVEL": "info"
+     }
+    },
+    "FunctionName": "dev-vyapargyan-health-check-worker",
+    "Handler": "handlers/workers/health-check-worker.handler",
+    "MemorySize": 256,
+    "Role": {
+     "Fn::GetAtt": [
+      "HealthCheckWorkerFunctionServiceRoleAA5EBF12",
+      "Arn"
+     ]
+    },
+    "Runtime": "nodejs20.x",
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Name",
+      "Value": "dev-vyapargyan-health-check-worker"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     },
+     {
+      "Key": "Service",
+      "Value": "scheduled-workers"
+     }
+    ],
+    "Timeout": 60
+   },
+   "DependsOn": [
+    "HealthCheckWorkerFunctionServiceRoleDefaultPolicy975751CA",
+    "HealthCheckWorkerFunctionServiceRoleAA5EBF12"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/HealthCheckWorkerFunction/Resource",
+    "aws:asset:path": "asset.0c2c1826d9aa7a48f002caa7b4341bb3cb469ecd4b357bfa3733533e3b60b555",
+    "aws:asset:is-bundled": false,
+    "aws:asset:property": "Code"
+   }
+  },
+  "HealthCheckRule219DC6A1": {
+   "Type": "AWS::Events::Rule",
+   "Properties": {
+    "Description": "Verify external service connectivity daily at 11:30 AM IST (06:00 UTC)",
+    "Name": "dev-vyapargyan-health-check",
+    "ScheduleExpression": "cron(0 6 * * ? *)",
+    "State": "ENABLED",
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     }
+    ],
+    "Targets": [
+     {
+      "Arn": {
+       "Fn::GetAtt": [
+        "HealthCheckWorkerFunction1FEB43BC",
+        "Arn"
+       ]
+      },
+      "Id": "Target0"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/HealthCheckRule/Resource"
+   }
+  },
+  "HealthCheckRuleAllowEventRuledevvyapargyaneventsHealthCheckWorkerFunction09852D5AEF0352B5": {
+   "Type": "AWS::Lambda::Permission",
+   "Properties": {
+    "Action": "lambda:InvokeFunction",
+    "FunctionName": {
+     "Fn::GetAtt": [
+      "HealthCheckWorkerFunction1FEB43BC",
+      "Arn"
+     ]
+    },
+    "Principal": "events.amazonaws.com",
+    "SourceArn": {
+     "Fn::GetAtt": [
+      "HealthCheckRule219DC6A1",
+      "Arn"
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/HealthCheckRule/AllowEventRuledevvyapargyaneventsHealthCheckWorkerFunction09852D5A"
+   }
+  },
+  "ScheduledMessageWorkerFunctionServiceRole4269BAD6": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "lambda.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "ManagedPolicyArns": [
+     {
+      "Fn::Join": [
+       "",
+       [
+        "arn:",
+        {
+         "Ref": "AWS::Partition"
+        },
+        ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+       ]
+      ]
+     }
+    ],
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Name",
+      "Value": "dev-vyapargyan-scheduled-message-worker"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     },
+     {
+      "Key": "Service",
+      "Value": "scheduled-workers"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/ScheduledMessageWorkerFunction/ServiceRole/Resource"
+   }
+  },
+  "ScheduledMessageWorkerFunctionServiceRoleDefaultPolicyF945CACB": {
+   "Type": "AWS::IAM::Policy",
+   "Properties": {
+    "PolicyDocument": {
+     "Statement": [
+      {
+       "Action": [
+        "dynamodb:BatchGetItem",
+        "dynamodb:BatchWriteItem",
+        "dynamodb:ConditionCheckItem",
+        "dynamodb:DeleteItem",
+        "dynamodb:DescribeTable",
+        "dynamodb:GetItem",
+        "dynamodb:GetRecords",
+        "dynamodb:GetShardIterator",
+        "dynamodb:PutItem",
+        "dynamodb:Query",
+        "dynamodb:Scan",
+        "dynamodb:UpdateItem"
+       ],
+       "Effect": "Allow",
+       "Resource": [
+        {
+         "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputFnGetAttMainTable74195DABArnE0EC388B"
+        },
+        {
+         "Fn::Join": [
+          "",
+          [
+           {
+            "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputFnGetAttMainTable74195DABArnE0EC388B"
+           },
+           "/index/*"
+          ]
+         ]
+        }
+       ]
+      },
+      {
+       "Action": [
+        "sqs:ChangeMessageVisibility",
+        "sqs:DeleteMessage",
+        "sqs:GetQueueAttributes",
+        "sqs:GetQueueUrl",
+        "sqs:ReceiveMessage"
+       ],
+       "Effect": "Allow",
+       "Resource": {
+        "Fn::GetAtt": [
+         "ScheduledMessagesQueueC355CD70",
+         "Arn"
+        ]
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "PolicyName": "ScheduledMessageWorkerFunctionServiceRoleDefaultPolicyF945CACB",
+    "Roles": [
+     {
+      "Ref": "ScheduledMessageWorkerFunctionServiceRole4269BAD6"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/ScheduledMessageWorkerFunction/ServiceRole/DefaultPolicy/Resource"
+   }
+  },
+  "ScheduledMessageWorkerFunctionC5181021": {
+   "Type": "AWS::Lambda::Function",
+   "Properties": {
+    "Architectures": [
+     "arm64"
+    ],
+    "Code": {
+     "S3Bucket": "cdk-hnb659fds-assets-856888988795-ap-south-1",
+     "S3Key": "0c2c1826d9aa7a48f002caa7b4341bb3cb469ecd4b357bfa3733533e3b60b555.zip"
+    },
+    "Environment": {
+     "Variables": {
+      "ENVIRONMENT": "dev",
+      "TABLE_NAME": {
+       "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputRefMainTable74195DAB4503BD7E"
+      },
+      "EVENT_BUS_NAME": {
+       "Ref": "EventBus7B8748AA"
+      },
+      "LOG_LEVEL": "info"
+     }
+    },
+    "FunctionName": "dev-vyapargyan-scheduled-message-worker",
+    "Handler": "handlers/workers/scheduled-message-worker.handler",
+    "MemorySize": 256,
+    "Role": {
+     "Fn::GetAtt": [
+      "ScheduledMessageWorkerFunctionServiceRole4269BAD6",
+      "Arn"
+     ]
+    },
+    "Runtime": "nodejs20.x",
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Name",
+      "Value": "dev-vyapargyan-scheduled-message-worker"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     },
+     {
+      "Key": "Service",
+      "Value": "scheduled-workers"
+     }
+    ],
+    "Timeout": 60
+   },
+   "DependsOn": [
+    "ScheduledMessageWorkerFunctionServiceRoleDefaultPolicyF945CACB",
+    "ScheduledMessageWorkerFunctionServiceRole4269BAD6"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/ScheduledMessageWorkerFunction/Resource",
+    "aws:asset:path": "asset.0c2c1826d9aa7a48f002caa7b4341bb3cb469ecd4b357bfa3733533e3b60b555",
+    "aws:asset:is-bundled": false,
+    "aws:asset:property": "Code"
+   }
+  },
+  "ScheduledMessagesTriggerRule4DCB4E16": {
+   "Type": "AWS::Events::Rule",
+   "Properties": {
+    "Description": "Process deferred quiet-hours messages daily at 09:01 IST (03:31 UTC)",
+    "Name": "dev-vyapargyan-scheduled-messages-trigger",
+    "ScheduleExpression": "cron(31 3 * * ? *)",
+    "State": "ENABLED",
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     }
+    ],
+    "Targets": [
+     {
+      "Arn": {
+       "Fn::GetAtt": [
+        "ScheduledMessageWorkerFunctionC5181021",
+        "Arn"
+       ]
+      },
+      "Id": "Target0"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/ScheduledMessagesTriggerRule/Resource"
+   }
+  },
+  "ScheduledMessagesTriggerRuleAllowEventRuledevvyapargyaneventsScheduledMessageWorkerFunction2836D40FA340C610": {
+   "Type": "AWS::Lambda::Permission",
+   "Properties": {
+    "Action": "lambda:InvokeFunction",
+    "FunctionName": {
+     "Fn::GetAtt": [
+      "ScheduledMessageWorkerFunctionC5181021",
+      "Arn"
+     ]
+    },
+    "Principal": "events.amazonaws.com",
+    "SourceArn": {
+     "Fn::GetAtt": [
+      "ScheduledMessagesTriggerRule4DCB4E16",
+      "Arn"
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/ScheduledMessagesTriggerRule/AllowEventRuledevvyapargyaneventsScheduledMessageWorkerFunction2836D40F"
+   }
+  },
+  "AuditExportWorkerFunctionServiceRole19113B81": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "lambda.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "ManagedPolicyArns": [
+     {
+      "Fn::Join": [
+       "",
+       [
+        "arn:",
+        {
+         "Ref": "AWS::Partition"
+        },
+        ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+       ]
+      ]
+     }
+    ],
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Name",
+      "Value": "dev-vyapargyan-audit-export-worker"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     },
+     {
+      "Key": "Service",
+      "Value": "scheduled-workers"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/AuditExportWorkerFunction/ServiceRole/Resource"
+   }
+  },
+  "AuditExportWorkerFunctionServiceRoleDefaultPolicy699F11FA": {
+   "Type": "AWS::IAM::Policy",
+   "Properties": {
+    "PolicyDocument": {
+     "Statement": [
+      {
+       "Action": [
+        "dynamodb:BatchGetItem",
+        "dynamodb:BatchWriteItem",
+        "dynamodb:ConditionCheckItem",
+        "dynamodb:DeleteItem",
+        "dynamodb:DescribeTable",
+        "dynamodb:GetItem",
+        "dynamodb:GetRecords",
+        "dynamodb:GetShardIterator",
+        "dynamodb:PutItem",
+        "dynamodb:Query",
+        "dynamodb:Scan",
+        "dynamodb:UpdateItem"
+       ],
+       "Effect": "Allow",
+       "Resource": [
+        {
+         "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputFnGetAttMainTable74195DABArnE0EC388B"
+        },
+        {
+         "Fn::Join": [
+          "",
+          [
+           {
+            "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputFnGetAttMainTable74195DABArnE0EC388B"
+           },
+           "/index/*"
+          ]
+         ]
+        }
+       ]
+      },
+      {
+       "Action": [
+        "s3:Abort*",
+        "s3:DeleteObject*",
+        "s3:PutObject",
+        "s3:PutObjectLegalHold",
+        "s3:PutObjectRetention",
+        "s3:PutObjectTagging",
+        "s3:PutObjectVersionTagging"
+       ],
+       "Effect": "Allow",
+       "Resource": [
+        {
+         "Fn::ImportValue": "dev-vyapargyan-storage:ExportsOutputFnGetAttDocumentsBucket9EC9DEB9ArnEA5095A7"
+        },
+        {
+         "Fn::Join": [
+          "",
+          [
+           {
+            "Fn::ImportValue": "dev-vyapargyan-storage:ExportsOutputFnGetAttDocumentsBucket9EC9DEB9ArnEA5095A7"
+           },
+           "/*"
+          ]
+         ]
+        }
+       ]
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "PolicyName": "AuditExportWorkerFunctionServiceRoleDefaultPolicy699F11FA",
+    "Roles": [
+     {
+      "Ref": "AuditExportWorkerFunctionServiceRole19113B81"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/AuditExportWorkerFunction/ServiceRole/DefaultPolicy/Resource"
+   }
+  },
+  "AuditExportWorkerFunction2F3C3D05": {
+   "Type": "AWS::Lambda::Function",
+   "Properties": {
+    "Architectures": [
+     "arm64"
+    ],
+    "Code": {
+     "S3Bucket": "cdk-hnb659fds-assets-856888988795-ap-south-1",
+     "S3Key": "0c2c1826d9aa7a48f002caa7b4341bb3cb469ecd4b357bfa3733533e3b60b555.zip"
+    },
+    "Environment": {
+     "Variables": {
+      "ENVIRONMENT": "dev",
+      "TABLE_NAME": {
+       "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputRefMainTable74195DAB4503BD7E"
+      },
+      "EVENT_BUS_NAME": {
+       "Ref": "EventBus7B8748AA"
+      },
+      "LOG_LEVEL": "info",
+      "DOCUMENTS_BUCKET": {
+       "Fn::ImportValue": "dev-vyapargyan-storage:ExportsOutputRefDocumentsBucket9EC9DEB9131399C0"
+      }
+     }
+    },
+    "FunctionName": "dev-vyapargyan-audit-export-worker",
+    "Handler": "handlers/workers/audit-export-worker.handler",
+    "MemorySize": 512,
+    "Role": {
+     "Fn::GetAtt": [
+      "AuditExportWorkerFunctionServiceRole19113B81",
+      "Arn"
+     ]
+    },
+    "Runtime": "nodejs20.x",
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Name",
+      "Value": "dev-vyapargyan-audit-export-worker"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     },
+     {
+      "Key": "Service",
+      "Value": "scheduled-workers"
+     }
+    ],
+    "Timeout": 300
+   },
+   "DependsOn": [
+    "AuditExportWorkerFunctionServiceRoleDefaultPolicy699F11FA",
+    "AuditExportWorkerFunctionServiceRole19113B81"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/AuditExportWorkerFunction/Resource",
+    "aws:asset:path": "asset.0c2c1826d9aa7a48f002caa7b4341bb3cb469ecd4b357bfa3733533e3b60b555",
+    "aws:asset:is-bundled": false,
+    "aws:asset:property": "Code"
+   }
+  },
+  "AuditExportRule1AD26945": {
+   "Type": "AWS::Events::Rule",
+   "Properties": {
+    "Description": "Monthly export of audit logs older than 90 days to S3 (1st of month)",
+    "Name": "dev-vyapargyan-audit-export",
+    "ScheduleExpression": "cron(0 0 1 * ? *)",
+    "State": "ENABLED",
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     }
+    ],
+    "Targets": [
+     {
+      "Arn": {
+       "Fn::GetAtt": [
+        "AuditExportWorkerFunction2F3C3D05",
+        "Arn"
+       ]
+      },
+      "Id": "Target0"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/AuditExportRule/Resource"
+   }
+  },
+  "AuditExportRuleAllowEventRuledevvyapargyaneventsAuditExportWorkerFunction86E232902DDD2A89": {
+   "Type": "AWS::Lambda::Permission",
+   "Properties": {
+    "Action": "lambda:InvokeFunction",
+    "FunctionName": {
+     "Fn::GetAtt": [
+      "AuditExportWorkerFunction2F3C3D05",
+      "Arn"
+     ]
+    },
+    "Principal": "events.amazonaws.com",
+    "SourceArn": {
+     "Fn::GetAtt": [
+      "AuditExportRule1AD26945",
+      "Arn"
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/AuditExportRule/AllowEventRuledevvyapargyaneventsAuditExportWorkerFunction86E23290"
+   }
+  },
+  "OmnichannelAlarmTopic4F41AA2B": {
+   "Type": "AWS::SNS::Topic",
+   "Properties": {
+    "DisplayName": "VyaparGyan Omnichannel Alarms",
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Name",
+      "Value": "dev-vyapargyan-omnichannel-alarms"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     },
+     {
+      "Key": "Service",
+      "Value": "observability"
+     }
+    ],
+    "TopicName": "dev-vyapargyan-omnichannel-alarms"
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/OmnichannelAlarmTopic/Resource"
+   }
+  },
+  "WhatsAppDLQHighAlarm5E337EC6": {
+   "Type": "AWS::CloudWatch::Alarm",
+   "Properties": {
+    "AlarmActions": [
+     {
+      "Ref": "OmnichannelAlarmTopic4F41AA2B"
+     }
+    ],
+    "AlarmDescription": "WhatsApp DLQ depth exceeds 5 messages in 5 minutes",
+    "AlarmName": "dev-vyapargyan-whatsapp-dlq-high",
+    "ComparisonOperator": "GreaterThanThreshold",
+    "Dimensions": [
+     {
+      "Name": "QueueName",
+      "Value": {
+       "Fn::GetAtt": [
+        "WhatsAppMessagesDLQFF5B4E5B",
+        "QueueName"
+       ]
+      }
+     }
+    ],
+    "EvaluationPeriods": 1,
+    "MetricName": "ApproximateNumberOfMessagesVisible",
+    "Namespace": "AWS/SQS",
+    "Period": 300,
+    "Statistic": "Maximum",
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     }
+    ],
+    "Threshold": 5,
+    "TreatMissingData": "notBreaching"
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/WhatsAppDLQHighAlarm/Resource"
+   }
+  },
+  "MediaDLQHighAlarm48DD0D52": {
+   "Type": "AWS::CloudWatch::Alarm",
+   "Properties": {
+    "AlarmActions": [
+     {
+      "Ref": "OmnichannelAlarmTopic4F41AA2B"
+     }
+    ],
+    "AlarmDescription": "Media processing DLQ depth exceeds 10 messages in 5 minutes",
+    "AlarmName": "dev-vyapargyan-media-dlq-high",
+    "ComparisonOperator": "GreaterThanThreshold",
+    "Dimensions": [
+     {
+      "Name": "QueueName",
+      "Value": {
+       "Fn::GetAtt": [
+        "MediaProcessingDLQ38BEDAF3",
+        "QueueName"
+       ]
+      }
+     }
+    ],
+    "EvaluationPeriods": 1,
+    "MetricName": "ApproximateNumberOfMessagesVisible",
+    "Namespace": "AWS/SQS",
+    "Period": 300,
+    "Statistic": "Maximum",
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     }
+    ],
+    "Threshold": 10,
+    "TreatMissingData": "notBreaching"
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/MediaDLQHighAlarm/Resource"
+   }
+  },
+  "MessageProcessingErrorsAlarm8332AD6B": {
+   "Type": "AWS::CloudWatch::Alarm",
+   "Properties": {
+    "AlarmActions": [
+     {
+      "Ref": "OmnichannelAlarmTopic4F41AA2B"
+     }
+    ],
+    "AlarmDescription": "WhatsApp worker Lambda error rate exceeds 5%",
+    "AlarmName": "dev-vyapargyan-message-processing-errors",
+    "ComparisonOperator": "GreaterThanThreshold",
+    "Dimensions": [
+     {
+      "Name": "FunctionName",
+      "Value": {
+       "Ref": "WhatsAppWorkerFunctionE3E30471"
+      }
+     }
+    ],
+    "EvaluationPeriods": 1,
+    "MetricName": "Errors",
+    "Namespace": "AWS/Lambda",
+    "Period": 300,
+    "Statistic": "Sum",
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     }
+    ],
+    "Threshold": 5,
+    "TreatMissingData": "notBreaching"
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/MessageProcessingErrorsAlarm/Resource"
+   }
+  },
+  "TwilioSendFailuresAlarm13202D40": {
+   "Type": "AWS::CloudWatch::Alarm",
+   "Properties": {
+    "AlarmActions": [
+     {
+      "Ref": "OmnichannelAlarmTopic4F41AA2B"
+     }
+    ],
+    "AlarmDescription": "Twilio send failure rate exceeds 3%",
+    "AlarmName": "dev-vyapargyan-twilio-send-failures",
+    "ComparisonOperator": "GreaterThanThreshold",
+    "Dimensions": [
+     {
+      "Name": "Service",
+      "Value": "twilio"
+     }
+    ],
+    "EvaluationPeriods": 1,
+    "MetricName": "AIFailureRate",
+    "Namespace": "VyaparGyan/dev",
+    "Period": 300,
+    "Statistic": "Average",
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     }
+    ],
+    "Threshold": 3,
+    "TreatMissingData": "notBreaching"
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/TwilioSendFailuresAlarm/Resource"
+   }
+  },
+  "AIFailureHighgeminiAlarm7CC593AC": {
+   "Type": "AWS::CloudWatch::Alarm",
+   "Properties": {
+    "AlarmActions": [
+     {
+      "Ref": "OmnichannelAlarmTopic4F41AA2B"
+     }
+    ],
+    "AlarmDescription": "AI failure rate for gemini exceeds 5%",
+    "AlarmName": "dev-vyapargyan-ai-failure-high-gemini",
+    "ComparisonOperator": "GreaterThanThreshold",
+    "Dimensions": [
+     {
+      "Name": "Service",
+      "Value": "gemini"
+     }
+    ],
+    "EvaluationPeriods": 1,
+    "MetricName": "AIFailureRate",
+    "Namespace": "VyaparGyan/dev",
+    "Period": 300,
+    "Statistic": "Average",
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     }
+    ],
+    "Threshold": 5,
+    "TreatMissingData": "notBreaching"
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/AIFailureHighgeminiAlarm/Resource"
+   }
+  },
+  "AIFailureHighbedrockAlarmFB647D1B": {
+   "Type": "AWS::CloudWatch::Alarm",
+   "Properties": {
+    "AlarmActions": [
+     {
+      "Ref": "OmnichannelAlarmTopic4F41AA2B"
+     }
+    ],
+    "AlarmDescription": "AI failure rate for bedrock exceeds 5%",
+    "AlarmName": "dev-vyapargyan-ai-failure-high-bedrock",
+    "ComparisonOperator": "GreaterThanThreshold",
+    "Dimensions": [
+     {
+      "Name": "Service",
+      "Value": "bedrock"
+     }
+    ],
+    "EvaluationPeriods": 1,
+    "MetricName": "AIFailureRate",
+    "Namespace": "VyaparGyan/dev",
+    "Period": 300,
+    "Statistic": "Average",
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     }
+    ],
+    "Threshold": 5,
+    "TreatMissingData": "notBreaching"
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/AIFailureHighbedrockAlarm/Resource"
+   }
+  },
+  "AIFailureHighgrokAlarmA23817EB": {
+   "Type": "AWS::CloudWatch::Alarm",
+   "Properties": {
+    "AlarmActions": [
+     {
+      "Ref": "OmnichannelAlarmTopic4F41AA2B"
+     }
+    ],
+    "AlarmDescription": "AI failure rate for grok exceeds 5%",
+    "AlarmName": "dev-vyapargyan-ai-failure-high-grok",
+    "ComparisonOperator": "GreaterThanThreshold",
+    "Dimensions": [
+     {
+      "Name": "Service",
+      "Value": "grok"
+     }
+    ],
+    "EvaluationPeriods": 1,
+    "MetricName": "AIFailureRate",
+    "Namespace": "VyaparGyan/dev",
+    "Period": 300,
+    "Statistic": "Average",
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     }
+    ],
+    "Threshold": 5,
+    "TreatMissingData": "notBreaching"
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/AIFailureHighgrokAlarm/Resource"
+   }
+  },
+  "OmnichannelHealthDashboard193F156A": {
+   "Type": "AWS::CloudWatch::Dashboard",
+   "Properties": {
+    "DashboardBody": {
+     "Fn::Join": [
+      "",
+      [
+       "{\"widgets\":[{\"type\":\"metric\",\"width\":12,\"height\":6,\"x\":0,\"y\":0,\"properties\":{\"view\":\"timeSeries\",\"title\":\"Message Volume by Channel\",\"region\":\"",
+       {
+        "Ref": "AWS::Region"
+       },
+       "\",\"metrics\":[[\"VyaparGyan/dev\",\"MessagesReceived\",\"Channel\",\"whatsapp\",{\"label\":\"WhatsApp Received\",\"stat\":\"Sum\"}],[\"VyaparGyan/dev\",\"MessagesReceived\",\"Channel\",\"web\",{\"label\":\"Web Received\",\"stat\":\"Sum\"}],[\"VyaparGyan/dev\",\"MessagesSent\",\"Channel\",\"whatsapp\",{\"label\":\"WhatsApp Sent\",\"stat\":\"Sum\"}],[\"VyaparGyan/dev\",\"MessagesSent\",\"Channel\",\"web\",{\"label\":\"Web Sent\",\"stat\":\"Sum\"}]],\"yAxis\":{},\"period\":300}},{\"type\":\"metric\",\"width\":12,\"height\":6,\"x\":0,\"y\":6,\"properties\":{\"view\":\"timeSeries\",\"title\":\"Lambda Error Rates\",\"region\":\"",
+       {
+        "Ref": "AWS::Region"
+       },
+       "\",\"metrics\":[[\"AWS/Lambda\",\"Errors\",\"FunctionName\",\"",
+       {
+        "Ref": "WhatsAppWorkerFunctionE3E30471"
+       },
+       "\",{\"label\":\"WhatsApp Worker\",\"stat\":\"Sum\"}],[\"AWS/Lambda\",\"Errors\",\"FunctionName\",\"",
+       {
+        "Ref": "NotificationRouterFunction75EB813D"
+       },
+       "\",{\"label\":\"Notification Router\",\"stat\":\"Sum\"}],[\"AWS/Lambda\",\"Errors\",\"FunctionName\",\"",
+       {
+        "Ref": "CampaignWorkerFunction8F40201B"
+       },
+       "\",{\"label\":\"Campaign Worker\",\"stat\":\"Sum\"}]],\"yAxis\":{},\"period\":300}},{\"type\":\"metric\",\"width\":12,\"height\":6,\"x\":0,\"y\":12,\"properties\":{\"view\":\"timeSeries\",\"title\":\"DLQ Depths\",\"region\":\"",
+       {
+        "Ref": "AWS::Region"
+       },
+       "\",\"metrics\":[[\"AWS/SQS\",\"ApproximateNumberOfMessagesVisible\",\"QueueName\",\"",
+       {
+        "Fn::GetAtt": [
+         "WhatsAppMessagesDLQFF5B4E5B",
+         "QueueName"
+        ]
+       },
+       "\",{\"label\":\"WhatsApp DLQ\",\"stat\":\"Maximum\"}],[\"AWS/SQS\",\"ApproximateNumberOfMessagesVisible\",\"QueueName\",\"",
+       {
+        "Fn::GetAtt": [
+         "MediaProcessingDLQ38BEDAF3",
+         "QueueName"
+        ]
+       },
+       "\",{\"label\":\"Media DLQ\",\"stat\":\"Maximum\"}]],\"yAxis\":{},\"period\":300}},{\"type\":\"metric\",\"width\":12,\"height\":6,\"x\":0,\"y\":18,\"properties\":{\"view\":\"timeSeries\",\"title\":\"AI Processing Latency\",\"region\":\"",
+       {
+        "Ref": "AWS::Region"
+       },
+       "\",\"metrics\":[[\"VyaparGyan/dev\",\"AIProcessingLatency\",{\"label\":\"p50\",\"stat\":\"p50\"}],[\"VyaparGyan/dev\",\"AIProcessingLatency\",{\"label\":\"p95\",\"stat\":\"p95\"}],[\"VyaparGyan/dev\",\"AIProcessingLatency\",{\"label\":\"p99\",\"stat\":\"p99\"}]],\"yAxis\":{},\"period\":300}},{\"type\":\"metric\",\"width\":12,\"height\":6,\"x\":0,\"y\":24,\"properties\":{\"view\":\"timeSeries\",\"title\":\"Cart Sync Latency\",\"region\":\"",
+       {
+        "Ref": "AWS::Region"
+       },
+       "\",\"metrics\":[[\"VyaparGyan/dev\",\"CartSyncLatency\",{\"label\":\"p50\",\"stat\":\"p50\"}],[\"VyaparGyan/dev\",\"CartSyncLatency\",{\"label\":\"p95\",\"stat\":\"p95\"}],[\"VyaparGyan/dev\",\"CartSyncLatency\",{\"label\":\"p99\",\"stat\":\"p99\"}]],\"yAxis\":{},\"period\":300}},{\"type\":\"metric\",\"width\":12,\"height\":6,\"x\":0,\"y\":30,\"properties\":{\"view\":\"timeSeries\",\"title\":\"System Health Score\",\"region\":\"",
+       {
+        "Ref": "AWS::Region"
+       },
+       "\",\"metrics\":[[\"VyaparGyan/dev\",\"SystemHealthScore\",{\"label\":\"Health Score\"}]],\"yAxis\":{},\"period\":300}}]}"
+      ]
+     ]
+    },
+    "DashboardName": "dev-vyapargyan-OmnichannelHealth"
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/OmnichannelHealthDashboard/Resource"
+   }
+  },
+  "CDKMetadata": {
+   "Type": "AWS::CDK::Metadata",
+   "Properties": {
+    "Analytics": "v2:deflate64:H4sIAAAAAAAA/2WOQVPDIBCFf0vvdK2p/oBG682xJt47G7K2NARiFppxGP67A6nx4IX39oPlvQKKhw1sVjjxWrbdWqsGQu1QdqIitn6UJHDiY6ArGccQ9klLz+Lp0yy+8poSSBoFfzGEd08+s9nk82C1kt8LnMcoNPZNixBevJFOWZMeLD5n1LnIKw6DMqcl+R890NgrZmVNFAp7CJW99Ur6l/4bzNsjMpNj2CURvIXSy45ciUyCDUP4sIOSaSebKKS2vp3QyTOEncaxT3ezeUY+NxbHNqFliFHkz2uHp1vNN+8G76IwtiW48N21eIQC7lcXVmo9euNUT1DN+gM/0MNXoAEAAA=="
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-events/CDKMetadata/Default"
+   }
+  }
+ },
+ "Outputs": {
+  "AlarmTopicArn": {
+   "Description": "SNS topic ARN for omnichannel alarm notifications",
+   "Value": {
+    "Ref": "OmnichannelAlarmTopic4F41AA2B"
+   },
+   "Export": {
+    "Name": "dev-vyapargyan-alarm-topic-arn"
+   }
+  },
+  "EventBusName": {
+   "Description": "EventBridge event bus name",
+   "Value": {
+    "Ref": "EventBus7B8748AA"
+   },
+   "Export": {
+    "Name": "dev-vyapargyan-event-bus-name"
+   }
+  },
+  "EventBusArn": {
+   "Description": "EventBridge event bus ARN",
+   "Value": {
+    "Fn::GetAtt": [
+     "EventBus7B8748AA",
+     "Arn"
+    ]
+   },
+   "Export": {
+    "Name": "dev-vyapargyan-event-bus-arn"
+   }
+  },
+  "WhatsAppMessagesQueueUrl": {
+   "Description": "WhatsApp messages SQS queue URL",
+   "Value": {
+    "Ref": "WhatsAppMessagesQueue9E6CF061"
+   },
+   "Export": {
+    "Name": "dev-vyapargyan-whatsapp-queue-url"
+   }
+  },
+  "WhatsAppMessagesQueueArn": {
+   "Description": "WhatsApp messages SQS queue ARN",
+   "Value": {
+    "Fn::GetAtt": [
+     "WhatsAppMessagesQueue9E6CF061",
+     "Arn"
+    ]
+   },
+   "Export": {
+    "Name": "dev-vyapargyan-whatsapp-queue-arn"
+   }
+  },
+  "TrendAnalyzerFunctionArn": {
+   "Description": "Trend analyzer Lambda function ARN",
+   "Value": {
+    "Fn::GetAtt": [
+     "TrendAnalyzerFunction43AD65BB",
+     "Arn"
+    ]
+   },
+   "Export": {
+    "Name": "dev-vyapargyan-trend-analyzer-arn"
+   }
+  },
+  "CampaignWorkerFunctionArn": {
+   "Description": "Campaign worker Lambda function ARN",
+   "Value": {
+    "Fn::GetAtt": [
+     "CampaignWorkerFunction8F40201B",
+     "Arn"
+    ]
+   },
+   "Export": {
+    "Name": "dev-vyapargyan-campaign-worker-arn"
+   }
+  },
+  "NotificationRouterFunctionArn": {
+   "Description": "Notification router Lambda function ARN",
+   "Value": {
+    "Fn::GetAtt": [
+     "NotificationRouterFunction75EB813D",
+     "Arn"
+    ]
+   },
+   "Export": {
+    "Name": "dev-vyapargyan-notification-router-arn"
+   }
+  },
+  "MessageFanoutFunctionArn": {
+   "Description": "Message fan-out Lambda function ARN",
+   "Value": {
+    "Fn::GetAtt": [
+     "MessageFanoutFunction39FCA2BD",
+     "Arn"
+    ]
+   },
+   "Export": {
+    "Name": "dev-vyapargyan-message-fanout-arn"
+   }
+  },
+  "MediaProcessingQueueUrl": {
+   "Description": "Media processing retry SQS queue URL",
+   "Value": {
+    "Ref": "MediaProcessingQueue56039BA9"
+   },
+   "Export": {
+    "Name": "dev-vyapargyan-media-processing-queue-url"
+   }
+  },
+  "MediaProcessingQueueArn": {
+   "Description": "Media processing retry SQS queue ARN",
+   "Value": {
+    "Fn::GetAtt": [
+     "MediaProcessingQueue56039BA9",
+     "Arn"
+    ]
+   },
+   "Export": {
+    "Name": "dev-vyapargyan-media-processing-queue-arn"
+   }
+  },
+  "ScheduledMessagesQueueUrl": {
+   "Description": "Scheduled messages SQS queue URL",
+   "Value": {
+    "Ref": "ScheduledMessagesQueueC355CD70"
+   },
+   "Export": {
+    "Name": "dev-vyapargyan-scheduled-messages-queue-url"
+   }
+  },
+  "ScheduledMessagesQueueArn": {
+   "Description": "Scheduled messages SQS queue ARN",
+   "Value": {
+    "Fn::GetAtt": [
+     "ScheduledMessagesQueueC355CD70",
+     "Arn"
+    ]
+   },
+   "Export": {
+    "Name": "dev-vyapargyan-scheduled-messages-queue-arn"
+   }
+  },
+  "ExportsOutputFnGetAttEventBus7B8748AAArn0B268F0E": {
+   "Value": {
+    "Fn::GetAtt": [
+     "EventBus7B8748AA",
+     "Arn"
+    ]
+   },
+   "Export": {
+    "Name": "dev-vyapargyan-events:ExportsOutputFnGetAttEventBus7B8748AAArn0B268F0E"
+   }
+  },
+  "ExportsOutputRefEventBus7B8748AA3BA3246C": {
+   "Value": {
+    "Ref": "EventBus7B8748AA"
+   },
+   "Export": {
+    "Name": "dev-vyapargyan-events:ExportsOutputRefEventBus7B8748AA3BA3246C"
+   }
+  },
+  "ExportsOutputFnGetAttOrderNudgeSchedulerRole5811DF0EArn3A2CA0E5": {
+   "Value": {
+    "Fn::GetAtt": [
+     "OrderNudgeSchedulerRole5811DF0E",
+     "Arn"
+    ]
+   },
+   "Export": {
+    "Name": "dev-vyapargyan-events:ExportsOutputFnGetAttOrderNudgeSchedulerRole5811DF0EArn3A2CA0E5"
+   }
+  },
+  "ExportsOutputFnGetAttNotificationRouterFunction75EB813DArnE28403E9": {
+   "Value": {
+    "Fn::GetAtt": [
+     "NotificationRouterFunction75EB813D",
+     "Arn"
+    ]
+   },
+   "Export": {
+    "Name": "dev-vyapargyan-events:ExportsOutputFnGetAttNotificationRouterFunction75EB813DArnE28403E9"
+   }
+  },
+  "ExportsOutputFnGetAttMediaProcessingDLQ38BEDAF3Arn9809A69F": {
+   "Value": {
+    "Fn::GetAtt": [
+     "MediaProcessingDLQ38BEDAF3",
+     "Arn"
+    ]
+   },
+   "Export": {
+    "Name": "dev-vyapargyan-events:ExportsOutputFnGetAttMediaProcessingDLQ38BEDAF3Arn9809A69F"
+   }
+  },
+  "ExportsOutputFnGetAttMediaProcessingQueue56039BA9Arn58F0FDF5": {
+   "Value": {
+    "Fn::GetAtt": [
+     "MediaProcessingQueue56039BA9",
+     "Arn"
+    ]
+   },
+   "Export": {
+    "Name": "dev-vyapargyan-events:ExportsOutputFnGetAttMediaProcessingQueue56039BA9Arn58F0FDF5"
+   }
+  },
+  "ExportsOutputRefMediaProcessingDLQ38BEDAF379AC107C": {
+   "Value": {
+    "Ref": "MediaProcessingDLQ38BEDAF3"
+   },
+   "Export": {
+    "Name": "dev-vyapargyan-events:ExportsOutputRefMediaProcessingDLQ38BEDAF379AC107C"
+   }
+  },
+  "ExportsOutputRefMediaProcessingQueue56039BA9BBE1878F": {
+   "Value": {
+    "Ref": "MediaProcessingQueue56039BA9"
+   },
+   "Export": {
+    "Name": "dev-vyapargyan-events:ExportsOutputRefMediaProcessingQueue56039BA9BBE1878F"
+   }
+  }
+ },
+ "Parameters": {
+  "BootstrapVersion": {
+   "Type": "AWS::SSM::Parameter::Value<String>",
+   "Default": "/cdk-bootstrap/hnb659fds/version",
+   "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]"
+  }
+ },
+ "Rules": {
+  "CheckBootstrapVersion": {
+   "Assertions": [
+    {
+     "Assert": {
+      "Fn::Not": [
+       {
+        "Fn::Contains": [
+         [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5"
+         ],
+         {
+          "Ref": "BootstrapVersion"
+         }
+        ]
+       }
+      ]
+     },
+     "AssertDescription": "CDK bootstrap stack version 6 required. Please run 'cdk bootstrap' with a recent version of the CDK CLI."
+    }
+   ]
+  }
+ }
+}

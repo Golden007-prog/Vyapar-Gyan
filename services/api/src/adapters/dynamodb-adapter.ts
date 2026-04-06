@@ -22,6 +22,7 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import { getConfig } from '../utils/config';
 import { logger } from '../utils/logger';
+import { normalizeIndianPhone } from '../utils/phone-normalize';
 
 // Types matching shared-contracts entity definitions (Section 1.1–1.11).
 // Defined here to avoid cross-package resolution issues in Lambda bundles.
@@ -254,13 +255,19 @@ export async function putItem(item: Record<string, unknown>): Promise<void> {
 
 export async function createUserProfile(profile: UserProfile): Promise<void> {
   const table = await tableName();
+  let normalizedPhone: string;
+  try {
+    normalizedPhone = normalizeIndianPhone(profile.phoneNumber);
+  } catch {
+    normalizedPhone = profile.phoneNumber;
+  }
   await docClient.send(
     new PutCommand({
       TableName: table,
       Item: {
         PK: `USER#${profile.userId}`,
         SK: 'PROFILE',
-        GSI1PK: `PHONE#${profile.phoneNumber}`,
+        GSI1PK: `PHONE#${normalizedPhone}`,
         GSI1SK: `USER#${profile.userId}`,
         GSI2PK: `ROLE#${profile.role}`,
         GSI2SK: `USER#${profile.userId}`,
@@ -281,6 +288,14 @@ export async function getUserProfile(userId: string): Promise<UserProfile | null
 }
 
 export async function getUserByPhone(phoneNumber: string): Promise<UserProfile | null> {
+  // Normalize phone to 10-digit Indian format for consistent GSI1PK lookup
+  let normalized: string;
+  try {
+    normalized = normalizeIndianPhone(phoneNumber);
+  } catch {
+    normalized = phoneNumber;
+  }
+
   const table = await tableName();
   const res = await docClient.send(
     new QueryCommand({
@@ -288,7 +303,7 @@ export async function getUserByPhone(phoneNumber: string): Promise<UserProfile |
       IndexName: 'GSI1',
       KeyConditionExpression: 'GSI1PK = :pk AND begins_with(GSI1SK, :userPrefix)',
       ExpressionAttributeValues: {
-        ':pk': `PHONE#${phoneNumber}`,
+        ':pk': `PHONE#${normalized}`,
         ':userPrefix': 'USER#',
       },
       Limit: 1,
@@ -317,8 +332,14 @@ export async function updateUserProfile(
 
   // Update GSI1PK when phoneNumber changes (keeps GSI1 PHONE#{phone} in sync)
   if (updates.phoneNumber) {
+    let normalizedPhone: string;
+    try {
+      normalizedPhone = normalizeIndianPhone(updates.phoneNumber);
+    } catch {
+      normalizedPhone = updates.phoneNumber;
+    }
     sets.push('GSI1PK = :gsi1pk');
-    values[':gsi1pk'] = `PHONE#${updates.phoneNumber}`;
+    values[':gsi1pk'] = `PHONE#${normalizedPhone}`;
   }
 
   await docClient.send(

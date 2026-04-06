@@ -1,0 +1,503 @@
+{
+ "Description": "Authentication infrastructure for VyaparGyan dev environment",
+ "Resources": {
+  "UserPoolsmsRole4EA729DD": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Condition": {
+        "StringEquals": {
+         "sts:ExternalId": "devvyapargyanauthUserPoolE2E80BCF"
+        }
+       },
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "cognito-idp.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "Policies": [
+     {
+      "PolicyDocument": {
+       "Statement": [
+        {
+         "Action": "sns:Publish",
+         "Effect": "Allow",
+         "Resource": "*"
+        }
+       ],
+       "Version": "2012-10-17"
+      },
+      "PolicyName": "sns-publish"
+     }
+    ],
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Name",
+      "Value": "dev-vyapargyan-user-pool"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     },
+     {
+      "Key": "Service",
+      "Value": "authentication"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-auth/UserPool/smsRole/Resource"
+   }
+  },
+  "UserPool6BA7E5F2": {
+   "Type": "AWS::Cognito::UserPool",
+   "Properties": {
+    "AccountRecoverySetting": {
+     "RecoveryMechanisms": [
+      {
+       "Name": "verified_email",
+       "Priority": 1
+      }
+     ]
+    },
+    "AdminCreateUserConfig": {
+     "AllowAdminCreateUserOnly": true,
+     "InviteMessageTemplate": {
+      "EmailMessage": "Hello {username}, your temporary password is {####}",
+      "EmailSubject": "Welcome to VyaparGyan"
+     }
+    },
+    "AutoVerifiedAttributes": [
+     "email"
+    ],
+    "EmailVerificationMessage": "Your verification code is {####}",
+    "EmailVerificationSubject": "Verify your email for VyaparGyan",
+    "MfaConfiguration": "OFF",
+    "Policies": {
+     "PasswordPolicy": {
+      "MinimumLength": 8,
+      "RequireLowercase": true,
+      "RequireNumbers": true,
+      "RequireSymbols": false,
+      "RequireUppercase": false,
+      "TemporaryPasswordValidityDays": 7
+     }
+    },
+    "Schema": [
+     {
+      "Mutable": true,
+      "Name": "email",
+      "Required": true
+     },
+     {
+      "Mutable": true,
+      "Name": "phone_number",
+      "Required": false
+     },
+     {
+      "Mutable": true,
+      "Name": "name",
+      "Required": false
+     },
+     {
+      "AttributeDataType": "String",
+      "Mutable": true,
+      "Name": "role",
+      "StringAttributeConstraints": {
+       "MaxLength": "20",
+       "MinLength": "1"
+      }
+     },
+     {
+      "AttributeDataType": "String",
+      "Mutable": false,
+      "Name": "userId",
+      "StringAttributeConstraints": {
+       "MaxLength": "50",
+       "MinLength": "1"
+      }
+     },
+     {
+      "AttributeDataType": "String",
+      "Mutable": true,
+      "Name": "status",
+      "StringAttributeConstraints": {
+       "MaxLength": "20",
+       "MinLength": "1"
+      }
+     }
+    ],
+    "SmsConfiguration": {
+     "ExternalId": "devvyapargyanauthUserPoolE2E80BCF",
+     "SnsCallerArn": {
+      "Fn::GetAtt": [
+       "UserPoolsmsRole4EA729DD",
+       "Arn"
+      ]
+     }
+    },
+    "SmsVerificationMessage": "The verification code to your new account is {####}",
+    "UserPoolAddOns": {
+     "AdvancedSecurityMode": "OFF"
+    },
+    "UserPoolName": "dev-vyapargyan-user-pool",
+    "UserPoolTags": {
+     "CostCenter": "Development",
+     "Environment": "dev",
+     "ManagedBy": "CDK",
+     "Name": "dev-vyapargyan-user-pool",
+     "Project": "VyaparGyan",
+     "Service": "authentication"
+    },
+    "UsernameAttributes": [
+     "email",
+     "phone_number"
+    ],
+    "VerificationMessageTemplate": {
+     "DefaultEmailOption": "CONFIRM_WITH_CODE",
+     "EmailMessage": "Your verification code is {####}",
+     "EmailSubject": "Verify your email for VyaparGyan",
+     "SmsMessage": "The verification code to your new account is {####}"
+    }
+   },
+   "UpdateReplacePolicy": "Delete",
+   "DeletionPolicy": "Delete",
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-auth/UserPool/Resource"
+   }
+  },
+  "UserPoolWebAdminClientC4D35E36": {
+   "Type": "AWS::Cognito::UserPoolClient",
+   "Properties": {
+    "AccessTokenValidity": 60,
+    "AllowedOAuthFlows": [
+     "code"
+    ],
+    "AllowedOAuthFlowsUserPoolClient": true,
+    "AllowedOAuthScopes": [
+     "email",
+     "openid",
+     "profile"
+    ],
+    "CallbackURLs": [
+     "http://localhost:3000/auth/callback",
+     "https://golden007-prog.github.io/Vyapar-Gyan/auth/callback"
+    ],
+    "ClientName": "dev-vyapargyan-web-admin",
+    "EnableTokenRevocation": true,
+    "ExplicitAuthFlows": [
+     "ALLOW_USER_SRP_AUTH",
+     "ALLOW_REFRESH_TOKEN_AUTH"
+    ],
+    "IdTokenValidity": 60,
+    "LogoutURLs": [
+     "http://localhost:3000/auth/logout",
+     "https://golden007-prog.github.io/Vyapar-Gyan/auth/logout"
+    ],
+    "PreventUserExistenceErrors": "ENABLED",
+    "RefreshTokenValidity": 10080,
+    "SupportedIdentityProviders": [
+     "COGNITO"
+    ],
+    "TokenValidityUnits": {
+     "AccessToken": "minutes",
+     "IdToken": "minutes",
+     "RefreshToken": "minutes"
+    },
+    "UserPoolId": {
+     "Ref": "UserPool6BA7E5F2"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-auth/UserPool/WebAdminClient/Resource"
+   }
+  },
+  "UserPoolWebSellerClientDE459FEB": {
+   "Type": "AWS::Cognito::UserPoolClient",
+   "Properties": {
+    "AccessTokenValidity": 60,
+    "AllowedOAuthFlows": [
+     "code"
+    ],
+    "AllowedOAuthFlowsUserPoolClient": true,
+    "AllowedOAuthScopes": [
+     "email",
+     "openid",
+     "profile"
+    ],
+    "CallbackURLs": [
+     "http://localhost:3000/auth/callback",
+     "https://golden007-prog.github.io/Vyapar-Gyan/auth/callback"
+    ],
+    "ClientName": "dev-vyapargyan-web-seller",
+    "EnableTokenRevocation": true,
+    "ExplicitAuthFlows": [
+     "ALLOW_USER_SRP_AUTH",
+     "ALLOW_REFRESH_TOKEN_AUTH"
+    ],
+    "IdTokenValidity": 60,
+    "LogoutURLs": [
+     "http://localhost:3000/auth/logout",
+     "https://golden007-prog.github.io/Vyapar-Gyan/auth/logout"
+    ],
+    "PreventUserExistenceErrors": "ENABLED",
+    "RefreshTokenValidity": 10080,
+    "SupportedIdentityProviders": [
+     "COGNITO"
+    ],
+    "TokenValidityUnits": {
+     "AccessToken": "minutes",
+     "IdToken": "minutes",
+     "RefreshToken": "minutes"
+    },
+    "UserPoolId": {
+     "Ref": "UserPool6BA7E5F2"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-auth/UserPool/WebSellerClient/Resource"
+   }
+  },
+  "UserPoolApiServiceClient5BA9AA54": {
+   "Type": "AWS::Cognito::UserPoolClient",
+   "Properties": {
+    "AccessTokenValidity": 60,
+    "AllowedOAuthFlows": [
+     "implicit",
+     "code"
+    ],
+    "AllowedOAuthFlowsUserPoolClient": true,
+    "AllowedOAuthScopes": [
+     "profile",
+     "phone",
+     "email",
+     "openid",
+     "aws.cognito.signin.user.admin"
+    ],
+    "CallbackURLs": [
+     "https://example.com"
+    ],
+    "ClientName": "dev-vyapargyan-api-service",
+    "EnableTokenRevocation": true,
+    "ExplicitAuthFlows": [
+     "ALLOW_ADMIN_USER_PASSWORD_AUTH",
+     "ALLOW_REFRESH_TOKEN_AUTH"
+    ],
+    "GenerateSecret": true,
+    "IdTokenValidity": 60,
+    "PreventUserExistenceErrors": "ENABLED",
+    "RefreshTokenValidity": 10080,
+    "SupportedIdentityProviders": [
+     "COGNITO"
+    ],
+    "TokenValidityUnits": {
+     "AccessToken": "minutes",
+     "IdToken": "minutes",
+     "RefreshToken": "minutes"
+    },
+    "UserPoolId": {
+     "Ref": "UserPool6BA7E5F2"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-auth/UserPool/ApiServiceClient/Resource"
+   }
+  },
+  "AdminsGroup": {
+   "Type": "AWS::Cognito::UserPoolGroup",
+   "Properties": {
+    "Description": "Platform administrators with full access",
+    "GroupName": "Admins",
+    "Precedence": 1,
+    "UserPoolId": {
+     "Ref": "UserPool6BA7E5F2"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-auth/AdminsGroup"
+   }
+  },
+  "SellersGroup": {
+   "Type": "AWS::Cognito::UserPoolGroup",
+   "Properties": {
+    "Description": "Verified sellers managing products and orders",
+    "GroupName": "Sellers",
+    "Precedence": 2,
+    "UserPoolId": {
+     "Ref": "UserPool6BA7E5F2"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-auth/SellersGroup"
+   }
+  },
+  "CustomersGroup": {
+   "Type": "AWS::Cognito::UserPoolGroup",
+   "Properties": {
+    "Description": "End customers browsing and ordering products",
+    "GroupName": "Customers",
+    "Precedence": 3,
+    "UserPoolId": {
+     "Ref": "UserPool6BA7E5F2"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-auth/CustomersGroup"
+   }
+  },
+  "CDKMetadata": {
+   "Type": "AWS::CDK::Metadata",
+   "Properties": {
+    "Analytics": "v2:deflate64:H4sIAAAAAAAA/2WJQQrCMBAA39J7stagL+jBo1LxLDGNsm2aLcnGHkL+LkEUwdMMMwrUroW20WuUZpikwxvkM2szCb3Gazb08MgE+RJtOBE50d391z/SObSef9d/OQRKSxGoZ8g9OVtfZSnVjomXxEV4GiyMcfNUe1CwbcaIKEPyjLOF/s0XBwm6x7QAAAA="
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-auth/CDKMetadata/Default"
+   }
+  }
+ },
+ "Outputs": {
+  "UserPoolId": {
+   "Description": "Cognito User Pool ID",
+   "Value": {
+    "Ref": "UserPool6BA7E5F2"
+   },
+   "Export": {
+    "Name": "dev-vyapargyan-user-pool-id"
+   }
+  },
+  "UserPoolArn": {
+   "Description": "Cognito User Pool ARN",
+   "Value": {
+    "Fn::GetAtt": [
+     "UserPool6BA7E5F2",
+     "Arn"
+    ]
+   },
+   "Export": {
+    "Name": "dev-vyapargyan-user-pool-arn"
+   }
+  },
+  "WebAdminClientId": {
+   "Description": "Web Admin App Client ID",
+   "Value": {
+    "Ref": "UserPoolWebAdminClientC4D35E36"
+   },
+   "Export": {
+    "Name": "dev-vyapargyan-web-admin-client-id"
+   }
+  },
+  "WebSellerClientId": {
+   "Description": "Web Seller App Client ID",
+   "Value": {
+    "Ref": "UserPoolWebSellerClientDE459FEB"
+   },
+   "Export": {
+    "Name": "dev-vyapargyan-web-seller-client-id"
+   }
+  },
+  "ApiServiceClientId": {
+   "Description": "API Service App Client ID",
+   "Value": {
+    "Ref": "UserPoolApiServiceClient5BA9AA54"
+   },
+   "Export": {
+    "Name": "dev-vyapargyan-api-service-client-id"
+   }
+  },
+  "ExportsOutputRefUserPool6BA7E5F296FD7236": {
+   "Value": {
+    "Ref": "UserPool6BA7E5F2"
+   },
+   "Export": {
+    "Name": "dev-vyapargyan-auth:ExportsOutputRefUserPool6BA7E5F296FD7236"
+   }
+  },
+  "ExportsOutputRefUserPoolApiServiceClient5BA9AA545B52E018": {
+   "Value": {
+    "Ref": "UserPoolApiServiceClient5BA9AA54"
+   },
+   "Export": {
+    "Name": "dev-vyapargyan-auth:ExportsOutputRefUserPoolApiServiceClient5BA9AA545B52E018"
+   }
+  },
+  "ExportsOutputRefUserPoolWebAdminClientC4D35E36833160BD": {
+   "Value": {
+    "Ref": "UserPoolWebAdminClientC4D35E36"
+   },
+   "Export": {
+    "Name": "dev-vyapargyan-auth:ExportsOutputRefUserPoolWebAdminClientC4D35E36833160BD"
+   }
+  },
+  "ExportsOutputRefUserPoolWebSellerClientDE459FEB53853820": {
+   "Value": {
+    "Ref": "UserPoolWebSellerClientDE459FEB"
+   },
+   "Export": {
+    "Name": "dev-vyapargyan-auth:ExportsOutputRefUserPoolWebSellerClientDE459FEB53853820"
+   }
+  },
+  "ExportsOutputFnGetAttUserPool6BA7E5F2Arn686ACC00": {
+   "Value": {
+    "Fn::GetAtt": [
+     "UserPool6BA7E5F2",
+     "Arn"
+    ]
+   },
+   "Export": {
+    "Name": "dev-vyapargyan-auth:ExportsOutputFnGetAttUserPool6BA7E5F2Arn686ACC00"
+   }
+  }
+ },
+ "Parameters": {
+  "BootstrapVersion": {
+   "Type": "AWS::SSM::Parameter::Value<String>",
+   "Default": "/cdk-bootstrap/hnb659fds/version",
+   "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]"
+  }
+ },
+ "Rules": {
+  "CheckBootstrapVersion": {
+   "Assertions": [
+    {
+     "Assert": {
+      "Fn::Not": [
+       {
+        "Fn::Contains": [
+         [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5"
+         ],
+         {
+          "Ref": "BootstrapVersion"
+         }
+        ]
+       }
+      ]
+     },
+     "AssertDescription": "CDK bootstrap stack version 6 required. Please run 'cdk bootstrap' with a recent version of the CDK CLI."
+    }
+   ]
+  }
+ }
+}

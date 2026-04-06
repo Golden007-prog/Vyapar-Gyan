@@ -1,0 +1,36 @@
+{
+  "version": "50.0.0",
+  "files": {
+    "0c2c1826d9aa7a48f002caa7b4341bb3cb469ecd4b357bfa3733533e3b60b555": {
+      "displayName": "ConnectFunction/Code",
+      "source": {
+        "path": "asset.0c2c1826d9aa7a48f002caa7b4341bb3cb469ecd4b357bfa3733533e3b60b555",
+        "packaging": "zip"
+      },
+      "destinations": {
+        "856888988795-ap-south-1-740dc318": {
+          "bucketName": "cdk-hnb659fds-assets-856888988795-ap-south-1",
+          "objectKey": "0c2c1826d9aa7a48f002caa7b4341bb3cb469ecd4b357bfa3733533e3b60b555.zip",
+          "region": "ap-south-1",
+          "assumeRoleArn": "arn:${AWS::Partition}:iam::856888988795:role/cdk-hnb659fds-file-publishing-role-856888988795-ap-south-1"
+        }
+      }
+    },
+    "b614fbee112418f804fc4b58634de0787bfdd98d2702aa0ff4dec853020c7440": {
+      "displayName": "dev-vyapargyan-websocket Template",
+      "source": {
+        "path": "dev-vyapargyan-websocket.template.json",
+        "packaging": "file"
+      },
+      "destinations": {
+        "856888988795-ap-south-1-155c1a88": {
+          "bucketName": "cdk-hnb659fds-assets-856888988795-ap-south-1",
+          "objectKey": "b614fbee112418f804fc4b58634de0787bfdd98d2702aa0ff4dec853020c7440.json",
+          "region": "ap-south-1",
+          "assumeRoleArn": "arn:${AWS::Partition}:iam::856888988795:role/cdk-hnb659fds-file-publishing-role-856888988795-ap-south-1"
+        }
+      }
+    }
+  },
+  "dockerImages": {}
+}

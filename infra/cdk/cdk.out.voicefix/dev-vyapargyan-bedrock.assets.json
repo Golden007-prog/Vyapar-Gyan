@@ -1,0 +1,36 @@
+{
+  "version": "50.0.0",
+  "files": {
+    "0c2c1826d9aa7a48f002caa7b4341bb3cb469ecd4b357bfa3733533e3b60b555": {
+      "displayName": "ActionGroupFunction/Code",
+      "source": {
+        "path": "asset.0c2c1826d9aa7a48f002caa7b4341bb3cb469ecd4b357bfa3733533e3b60b555",
+        "packaging": "zip"
+      },
+      "destinations": {
+        "856888988795-ap-south-1-740dc318": {
+          "bucketName": "cdk-hnb659fds-assets-856888988795-ap-south-1",
+          "objectKey": "0c2c1826d9aa7a48f002caa7b4341bb3cb469ecd4b357bfa3733533e3b60b555.zip",
+          "region": "ap-south-1",
+          "assumeRoleArn": "arn:${AWS::Partition}:iam::856888988795:role/cdk-hnb659fds-file-publishing-role-856888988795-ap-south-1"
+        }
+      }
+    },
+    "8697cbc451fd113a297035a1078421b66b78c93d25222a37502cce2bac2e7dec": {
+      "displayName": "dev-vyapargyan-bedrock Template",
+      "source": {
+        "path": "dev-vyapargyan-bedrock.template.json",
+        "packaging": "file"
+      },
+      "destinations": {
+        "856888988795-ap-south-1-e74f9aa8": {
+          "bucketName": "cdk-hnb659fds-assets-856888988795-ap-south-1",
+          "objectKey": "8697cbc451fd113a297035a1078421b66b78c93d25222a37502cce2bac2e7dec.json",
+          "region": "ap-south-1",
+          "assumeRoleArn": "arn:${AWS::Partition}:iam::856888988795:role/cdk-hnb659fds-file-publishing-role-856888988795-ap-south-1"
+        }
+      }
+    }
+  },
+  "dockerImages": {}
+}

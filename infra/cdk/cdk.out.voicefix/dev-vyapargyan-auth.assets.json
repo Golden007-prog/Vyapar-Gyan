@@ -1,0 +1,21 @@
+{
+  "version": "50.0.0",
+  "files": {
+    "288d50fed5f0ea69c52157931d8edc4d53c76266c42e29865b22a288f3176ec6": {
+      "displayName": "dev-vyapargyan-auth Template",
+      "source": {
+        "path": "dev-vyapargyan-auth.template.json",
+        "packaging": "file"
+      },
+      "destinations": {
+        "856888988795-ap-south-1-58b76ca2": {
+          "bucketName": "cdk-hnb659fds-assets-856888988795-ap-south-1",
+          "objectKey": "288d50fed5f0ea69c52157931d8edc4d53c76266c42e29865b22a288f3176ec6.json",
+          "region": "ap-south-1",
+          "assumeRoleArn": "arn:${AWS::Partition}:iam::856888988795:role/cdk-hnb659fds-file-publishing-role-856888988795-ap-south-1"
+        }
+      }
+    }
+  },
+  "dockerImages": {}
+}

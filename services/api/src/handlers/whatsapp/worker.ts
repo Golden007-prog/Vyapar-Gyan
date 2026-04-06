@@ -672,13 +672,19 @@ async function handleCustomerMessage(context: {
   // Route to customer discovery for new sessions or greeting state
   // Customer discovery handles store search, favorites, pincode/city lookup
   const messageText = message.text?.body?.trim() || '';
+  // Route to customer discovery for greetings, new sessions, menu commands, and store selection
+  const GREETING_RE = /^(hi|hello|hey|namaste|namaskar|hola|good\s*(morning|afternoon|evening)|howdy|sup|yo|menu|home|back)$/i;
+  const isGreeting = GREETING_RE.test(messageText);
   const isDiscoveryTrigger = sessionResult.isNew
     || session.state === 'greeting'
+    || isGreeting
     || /^(menu|home|discover|stores|1|2|3|4)$/i.test(messageText)
     || /^store\s+\d+$/i.test(messageText)
-    || /^add to favorites/i.test(messageText);
+    || /^add to fav/i.test(messageText);
 
-  if (isDiscoveryTrigger && session.state !== 'browsing' && session.state !== 'ordering' && session.state !== 'payment') {
+  // Greetings and menu commands ALWAYS go to discovery, even from browsing state
+  // Only ordering/payment states are protected from interruption
+  if (isDiscoveryTrigger && session.state !== 'ordering' && session.state !== 'payment') {
     logger.info('Routing to customer discovery', { userId, sessionState: session.state, isNew: sessionResult.isNew });
     await handleCustomerDiscovery({
       message,
@@ -1365,13 +1371,13 @@ async function _executeVoicePipeline(context: VoiceContext, pipelineStart: numbe
   // ── Step 9: Store outbound audio in S3 and generate pre-signed URL ──
   let presignedUrl: string;
   const outboundTs = Date.now();
-  const outboundKey = `${VOICE_CONFIG.s3OutboundPrefix}/${userId}/${outboundTs}.ogg`;
+  const outboundKey = `${VOICE_CONFIG.s3OutboundPrefix}/${userId}/${outboundTs}.wav`;
   try {
     await s3Client.send(new PutObjectCommand({
       Bucket: voiceConfig.productImagesBucket,
       Key: outboundKey,
       Body: ttsAudioBuffer,
-      ContentType: 'audio/ogg',
+      ContentType: 'audio/wav',
       Tagging: 'mediaType=voice&direction=outbound',
     }));
 

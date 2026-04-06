@@ -1,0 +1,423 @@
+{
+ "Description": "Bedrock AI infrastructure for VyaparGyan dev environment",
+ "Resources": {
+  "ActionGroupFunctionServiceRole77660D62": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "lambda.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "ManagedPolicyArns": [
+     {
+      "Fn::Join": [
+       "",
+       [
+        "arn:",
+        {
+         "Ref": "AWS::Partition"
+        },
+        ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+       ]
+      ]
+     }
+    ],
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Name",
+      "Value": "dev-vyapargyan-bedrock-action-group"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     },
+     {
+      "Key": "Service",
+      "Value": "bedrock"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-bedrock/ActionGroupFunction/ServiceRole/Resource"
+   }
+  },
+  "ActionGroupFunctionServiceRoleDefaultPolicyA247E007": {
+   "Type": "AWS::IAM::Policy",
+   "Properties": {
+    "PolicyDocument": {
+     "Statement": [
+      {
+       "Action": [
+        "dynamodb:BatchGetItem",
+        "dynamodb:BatchWriteItem",
+        "dynamodb:ConditionCheckItem",
+        "dynamodb:DeleteItem",
+        "dynamodb:DescribeTable",
+        "dynamodb:GetItem",
+        "dynamodb:GetRecords",
+        "dynamodb:GetShardIterator",
+        "dynamodb:PutItem",
+        "dynamodb:Query",
+        "dynamodb:Scan",
+        "dynamodb:UpdateItem"
+       ],
+       "Effect": "Allow",
+       "Resource": [
+        {
+         "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputFnGetAttMainTable74195DABArnE0EC388B"
+        },
+        {
+         "Fn::Join": [
+          "",
+          [
+           {
+            "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputFnGetAttMainTable74195DABArnE0EC388B"
+           },
+           "/index/*"
+          ]
+         ]
+        }
+       ]
+      },
+      {
+       "Action": "events:PutEvents",
+       "Effect": "Allow",
+       "Resource": {
+        "Fn::ImportValue": "dev-vyapargyan-events:ExportsOutputFnGetAttEventBus7B8748AAArn0B268F0E"
+       }
+      },
+      {
+       "Action": [
+        "secretsmanager:DescribeSecret",
+        "secretsmanager:GetSecretValue"
+       ],
+       "Effect": "Allow",
+       "Resource": "arn:aws:secretsmanager:ap-south-1:856888988795:secret:dev-vyapargyan-twilio-credentials-??????"
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "PolicyName": "ActionGroupFunctionServiceRoleDefaultPolicyA247E007",
+    "Roles": [
+     {
+      "Ref": "ActionGroupFunctionServiceRole77660D62"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-bedrock/ActionGroupFunction/ServiceRole/DefaultPolicy/Resource"
+   }
+  },
+  "ActionGroupFunctionFE14D1CB": {
+   "Type": "AWS::Lambda::Function",
+   "Properties": {
+    "Architectures": [
+     "arm64"
+    ],
+    "Code": {
+     "S3Bucket": "cdk-hnb659fds-assets-856888988795-ap-south-1",
+     "S3Key": "0c2c1826d9aa7a48f002caa7b4341bb3cb469ecd4b357bfa3733533e3b60b555.zip"
+    },
+    "Environment": {
+     "Variables": {
+      "ENVIRONMENT": "dev",
+      "TABLE_NAME": {
+       "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputRefMainTable74195DAB4503BD7E"
+      },
+      "EVENT_BUS_NAME": {
+       "Fn::ImportValue": "dev-vyapargyan-events:ExportsOutputRefEventBus7B8748AA3BA3246C"
+      },
+      "LOG_LEVEL": "info",
+      "TWILIO_ACCOUNT_SID": "{{resolve:secretsmanager:arn:aws:secretsmanager:ap-south-1:856888988795:secret:dev-vyapargyan-twilio-credentials:SecretString:accountSid::}}",
+      "TWILIO_AUTH_TOKEN": "{{resolve:secretsmanager:arn:aws:secretsmanager:ap-south-1:856888988795:secret:dev-vyapargyan-twilio-credentials:SecretString:authToken::}}",
+      "TWILIO_PHONE_NUMBER": "{{resolve:secretsmanager:arn:aws:secretsmanager:ap-south-1:856888988795:secret:dev-vyapargyan-twilio-credentials:SecretString:phoneNumber::}}"
+     }
+    },
+    "FunctionName": "dev-vyapargyan-bedrock-action-group",
+    "Handler": "handlers/bedrock/index.handler",
+    "MemorySize": 1024,
+    "Role": {
+     "Fn::GetAtt": [
+      "ActionGroupFunctionServiceRole77660D62",
+      "Arn"
+     ]
+    },
+    "Runtime": "nodejs20.x",
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Name",
+      "Value": "dev-vyapargyan-bedrock-action-group"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     },
+     {
+      "Key": "Service",
+      "Value": "bedrock"
+     }
+    ],
+    "Timeout": 60
+   },
+   "DependsOn": [
+    "ActionGroupFunctionServiceRoleDefaultPolicyA247E007",
+    "ActionGroupFunctionServiceRole77660D62"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-bedrock/ActionGroupFunction/Resource",
+    "aws:asset:path": "asset.0c2c1826d9aa7a48f002caa7b4341bb3cb469ecd4b357bfa3733533e3b60b555",
+    "aws:asset:is-bundled": false,
+    "aws:asset:property": "Code"
+   }
+  },
+  "BedrockAgentRole7C982E0C": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "bedrock.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "Description": "IAM role for VyaparGyan Bedrock Agent",
+    "RoleName": "dev-vyapargyan-bedrock-agent-role",
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-bedrock/BedrockAgentRole/Resource"
+   }
+  },
+  "BedrockAgentRoleDefaultPolicy1462CD5B": {
+   "Type": "AWS::IAM::Policy",
+   "Properties": {
+    "PolicyDocument": {
+     "Statement": [
+      {
+       "Action": "lambda:InvokeFunction",
+       "Effect": "Allow",
+       "Resource": [
+        {
+         "Fn::GetAtt": [
+          "ActionGroupFunctionFE14D1CB",
+          "Arn"
+         ]
+        },
+        {
+         "Fn::Join": [
+          "",
+          [
+           {
+            "Fn::GetAtt": [
+             "ActionGroupFunctionFE14D1CB",
+             "Arn"
+            ]
+           },
+           ":*"
+          ]
+         ]
+        }
+       ]
+      },
+      {
+       "Action": "bedrock:InvokeModel",
+       "Effect": "Allow",
+       "Resource": "arn:aws:bedrock:ap-south-1::foundation-model/amazon.nova-lite-v1:0"
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "PolicyName": "BedrockAgentRoleDefaultPolicy1462CD5B",
+    "Roles": [
+     {
+      "Ref": "BedrockAgentRole7C982E0C"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-bedrock/BedrockAgentRole/DefaultPolicy/Resource"
+   }
+  },
+  "BedrockAgent": {
+   "Type": "AWS::Bedrock::Agent",
+   "Properties": {
+    "AgentName": "dev-vyapargyan-ai-agent",
+    "Description": "VyaparGyan AI agent for inventory management, dynamic pricing, and customer engagement",
+    "AgentResourceRoleArn": {
+     "Fn::GetAtt": [
+      "BedrockAgentRole7C982E0C",
+      "Arn"
+     ]
+    },
+    "FoundationModel": "amazon.nova-lite-v1:0",
+    "Instruction": "You are an AI business manager for VyaparGyan, a multi-seller marketplace platform for local Indian retailers.\n\nYour responsibilities:\n1. Analyze seller inventory to identify dead stock (products older than 30 days with low sales)\n2. Research market trends and recommend dynamic pricing (discounts or price increases)\n3. Generate promotional WhatsApp messages for discount campaigns\n4. Help sellers optimize inventory turnover and maximize revenue\n\nGuidelines:\n- Always verify product ownership before making changes\n- Recommend discounts between 10-50% for dead stock\n- Use market research to justify pricing recommendations\n- Keep WhatsApp messages concise, friendly, and in Hindi/English mix (Hinglish)\n- Include product details and urgency in promotional messages\n- Respect seller preferences and wait for approval before executing changes\n\nAvailable actions:\n- Check inventory levels and stock age\n- Apply discounts to products\n- Send WhatsApp messages to customers\n- Browse product catalog\n\nAlways explain your reasoning and provide data-driven recommendations.",
+    "IdleSessionTTLInSeconds": 600,
+    "ActionGroups": [
+     {
+      "ActionGroupName": "inventory-management",
+      "Description": "Manage inventory, pricing, and customer communications",
+      "ActionGroupExecutor": {
+       "Lambda": {
+        "Fn::GetAtt": [
+         "ActionGroupFunctionFE14D1CB",
+         "Arn"
+        ]
+       }
+      },
+      "ApiSchema": {
+       "Payload": "{\r\n  \"openapi\": \"3.0.3\",\r\n  \"info\": {\r\n    \"title\": \"VyaparGyan Bedrock Action Group API\",\r\n    \"description\": \"Action Group API for Amazon Bedrock Agent to manage inventory, pricing, and customer communications. Supports catalog browsing, dynamic pricing updates, and WhatsApp messaging.\",\r\n    \"version\": \"1.0.0\"\r\n  },\r\n  \"servers\": [\r\n    {\r\n      \"url\": \"https://api.vyapargyan.com\",\r\n      \"description\": \"Production API\"\r\n    },\r\n    {\r\n      \"url\": \"https://staging-api.vyapargyan.com\",\r\n      \"description\": \"Staging API\"\r\n    },\r\n    {\r\n      \"url\": \"https://dev-api.vyapargyan.com\",\r\n      \"description\": \"Development API\"\r\n    }\r\n  ],\r\n  \"paths\": {\r\n    \"/catalog/categories\": {\r\n      \"get\": {\r\n        \"operationId\": \"listCategories\",\r\n        \"summary\": \"List all active product categories\",\r\n        \"description\": \"Returns a hierarchical list of all active product categories. No authentication required.\",\r\n        \"parameters\": [],\r\n        \"responses\": {\r\n          \"200\": {\r\n            \"description\": \"Successful response with category list\",\r\n            \"content\": {\r\n              \"application/json\": {\r\n                \"schema\": {\r\n                  \"type\": \"object\",\r\n                  \"required\": [\"success\", \"data\"],\r\n                  \"properties\": {\r\n                    \"success\": {\r\n                      \"type\": \"boolean\",\r\n                      \"example\": true\r\n                    },\r\n                    \"data\": {\r\n                      \"type\": \"array\",\r\n                      \"items\": {\r\n                        \"$ref\": \"#/components/schemas/Category\"\r\n                      }\r\n                    },\r\n                    \"error\": {\r\n                      \"type\": \"null\"\r\n                    },\r\n                    \"meta\": {\r\n                      \"$ref\": \"#/components/schemas/ResponseMeta\"\r\n                    }\r\n                  }\r\n                }\r\n              }\r\n            }\r\n          },\r\n          \"500\": {\r\n            \"description\": \"Internal server error\",\r\n            \"content\": {\r\n              \"application/json\": {\r\n                \"schema\": {\r\n                  \"$ref\": \"#/components/schemas/ErrorResponse\"\r\n                }\r\n              }\r\n            }\r\n          }\r\n        }\r\n      }\r\n    },\r\n    \"/catalog/categories/{categoryId}/products\": {\r\n      \"get\": {\r\n        \"operationId\": \"listProductsByCategory\",\r\n        \"summary\": \"List products in a specific category\",\r\n        \"description\": \"Returns paginated list of active products in the specified category. Only includes products with stock available.\",\r\n        \"parameters\": [\r\n          {\r\n            \"name\": \"categoryId\",\r\n            \"in\": \"path\",\r\n            \"required\": true,\r\n            \"description\": \"The unique identifier of the category\",\r\n            \"schema\": {\r\n              \"type\": \"string\",\r\n              \"example\": \"cat-1\"\r\n            }\r\n          },\r\n          {\r\n            \"name\": \"page\",\r\n            \"in\": \"query\",\r\n            \"required\": false,\r\n            \"description\": \"Page number for pagination (1-indexed)\",\r\n            \"schema\": {\r\n              \"type\": \"integer\",\r\n              \"minimum\": 1,\r\n              \"default\": 1,\r\n              \"example\": 1\r\n            }\r\n          },\r\n          {\r\n            \"name\": \"per_page\",\r\n            \"in\": \"query\",\r\n            \"required\": false,\r\n            \"description\": \"Number of items per page\",\r\n            \"schema\": {\r\n              \"type\": \"integer\",\r\n              \"minimum\": 1,\r\n              \"maximum\": 100,\r\n              \"default\": 20,\r\n              \"example\": 20\r\n            }\r\n          },\r\n          {\r\n            \"name\": \"sort\",\r\n            \"in\": \"query\",\r\n            \"required\": false,\r\n            \"description\": \"Sort order for products\",\r\n            \"schema\": {\r\n              \"type\": \"string\",\r\n              \"enum\": [\"price_asc\", \"price_desc\", \"newest\"],\r\n              \"default\": \"newest\",\r\n              \"example\": \"price_asc\"\r\n            }\r\n          },\r\n          {\r\n            \"name\": \"min_price\",\r\n            \"in\": \"query\",\r\n            \"required\": false,\r\n            \"description\": \"Minimum price filter (in INR)\",\r\n            \"schema\": {\r\n              \"type\": \"number\",\r\n              \"minimum\": 0,\r\n              \"example\": 100\r\n            }\r\n          },\r\n          {\r\n            \"name\": \"max_price\",\r\n            \"in\": \"query\",\r\n            \"required\": false,\r\n            \"description\": \"Maximum price filter (in INR)\",\r\n            \"schema\": {\r\n              \"type\": \"number\",\r\n              \"minimum\": 0,\r\n              \"example\": 5000\r\n            }\r\n          },\r\n          {\r\n            \"name\": \"next_token\",\r\n            \"in\": \"query\",\r\n            \"required\": false,\r\n            \"description\": \"Pagination token from previous response for cursor-based pagination\",\r\n            \"schema\": {\r\n              \"type\": \"string\",\r\n              \"example\": \"eyJQSyI6IlBST0RVQ1QjcHJvZC0xMjMiLCJTSyI6Ik1FVEFEQVRBIn0=\"\r\n            }\r\n          }\r\n        ],\r\n        \"responses\": {\r\n          \"200\": {\r\n            \"description\": \"Successful response with product list\",\r\n            \"content\": {\r\n              \"application/json\": {\r\n                \"schema\": {\r\n                  \"type\": \"object\",\r\n                  \"required\": [\"success\", \"data\"],\r\n                  \"properties\": {\r\n                    \"success\": {\r\n                      \"type\": \"boolean\",\r\n                      \"example\": true\r\n                    },\r\n                    \"data\": {\r\n                      \"type\": \"array\",\r\n                      \"items\": {\r\n                        \"$ref\": \"#/components/schemas/ProductSummary\"\r\n                      }\r\n                    },\r\n                    \"error\": {\r\n                      \"type\": \"null\"\r\n                    },\r\n                    \"meta\": {\r\n                      \"$ref\": \"#/components/schemas/PaginatedResponseMeta\"\r\n                    }\r\n                  }\r\n                }\r\n              }\r\n            }\r\n          },\r\n          \"404\": {\r\n            \"description\": \"Category not found\",\r\n            \"content\": {\r\n              \"application/json\": {\r\n                \"schema\": {\r\n                  \"$ref\": \"#/components/schemas/ErrorResponse\"\r\n                }\r\n              }\r\n            }\r\n          },\r\n          \"500\": {\r\n            \"description\": \"Internal server error\",\r\n            \"content\": {\r\n              \"application/json\": {\r\n                \"schema\": {\r\n                  \"$ref\": \"#/components/schemas/ErrorResponse\"\r\n                }\r\n              }\r\n            }\r\n          }\r\n        }\r\n      }\r\n    },\r\n    \"/inventory\": {\r\n      \"get\": {\r\n        \"operationId\": \"getInventory\",\r\n        \"summary\": \"Get inventory stock levels for a product\",\r\n        \"description\": \"Retrieves current stock quantity, stock age, and availability status for a specific product. Used by AI to identify dead stock and make pricing recommendations.\",\r\n        \"parameters\": [\r\n          {\r\n            \"name\": \"productId\",\r\n            \"in\": \"query\",\r\n            \"required\": true,\r\n            \"description\": \"The unique identifier of the product\",\r\n            \"schema\": {\r\n              \"type\": \"string\",\r\n              \"example\": \"prod-123\"\r\n            }\r\n          },\r\n          {\r\n            \"name\": \"sellerId\",\r\n            \"in\": \"query\",\r\n            \"required\": true,\r\n            \"description\": \"The unique identifier of the seller\",\r\n            \"schema\": {\r\n              \"type\": \"string\",\r\n              \"example\": \"seller-456\"\r\n            }\r\n          }\r\n        ],\r\n        \"responses\": {\r\n          \"200\": {\r\n            \"description\": \"Successful response with inventory data\",\r\n            \"content\": {\r\n              \"application/json\": {\r\n                \"schema\": {\r\n                  \"type\": \"object\",\r\n                  \"required\": [\"success\", \"data\"],\r\n                  \"properties\": {\r\n                    \"success\": {\r\n                      \"type\": \"boolean\",\r\n                      \"example\": true\r\n                    },\r\n                    \"data\": {\r\n                      \"$ref\": \"#/components/schemas/InventoryData\"\r\n                    },\r\n                    \"error\": {\r\n                      \"type\": \"null\"\r\n                    },\r\n                    \"meta\": {\r\n                      \"$ref\": \"#/components/schemas/ResponseMeta\"\r\n                    }\r\n                  }\r\n                }\r\n              }\r\n            }\r\n          },\r\n          \"404\": {\r\n            \"description\": \"Product not found\",\r\n            \"content\": {\r\n              \"application/json\": {\r\n                \"schema\": {\r\n                  \"$ref\": \"#/components/schemas/ErrorResponse\"\r\n                }\r\n              }\r\n            }\r\n          },\r\n          \"500\": {\r\n            \"description\": \"Internal server error\",\r\n            \"content\": {\r\n              \"application/json\": {\r\n                \"schema\": {\r\n                  \"$ref\": \"#/components/schemas/ErrorResponse\"\r\n                }\r\n              }\r\n            }\r\n          }\r\n        }\r\n      }\r\n    },\r\n    \"/discount\": {\r\n      \"post\": {\r\n        \"operationId\": \"applyDiscount\",\r\n        \"summary\": \"Apply dynamic pricing discount to a product\",\r\n        \"description\": \"Updates product price based on AI recommendations for dead stock liquidation or market trends. Requires seller approval before execution.\",\r\n        \"requestBody\": {\r\n          \"required\": true,\r\n          \"content\": {\r\n            \"application/json\": {\r\n              \"schema\": {\r\n                \"$ref\": \"#/components/schemas/DiscountRequest\"\r\n              }\r\n            }\r\n          }\r\n        },\r\n        \"responses\": {\r\n          \"200\": {\r\n            \"description\": \"Discount applied successfully\",\r\n            \"content\": {\r\n              \"application/json\": {\r\n                \"schema\": {\r\n                  \"type\": \"object\",\r\n                  \"required\": [\"success\", \"data\"],\r\n                  \"properties\": {\r\n                    \"success\": {\r\n                      \"type\": \"boolean\",\r\n                      \"example\": true\r\n                    },\r\n                    \"data\": {\r\n                      \"$ref\": \"#/components/schemas/DiscountResponse\"\r\n                    },\r\n                    \"error\": {\r\n                      \"type\": \"null\"\r\n                    },\r\n                    \"meta\": {\r\n                      \"$ref\": \"#/components/schemas/ResponseMeta\"\r\n                    }\r\n                  }\r\n                }\r\n              }\r\n            }\r\n          },\r\n          \"400\": {\r\n            \"description\": \"Bad request - invalid discount parameters\",\r\n            \"content\": {\r\n              \"application/json\": {\r\n                \"schema\": {\r\n                  \"$ref\": \"#/components/schemas/ErrorResponse\"\r\n                }\r\n              }\r\n            }\r\n          },\r\n          \"404\": {\r\n            \"description\": \"Product not found\",\r\n            \"content\": {\r\n              \"application/json\": {\r\n                \"schema\": {\r\n                  \"$ref\": \"#/components/schemas/ErrorResponse\"\r\n                }\r\n              }\r\n            }\r\n          },\r\n          \"500\": {\r\n            \"description\": \"Internal server error\",\r\n            \"content\": {\r\n              \"application/json\": {\r\n                \"schema\": {\r\n                  \"$ref\": \"#/components/schemas/ErrorResponse\"\r\n                }\r\n              }\r\n            }\r\n          }\r\n        }\r\n      }\r\n    },\r\n    \"/whatsapp\": {\r\n      \"post\": {\r\n        \"operationId\": \"sendWhatsAppMessage\",\r\n        \"summary\": \"Send WhatsApp message to customer\",\r\n        \"description\": \"Triggers a WhatsApp message via Twilio for promotional campaigns, order updates, or customer engagement. Used for automated discount notifications.\",\r\n        \"requestBody\": {\r\n          \"required\": true,\r\n          \"content\": {\r\n            \"application/json\": {\r\n              \"schema\": {\r\n                \"$ref\": \"#/components/schemas/WhatsAppMessageRequest\"\r\n              }\r\n            }\r\n          }\r\n        },\r\n        \"responses\": {\r\n          \"200\": {\r\n            \"description\": \"Message sent successfully\",\r\n            \"content\": {\r\n              \"application/json\": {\r\n                \"schema\": {\r\n                  \"type\": \"object\",\r\n                  \"required\": [\"success\", \"data\"],\r\n                  \"properties\": {\r\n                    \"success\": {\r\n                      \"type\": \"boolean\",\r\n                      \"example\": true\r\n                    },\r\n                    \"data\": {\r\n                      \"$ref\": \"#/components/schemas/WhatsAppMessageResponse\"\r\n                    },\r\n                    \"error\": {\r\n                      \"type\": \"null\"\r\n                    },\r\n                    \"meta\": {\r\n                      \"$ref\": \"#/components/schemas/ResponseMeta\"\r\n                    }\r\n                  }\r\n                }\r\n              }\r\n            }\r\n          },\r\n          \"400\": {\r\n            \"description\": \"Bad request - invalid phone number or message\",\r\n            \"content\": {\r\n              \"application/json\": {\r\n                \"schema\": {\r\n                  \"$ref\": \"#/components/schemas/ErrorResponse\"\r\n                }\r\n              }\r\n            }\r\n          },\r\n          \"500\": {\r\n            \"description\": \"Internal server error\",\r\n            \"content\": {\r\n              \"application/json\": {\r\n                \"schema\": {\r\n                  \"$ref\": \"#/components/schemas/ErrorResponse\"\r\n                }\r\n              }\r\n            }\r\n          }\r\n        }\r\n      }\r\n    },\r\n    \"/catalog/products/search\": {\r\n      \"get\": {\r\n        \"operationId\": \"searchProducts\",\r\n        \"summary\": \"Search products by name or description\",\r\n        \"description\": \"Search for products across all categories using text query. Returns paginated results of active products with available stock.\",\r\n        \"parameters\": [\r\n          {\r\n            \"name\": \"q\",\r\n            \"in\": \"query\",\r\n            \"required\": true,\r\n            \"description\": \"Search query text to match against product name and description\",\r\n            \"schema\": {\r\n              \"type\": \"string\",\r\n              \"minLength\": 1,\r\n              \"example\": \"silk saree\"\r\n            }\r\n          },\r\n          {\r\n            \"name\": \"category_id\",\r\n            \"in\": \"query\",\r\n            \"required\": false,\r\n            \"description\": \"Filter results to specific category\",\r\n            \"schema\": {\r\n              \"type\": \"string\",\r\n              \"example\": \"cat-1\"\r\n            }\r\n          },\r\n          {\r\n            \"name\": \"seller_id\",\r\n            \"in\": \"query\",\r\n            \"required\": false,\r\n            \"description\": \"Filter results to specific seller\",\r\n            \"schema\": {\r\n              \"type\": \"string\",\r\n              \"example\": \"seller-456\"\r\n            }\r\n          },\r\n          {\r\n            \"name\": \"min_price\",\r\n            \"in\": \"query\",\r\n            \"required\": false,\r\n            \"description\": \"Minimum price filter (in INR)\",\r\n            \"schema\": {\r\n              \"type\": \"number\",\r\n              \"minimum\": 0,\r\n              \"example\": 100\r\n            }\r\n          },\r\n          {\r\n            \"name\": \"max_price\",\r\n            \"in\": \"query\",\r\n            \"required\": false,\r\n            \"description\": \"Maximum price filter (in INR)\",\r\n            \"schema\": {\r\n              \"type\": \"number\",\r\n              \"minimum\": 0,\r\n              \"example\": 5000\r\n            }\r\n          },\r\n          {\r\n            \"name\": \"sort\",\r\n            \"in\": \"query\",\r\n            \"required\": false,\r\n            \"description\": \"Sort order for search results\",\r\n            \"schema\": {\r\n              \"type\": \"string\",\r\n              \"enum\": [\"relevance\", \"price_asc\", \"price_desc\", \"newest\"],\r\n              \"default\": \"relevance\",\r\n              \"example\": \"relevance\"\r\n            }\r\n          },\r\n          {\r\n            \"name\": \"page\",\r\n            \"in\": \"query\",\r\n            \"required\": false,\r\n            \"description\": \"Page number for pagination (1-indexed)\",\r\n            \"schema\": {\r\n              \"type\": \"integer\",\r\n              \"minimum\": 1,\r\n              \"default\": 1,\r\n              \"example\": 1\r\n            }\r\n          },\r\n          {\r\n            \"name\": \"per_page\",\r\n            \"in\": \"query\",\r\n            \"required\": false,\r\n            \"description\": \"Number of items per page\",\r\n            \"schema\": {\r\n              \"type\": \"integer\",\r\n              \"minimum\": 1,\r\n              \"maximum\": 100,\r\n              \"default\": 20,\r\n              \"example\": 20\r\n            }\r\n          },\r\n          {\r\n            \"name\": \"next_token\",\r\n            \"in\": \"query\",\r\n            \"required\": false,\r\n            \"description\": \"Pagination token from previous response for cursor-based pagination\",\r\n            \"schema\": {\r\n              \"type\": \"string\",\r\n              \"example\": \"eyJQSyI6IlBST0RVQ1QjcHJvZC0xMjMiLCJTSyI6Ik1FVEFEQVRBIn0=\"\r\n            }\r\n          }\r\n        ],\r\n        \"responses\": {\r\n          \"200\": {\r\n            \"description\": \"Successful response with search results\",\r\n            \"content\": {\r\n              \"application/json\": {\r\n                \"schema\": {\r\n                  \"type\": \"object\",\r\n                  \"required\": [\"success\", \"data\"],\r\n                  \"properties\": {\r\n                    \"success\": {\r\n                      \"type\": \"boolean\",\r\n                      \"example\": true\r\n                    },\r\n                    \"data\": {\r\n                      \"type\": \"array\",\r\n                      \"items\": {\r\n                        \"$ref\": \"#/components/schemas/ProductSummary\"\r\n                      }\r\n                    },\r\n                    \"error\": {\r\n                      \"type\": \"null\"\r\n                    },\r\n                    \"meta\": {\r\n                      \"$ref\": \"#/components/schemas/PaginatedResponseMeta\"\r\n                    }\r\n                  }\r\n                }\r\n              }\r\n            }\r\n          },\r\n          \"400\": {\r\n            \"description\": \"Bad request - missing or invalid search query\",\r\n            \"content\": {\r\n              \"application/json\": {\r\n                \"schema\": {\r\n                  \"$ref\": \"#/components/schemas/ErrorResponse\"\r\n                }\r\n              }\r\n            }\r\n          },\r\n          \"500\": {\r\n            \"description\": \"Internal server error\",\r\n            \"content\": {\r\n              \"application/json\": {\r\n                \"schema\": {\r\n                  \"$ref\": \"#/components/schemas/ErrorResponse\"\r\n                }\r\n              }\r\n            }\r\n          }\r\n        }\r\n      }\r\n    }\r\n  },\r\n  \"components\": {\r\n    \"schemas\": {\r\n      \"Category\": {\r\n        \"type\": \"object\",\r\n        \"required\": [\"id\", \"name\", \"isActive\", \"displayOrder\", \"createdAt\", \"updatedAt\"],\r\n        \"properties\": {\r\n          \"id\": {\r\n            \"type\": \"string\",\r\n            \"description\": \"Unique category identifier\",\r\n            \"example\": \"cat-1\"\r\n          },\r\n          \"name\": {\r\n            \"type\": \"string\",\r\n            \"description\": \"Category display name\",\r\n            \"example\": \"Sarees\"\r\n          },\r\n          \"description\": {\r\n            \"type\": \"string\",\r\n            \"nullable\": true,\r\n            \"description\": \"Category description\",\r\n            \"example\": \"Traditional Indian sarees\"\r\n          },\r\n          \"imageUrl\": {\r\n            \"type\": \"string\",\r\n            \"nullable\": true,\r\n            \"description\": \"Category image URL\",\r\n            \"example\": \"https://vyapargyan-prod-media.s3.amazonaws.com/categories/cat-1.jpg\"\r\n          },\r\n          \"displayOrder\": {\r\n            \"type\": \"integer\",\r\n            \"description\": \"Sort order for display\",\r\n            \"example\": 1\r\n          },\r\n          \"isActive\": {\r\n            \"type\": \"boolean\",\r\n            \"description\": \"Whether category is active and visible\",\r\n            \"example\": true\r\n          },\r\n          \"createdAt\": {\r\n            \"type\": \"string\",\r\n            \"format\": \"date-time\",\r\n            \"description\": \"ISO 8601 timestamp of creation\",\r\n            \"example\": \"2024-01-01T00:00:00.000Z\"\r\n          },\r\n          \"updatedAt\": {\r\n            \"type\": \"string\",\r\n            \"format\": \"date-time\",\r\n            \"description\": \"ISO 8601 timestamp of last update\",\r\n            \"example\": \"2024-01-01T00:00:00.000Z\"\r\n          }\r\n        }\r\n      },\r\n      \"ProductSummary\": {\r\n        \"type\": \"object\",\r\n        \"required\": [\"id\", \"sellerId\", \"categoryId\", \"name\", \"price\", \"stockQuantity\", \"isActive\", \"createdAt\"],\r\n        \"properties\": {\r\n          \"id\": {\r\n            \"type\": \"string\",\r\n            \"description\": \"Unique product identifier\",\r\n            \"example\": \"prod-123\"\r\n          },\r\n          \"sellerId\": {\r\n            \"type\": \"string\",\r\n            \"description\": \"Seller who owns this product\",\r\n            \"example\": \"seller-456\"\r\n          },\r\n          \"categoryId\": {\r\n            \"type\": \"string\",\r\n            \"description\": \"Category this product belongs to\",\r\n            \"example\": \"cat-1\"\r\n          },\r\n          \"name\": {\r\n            \"type\": \"string\",\r\n            \"description\": \"Product name\",\r\n            \"example\": \"Silk Saree Red\"\r\n          },\r\n          \"description\": {\r\n            \"type\": \"string\",\r\n            \"nullable\": true,\r\n            \"description\": \"Product description\",\r\n            \"example\": \"Beautiful red silk saree with golden border\"\r\n          },\r\n          \"price\": {\r\n            \"type\": \"number\",\r\n            \"format\": \"double\",\r\n            \"description\": \"Product price in INR\",\r\n            \"example\": 2500.00\r\n          },\r\n          \"stockQuantity\": {\r\n            \"type\": \"integer\",\r\n            \"description\": \"Available stock quantity\",\r\n            \"example\": 10\r\n          },\r\n          \"imageUrls\": {\r\n            \"type\": \"array\",\r\n            \"items\": {\r\n              \"type\": \"string\"\r\n            },\r\n            \"description\": \"Array of product image URLs\",\r\n            \"example\": [\r\n              \"https://vyapargyan-prod-media.s3.amazonaws.com/products/prod-123-1.jpg\",\r\n              \"https://vyapargyan-prod-media.s3.amazonaws.com/products/prod-123-2.jpg\"\r\n            ]\r\n          },\r\n          \"primaryImageUrl\": {\r\n            \"type\": \"string\",\r\n            \"nullable\": true,\r\n            \"description\": \"Primary product image URL (first image)\",\r\n            \"example\": \"https://vyapargyan-prod-media.s3.amazonaws.com/products/prod-123-1.jpg\"\r\n          },\r\n          \"isActive\": {\r\n            \"type\": \"boolean\",\r\n            \"description\": \"Whether product is active and visible\",\r\n            \"example\": true\r\n          },\r\n          \"createdAt\": {\r\n            \"type\": \"string\",\r\n            \"format\": \"date-time\",\r\n            \"description\": \"ISO 8601 timestamp of creation\",\r\n            \"example\": \"2024-01-10T00:00:00.000Z\"\r\n          },\r\n          \"updatedAt\": {\r\n            \"type\": \"string\",\r\n            \"format\": \"date-time\",\r\n            \"description\": \"ISO 8601 timestamp of last update\",\r\n            \"example\": \"2024-01-10T00:00:00.000Z\"\r\n          }\r\n        }\r\n      },\r\n      \"ResponseMeta\": {\r\n        \"type\": \"object\",\r\n        \"required\": [\"request_id\"],\r\n        \"properties\": {\r\n          \"request_id\": {\r\n            \"type\": \"string\",\r\n            \"format\": \"uuid\",\r\n            \"description\": \"Unique request identifier for tracing\",\r\n            \"example\": \"550e8400-e29b-41d4-a716-446655440000\"\r\n          }\r\n        }\r\n      },\r\n      \"PaginatedResponseMeta\": {\r\n        \"type\": \"object\",\r\n        \"required\": [\"request_id\", \"page\", \"per_page\"],\r\n        \"properties\": {\r\n          \"request_id\": {\r\n            \"type\": \"string\",\r\n            \"format\": \"uuid\",\r\n            \"description\": \"Unique request identifier for tracing\",\r\n            \"example\": \"550e8400-e29b-41d4-a716-446655440000\"\r\n          },\r\n          \"page\": {\r\n            \"type\": \"integer\",\r\n            \"description\": \"Current page number\",\r\n            \"example\": 1\r\n          },\r\n          \"per_page\": {\r\n            \"type\": \"integer\",\r\n            \"description\": \"Items per page\",\r\n            \"example\": 20\r\n          },\r\n          \"total\": {\r\n            \"type\": \"integer\",\r\n            \"nullable\": true,\r\n            \"description\": \"Total number of items (may be null for cursor-based pagination)\",\r\n            \"example\": 100\r\n          },\r\n          \"next_token\": {\r\n            \"type\": \"string\",\r\n            \"nullable\": true,\r\n            \"description\": \"Token for fetching next page (cursor-based pagination)\",\r\n            \"example\": \"eyJQSyI6IlBST0RVQ1QjcHJvZC0xMjMiLCJTSyI6Ik1FVEFEQVRBIn0=\"\r\n          },\r\n          \"has_more\": {\r\n            \"type\": \"boolean\",\r\n            \"description\": \"Whether more results are available\",\r\n            \"example\": true\r\n          }\r\n        }\r\n      },\r\n      \"ErrorResponse\": {\r\n        \"type\": \"object\",\r\n        \"required\": [\"success\", \"error\"],\r\n        \"properties\": {\r\n          \"success\": {\r\n            \"type\": \"boolean\",\r\n            \"example\": false\r\n          },\r\n          \"data\": {\r\n            \"type\": \"null\"\r\n          },\r\n          \"error\": {\r\n            \"type\": \"object\",\r\n            \"required\": [\"code\", \"message\"],\r\n            \"properties\": {\r\n              \"code\": {\r\n                \"type\": \"string\",\r\n                \"description\": \"Error code for programmatic handling\",\r\n                \"example\": \"CATEGORY_NOT_FOUND\"\r\n              },\r\n              \"message\": {\r\n                \"type\": \"string\",\r\n                \"description\": \"Human-readable error message\",\r\n                \"example\": \"The requested category does not exist\"\r\n              },\r\n              \"details\": {\r\n                \"type\": \"object\",\r\n                \"nullable\": true,\r\n                \"description\": \"Additional error context\",\r\n                \"additionalProperties\": true\r\n              }\r\n            }\r\n          },\r\n          \"meta\": {\r\n            \"$ref\": \"#/components/schemas/ResponseMeta\"\r\n          }\r\n        }\r\n      },\r\n      \"InventoryData\": {\r\n        \"type\": \"object\",\r\n        \"required\": [\"productId\", \"sellerId\", \"stockQuantity\", \"stockAgeInDays\", \"isAvailable\"],\r\n        \"properties\": {\r\n          \"productId\": {\r\n            \"type\": \"string\",\r\n            \"description\": \"Product identifier\",\r\n            \"example\": \"prod-123\"\r\n          },\r\n          \"sellerId\": {\r\n            \"type\": \"string\",\r\n            \"description\": \"Seller identifier\",\r\n            \"example\": \"seller-456\"\r\n          },\r\n          \"productName\": {\r\n            \"type\": \"string\",\r\n            \"description\": \"Product name\",\r\n            \"example\": \"Silk Saree Red\"\r\n          },\r\n          \"stockQuantity\": {\r\n            \"type\": \"integer\",\r\n            \"description\": \"Current stock quantity\",\r\n            \"example\": 10\r\n          },\r\n          \"stockAgeInDays\": {\r\n            \"type\": \"integer\",\r\n            \"description\": \"Number of days since product was added\",\r\n            \"example\": 45\r\n          },\r\n          \"isAvailable\": {\r\n            \"type\": \"boolean\",\r\n            \"description\": \"Whether product is in stock and available\",\r\n            \"example\": true\r\n          },\r\n          \"currentPrice\": {\r\n            \"type\": \"number\",\r\n            \"format\": \"double\",\r\n            \"description\": \"Current product price in INR\",\r\n            \"example\": 2500.00\r\n          },\r\n          \"lastUpdated\": {\r\n            \"type\": \"string\",\r\n            \"format\": \"date-time\",\r\n            \"description\": \"ISO 8601 timestamp of last inventory update\",\r\n            \"example\": \"2024-01-10T00:00:00.000Z\"\r\n          }\r\n        }\r\n      },\r\n      \"DiscountRequest\": {\r\n        \"type\": \"object\",\r\n        \"required\": [\"productId\", \"sellerId\", \"discountPercent\"],\r\n        \"properties\": {\r\n          \"productId\": {\r\n            \"type\": \"string\",\r\n            \"description\": \"Product identifier\",\r\n            \"example\": \"prod-123\"\r\n          },\r\n          \"sellerId\": {\r\n            \"type\": \"string\",\r\n            \"description\": \"Seller identifier\",\r\n            \"example\": \"seller-456\"\r\n          },\r\n          \"discountPercent\": {\r\n            \"type\": \"number\",\r\n            \"format\": \"double\",\r\n            \"minimum\": 0,\r\n            \"maximum\": 100,\r\n            \"description\": \"Discount percentage to apply (0-100)\",\r\n            \"example\": 20.0\r\n          },\r\n          \"reason\": {\r\n            \"type\": \"string\",\r\n            \"description\": \"Reason for discount (e.g., dead stock, market trend)\",\r\n            \"example\": \"Dead stock liquidation - 45 days old\"\r\n          }\r\n        }\r\n      },\r\n      \"DiscountResponse\": {\r\n        \"type\": \"object\",\r\n        \"required\": [\"productId\", \"originalPrice\", \"newPrice\", \"discountPercent\", \"appliedAt\"],\r\n        \"properties\": {\r\n          \"productId\": {\r\n            \"type\": \"string\",\r\n            \"description\": \"Product identifier\",\r\n            \"example\": \"prod-123\"\r\n          },\r\n          \"productName\": {\r\n            \"type\": \"string\",\r\n            \"description\": \"Product name\",\r\n            \"example\": \"Silk Saree Red\"\r\n          },\r\n          \"originalPrice\": {\r\n            \"type\": \"number\",\r\n            \"format\": \"double\",\r\n            \"description\": \"Original price before discount in INR\",\r\n            \"example\": 2500.00\r\n          },\r\n          \"newPrice\": {\r\n            \"type\": \"number\",\r\n            \"format\": \"double\",\r\n            \"description\": \"New price after discount in INR\",\r\n            \"example\": 2000.00\r\n          },\r\n          \"discountPercent\": {\r\n            \"type\": \"number\",\r\n            \"format\": \"double\",\r\n            \"description\": \"Applied discount percentage\",\r\n            \"example\": 20.0\r\n          },\r\n          \"appliedAt\": {\r\n            \"type\": \"string\",\r\n            \"format\": \"date-time\",\r\n            \"description\": \"ISO 8601 timestamp when discount was applied\",\r\n            \"example\": \"2024-01-15T10:30:00.000Z\"\r\n          }\r\n        }\r\n      },\r\n      \"WhatsAppMessageRequest\": {\r\n        \"type\": \"object\",\r\n        \"required\": [\"customerPhone\", \"message\"],\r\n        \"properties\": {\r\n          \"customerPhone\": {\r\n            \"type\": \"string\",\r\n            \"description\": \"Customer phone number in E.164 format (e.g., +919876543210)\",\r\n            \"example\": \"+919876543210\"\r\n          },\r\n          \"message\": {\r\n            \"type\": \"string\",\r\n            \"description\": \"Message text to send\",\r\n            \"example\": \"Special offer! 20% off on Silk Saree Red. Limited time only!\"\r\n          },\r\n          \"mediaUrl\": {\r\n            \"type\": \"string\",\r\n            \"nullable\": true,\r\n            \"description\": \"Optional media URL for image/video attachment\",\r\n            \"example\": \"https://vyapargyan-prod-media.s3.amazonaws.com/products/prod-123-1.jpg\"\r\n          }\r\n        }\r\n      },\r\n      \"WhatsAppMessageResponse\": {\r\n        \"type\": \"object\",\r\n        \"required\": [\"messageId\", \"status\", \"sentAt\"],\r\n        \"properties\": {\r\n          \"messageId\": {\r\n            \"type\": \"string\",\r\n            \"description\": \"Twilio message SID\",\r\n            \"example\": \"SM1234567890abcdef1234567890abcdef\"\r\n          },\r\n          \"status\": {\r\n            \"type\": \"string\",\r\n            \"description\": \"Message delivery status\",\r\n            \"example\": \"queued\"\r\n          },\r\n          \"sentAt\": {\r\n            \"type\": \"string\",\r\n            \"format\": \"date-time\",\r\n            \"description\": \"ISO 8601 timestamp when message was sent\",\r\n            \"example\": \"2024-01-15T10:30:00.000Z\"\r\n          },\r\n          \"customerPhone\": {\r\n            \"type\": \"string\",\r\n            \"description\": \"Recipient phone number\",\r\n            \"example\": \"+919876543210\"\r\n          }\r\n        }\r\n      }\r\n    }\r\n  }\r\n}\r\n"
+      }
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-bedrock/BedrockAgent"
+   }
+  },
+  "BedrockAgentAlias": {
+   "Type": "AWS::Bedrock::AgentAlias",
+   "Properties": {
+    "AgentId": {
+     "Ref": "BedrockAgent"
+    },
+    "AgentAliasName": "dev",
+    "Description": "dev environment alias"
+   },
+   "DependsOn": [
+    "BedrockAgent"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-bedrock/BedrockAgentAlias"
+   }
+  },
+  "CDKMetadata": {
+   "Type": "AWS::CDK::Metadata",
+   "Properties": {
+    "Analytics": "v2:deflate64:H4sIAAAAAAAA/zWNQQ6DIBREz+Iefy22B6gm3bbRA5gvokERGj/UNIS7N2pcvZm3mOHAbxlkCa6Uim5KtWoh1A7FxCpJ1i9CMlypCRrntkMIT2+EU9awsjdnjkzhDKGyWm5659tqJX5bPVJklDdIJB3BYwOjHAovJukKJBnZLmuHgzLDvnLel715effxLjJjOwkjXb78DhyuyUhKpYs3Ts0SqoN/iU8IYNIAAAA="
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-bedrock/CDKMetadata/Default"
+   }
+  }
+ },
+ "Outputs": {
+  "BedrockAgentId": {
+   "Description": "Bedrock Agent ID",
+   "Value": {
+    "Ref": "BedrockAgent"
+   },
+   "Export": {
+    "Name": "dev-vyapargyan-bedrock-agent-id"
+   }
+  },
+  "BedrockAgentAliasId": {
+   "Description": "Bedrock Agent Alias ID",
+   "Value": {
+    "Ref": "BedrockAgentAlias"
+   },
+   "Export": {
+    "Name": "dev-vyapargyan-bedrock-agent-alias-id"
+   }
+  },
+  "ActionGroupFunctionArn": {
+   "Description": "Action Group Lambda Function ARN",
+   "Value": {
+    "Fn::GetAtt": [
+     "ActionGroupFunctionFE14D1CB",
+     "Arn"
+    ]
+   },
+   "Export": {
+    "Name": "dev-vyapargyan-action-group-function-arn"
+   }
+  }
+ },
+ "Parameters": {
+  "BootstrapVersion": {
+   "Type": "AWS::SSM::Parameter::Value<String>",
+   "Default": "/cdk-bootstrap/hnb659fds/version",
+   "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]"
+  }
+ },
+ "Rules": {
+  "CheckBootstrapVersion": {
+   "Assertions": [
+    {
+     "Assert": {
+      "Fn::Not": [
+       {
+        "Fn::Contains": [
+         [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5"
+         ],
+         {
+          "Ref": "BootstrapVersion"
+         }
+        ]
+       }
+      ]
+     },
+     "AssertDescription": "CDK bootstrap stack version 6 required. Please run 'cdk bootstrap' with a recent version of the CDK CLI."
+    }
+   ]
+  }
+ }
+}

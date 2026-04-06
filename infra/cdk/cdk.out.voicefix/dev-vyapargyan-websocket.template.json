@@ -1,0 +1,1232 @@
+{
+ "Description": "WebSocket infrastructure for VyaparGyan dev environment",
+ "Resources": {
+  "WebSocketApi": {
+   "Type": "AWS::ApiGatewayV2::Api",
+   "Properties": {
+    "Description": "VyaparGyan real-time chat WebSocket API",
+    "Name": "dev-vyapargyan-websocket",
+    "ProtocolType": "WEBSOCKET",
+    "RouteSelectionExpression": "$request.body.action",
+    "Tags": {
+     "CostCenter": "Development",
+     "Environment": "dev",
+     "ManagedBy": "CDK",
+     "Project": "VyaparGyan"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-websocket/WebSocketApi"
+   }
+  },
+  "ConnectFunctionServiceRole95D35EC9": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "lambda.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "ManagedPolicyArns": [
+     {
+      "Fn::Join": [
+       "",
+       [
+        "arn:",
+        {
+         "Ref": "AWS::Partition"
+        },
+        ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+       ]
+      ]
+     }
+    ],
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-websocket/ConnectFunction/ServiceRole/Resource"
+   }
+  },
+  "ConnectFunctionServiceRoleDefaultPolicy48CD77CD": {
+   "Type": "AWS::IAM::Policy",
+   "Properties": {
+    "PolicyDocument": {
+     "Statement": [
+      {
+       "Action": [
+        "xray:PutTelemetryRecords",
+        "xray:PutTraceSegments"
+       ],
+       "Effect": "Allow",
+       "Resource": "*"
+      },
+      {
+       "Action": [
+        "dynamodb:BatchGetItem",
+        "dynamodb:BatchWriteItem",
+        "dynamodb:ConditionCheckItem",
+        "dynamodb:DeleteItem",
+        "dynamodb:DescribeTable",
+        "dynamodb:GetItem",
+        "dynamodb:GetRecords",
+        "dynamodb:GetShardIterator",
+        "dynamodb:PutItem",
+        "dynamodb:Query",
+        "dynamodb:Scan",
+        "dynamodb:UpdateItem"
+       ],
+       "Effect": "Allow",
+       "Resource": [
+        {
+         "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputFnGetAttMainTable74195DABArnE0EC388B"
+        },
+        {
+         "Fn::Join": [
+          "",
+          [
+           {
+            "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputFnGetAttMainTable74195DABArnE0EC388B"
+           },
+           "/index/*"
+          ]
+         ]
+        }
+       ]
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "PolicyName": "ConnectFunctionServiceRoleDefaultPolicy48CD77CD",
+    "Roles": [
+     {
+      "Ref": "ConnectFunctionServiceRole95D35EC9"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-websocket/ConnectFunction/ServiceRole/DefaultPolicy/Resource"
+   }
+  },
+  "ConnectFunction52BFC429": {
+   "Type": "AWS::Lambda::Function",
+   "Properties": {
+    "Architectures": [
+     "arm64"
+    ],
+    "Code": {
+     "S3Bucket": "cdk-hnb659fds-assets-856888988795-ap-south-1",
+     "S3Key": "0c2c1826d9aa7a48f002caa7b4341bb3cb469ecd4b357bfa3733533e3b60b555.zip"
+    },
+    "Environment": {
+     "Variables": {
+      "ENVIRONMENT": "dev",
+      "TABLE_NAME": {
+       "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputRefMainTable74195DAB4503BD7E"
+      },
+      "USER_POOL_ID": {
+       "Fn::ImportValue": "dev-vyapargyan-auth:ExportsOutputRefUserPool6BA7E5F296FD7236"
+      },
+      "LOG_LEVEL": "info"
+     }
+    },
+    "FunctionName": "dev-vyapargyan-ws-connect",
+    "Handler": "handlers/websocket/connect.handler",
+    "MemorySize": 256,
+    "Role": {
+     "Fn::GetAtt": [
+      "ConnectFunctionServiceRole95D35EC9",
+      "Arn"
+     ]
+    },
+    "Runtime": "nodejs20.x",
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     }
+    ],
+    "Timeout": 30,
+    "TracingConfig": {
+     "Mode": "Active"
+    }
+   },
+   "DependsOn": [
+    "ConnectFunctionServiceRoleDefaultPolicy48CD77CD",
+    "ConnectFunctionServiceRole95D35EC9"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-websocket/ConnectFunction/Resource",
+    "aws:asset:path": "asset.0c2c1826d9aa7a48f002caa7b4341bb3cb469ecd4b357bfa3733533e3b60b555",
+    "aws:asset:is-bundled": false,
+    "aws:asset:property": "Code"
+   }
+  },
+  "ConnectFunctionWebSocketConnectPermissionFEC0043F": {
+   "Type": "AWS::Lambda::Permission",
+   "Properties": {
+    "Action": "lambda:InvokeFunction",
+    "FunctionName": {
+     "Fn::GetAtt": [
+      "ConnectFunction52BFC429",
+      "Arn"
+     ]
+    },
+    "Principal": "apigateway.amazonaws.com",
+    "SourceArn": {
+     "Fn::Join": [
+      "",
+      [
+       "arn:aws:execute-api:ap-south-1:856888988795:",
+       {
+        "Ref": "WebSocketApi"
+       },
+       "/*/$connect"
+      ]
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-websocket/ConnectFunction/WebSocketConnectPermission"
+   }
+  },
+  "DisconnectFunctionServiceRole3E08E553": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "lambda.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "ManagedPolicyArns": [
+     {
+      "Fn::Join": [
+       "",
+       [
+        "arn:",
+        {
+         "Ref": "AWS::Partition"
+        },
+        ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+       ]
+      ]
+     }
+    ],
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-websocket/DisconnectFunction/ServiceRole/Resource"
+   }
+  },
+  "DisconnectFunctionServiceRoleDefaultPolicyF854158E": {
+   "Type": "AWS::IAM::Policy",
+   "Properties": {
+    "PolicyDocument": {
+     "Statement": [
+      {
+       "Action": [
+        "xray:PutTelemetryRecords",
+        "xray:PutTraceSegments"
+       ],
+       "Effect": "Allow",
+       "Resource": "*"
+      },
+      {
+       "Action": [
+        "dynamodb:BatchGetItem",
+        "dynamodb:BatchWriteItem",
+        "dynamodb:ConditionCheckItem",
+        "dynamodb:DeleteItem",
+        "dynamodb:DescribeTable",
+        "dynamodb:GetItem",
+        "dynamodb:GetRecords",
+        "dynamodb:GetShardIterator",
+        "dynamodb:PutItem",
+        "dynamodb:Query",
+        "dynamodb:Scan",
+        "dynamodb:UpdateItem"
+       ],
+       "Effect": "Allow",
+       "Resource": [
+        {
+         "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputFnGetAttMainTable74195DABArnE0EC388B"
+        },
+        {
+         "Fn::Join": [
+          "",
+          [
+           {
+            "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputFnGetAttMainTable74195DABArnE0EC388B"
+           },
+           "/index/*"
+          ]
+         ]
+        }
+       ]
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "PolicyName": "DisconnectFunctionServiceRoleDefaultPolicyF854158E",
+    "Roles": [
+     {
+      "Ref": "DisconnectFunctionServiceRole3E08E553"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-websocket/DisconnectFunction/ServiceRole/DefaultPolicy/Resource"
+   }
+  },
+  "DisconnectFunctionEFD34B26": {
+   "Type": "AWS::Lambda::Function",
+   "Properties": {
+    "Architectures": [
+     "arm64"
+    ],
+    "Code": {
+     "S3Bucket": "cdk-hnb659fds-assets-856888988795-ap-south-1",
+     "S3Key": "0c2c1826d9aa7a48f002caa7b4341bb3cb469ecd4b357bfa3733533e3b60b555.zip"
+    },
+    "Environment": {
+     "Variables": {
+      "ENVIRONMENT": "dev",
+      "TABLE_NAME": {
+       "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputRefMainTable74195DAB4503BD7E"
+      },
+      "USER_POOL_ID": {
+       "Fn::ImportValue": "dev-vyapargyan-auth:ExportsOutputRefUserPool6BA7E5F296FD7236"
+      },
+      "LOG_LEVEL": "info"
+     }
+    },
+    "FunctionName": "dev-vyapargyan-ws-disconnect",
+    "Handler": "handlers/websocket/disconnect.handler",
+    "MemorySize": 256,
+    "Role": {
+     "Fn::GetAtt": [
+      "DisconnectFunctionServiceRole3E08E553",
+      "Arn"
+     ]
+    },
+    "Runtime": "nodejs20.x",
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     }
+    ],
+    "Timeout": 30,
+    "TracingConfig": {
+     "Mode": "Active"
+    }
+   },
+   "DependsOn": [
+    "DisconnectFunctionServiceRoleDefaultPolicyF854158E",
+    "DisconnectFunctionServiceRole3E08E553"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-websocket/DisconnectFunction/Resource",
+    "aws:asset:path": "asset.0c2c1826d9aa7a48f002caa7b4341bb3cb469ecd4b357bfa3733533e3b60b555",
+    "aws:asset:is-bundled": false,
+    "aws:asset:property": "Code"
+   }
+  },
+  "DisconnectFunctionWebSocketDisconnectPermission5DB08F49": {
+   "Type": "AWS::Lambda::Permission",
+   "Properties": {
+    "Action": "lambda:InvokeFunction",
+    "FunctionName": {
+     "Fn::GetAtt": [
+      "DisconnectFunctionEFD34B26",
+      "Arn"
+     ]
+    },
+    "Principal": "apigateway.amazonaws.com",
+    "SourceArn": {
+     "Fn::Join": [
+      "",
+      [
+       "arn:aws:execute-api:ap-south-1:856888988795:",
+       {
+        "Ref": "WebSocketApi"
+       },
+       "/*/$disconnect"
+      ]
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-websocket/DisconnectFunction/WebSocketDisconnectPermission"
+   }
+  },
+  "DefaultFunctionServiceRole77A8332B": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "lambda.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "ManagedPolicyArns": [
+     {
+      "Fn::Join": [
+       "",
+       [
+        "arn:",
+        {
+         "Ref": "AWS::Partition"
+        },
+        ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+       ]
+      ]
+     }
+    ],
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-websocket/DefaultFunction/ServiceRole/Resource"
+   }
+  },
+  "DefaultFunctionServiceRoleDefaultPolicy9C59EE69": {
+   "Type": "AWS::IAM::Policy",
+   "Properties": {
+    "PolicyDocument": {
+     "Statement": [
+      {
+       "Action": [
+        "xray:PutTelemetryRecords",
+        "xray:PutTraceSegments"
+       ],
+       "Effect": "Allow",
+       "Resource": "*"
+      },
+      {
+       "Action": [
+        "dynamodb:BatchGetItem",
+        "dynamodb:BatchWriteItem",
+        "dynamodb:ConditionCheckItem",
+        "dynamodb:DeleteItem",
+        "dynamodb:DescribeTable",
+        "dynamodb:GetItem",
+        "dynamodb:GetRecords",
+        "dynamodb:GetShardIterator",
+        "dynamodb:PutItem",
+        "dynamodb:Query",
+        "dynamodb:Scan",
+        "dynamodb:UpdateItem"
+       ],
+       "Effect": "Allow",
+       "Resource": [
+        {
+         "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputFnGetAttMainTable74195DABArnE0EC388B"
+        },
+        {
+         "Fn::Join": [
+          "",
+          [
+           {
+            "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputFnGetAttMainTable74195DABArnE0EC388B"
+           },
+           "/index/*"
+          ]
+         ]
+        }
+       ]
+      },
+      {
+       "Action": "execute-api:ManageConnections",
+       "Effect": "Allow",
+       "Resource": {
+        "Fn::Join": [
+         "",
+         [
+          "arn:aws:execute-api:ap-south-1:856888988795:",
+          {
+           "Ref": "WebSocketApi"
+          },
+          "/dev/POST/@connections/*"
+         ]
+        ]
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "PolicyName": "DefaultFunctionServiceRoleDefaultPolicy9C59EE69",
+    "Roles": [
+     {
+      "Ref": "DefaultFunctionServiceRole77A8332B"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-websocket/DefaultFunction/ServiceRole/DefaultPolicy/Resource"
+   }
+  },
+  "DefaultFunction1A91F45E": {
+   "Type": "AWS::Lambda::Function",
+   "Properties": {
+    "Architectures": [
+     "arm64"
+    ],
+    "Code": {
+     "S3Bucket": "cdk-hnb659fds-assets-856888988795-ap-south-1",
+     "S3Key": "0c2c1826d9aa7a48f002caa7b4341bb3cb469ecd4b357bfa3733533e3b60b555.zip"
+    },
+    "Environment": {
+     "Variables": {
+      "ENVIRONMENT": "dev",
+      "TABLE_NAME": {
+       "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputRefMainTable74195DAB4503BD7E"
+      },
+      "USER_POOL_ID": {
+       "Fn::ImportValue": "dev-vyapargyan-auth:ExportsOutputRefUserPool6BA7E5F296FD7236"
+      },
+      "LOG_LEVEL": "info",
+      "WEBSOCKET_API_ENDPOINT": {
+       "Fn::Join": [
+        "",
+        [
+         "https://",
+         {
+          "Ref": "WebSocketApi"
+         },
+         ".execute-api.ap-south-1.amazonaws.com/dev"
+        ]
+       ]
+      }
+     }
+    },
+    "FunctionName": "dev-vyapargyan-ws-default",
+    "Handler": "handlers/websocket/default.handler",
+    "MemorySize": 256,
+    "Role": {
+     "Fn::GetAtt": [
+      "DefaultFunctionServiceRole77A8332B",
+      "Arn"
+     ]
+    },
+    "Runtime": "nodejs20.x",
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     }
+    ],
+    "Timeout": 30,
+    "TracingConfig": {
+     "Mode": "Active"
+    }
+   },
+   "DependsOn": [
+    "DefaultFunctionServiceRoleDefaultPolicy9C59EE69",
+    "DefaultFunctionServiceRole77A8332B"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-websocket/DefaultFunction/Resource",
+    "aws:asset:path": "asset.0c2c1826d9aa7a48f002caa7b4341bb3cb469ecd4b357bfa3733533e3b60b555",
+    "aws:asset:is-bundled": false,
+    "aws:asset:property": "Code"
+   }
+  },
+  "DefaultFunctionWebSocketDefaultPermission0ACBDB96": {
+   "Type": "AWS::Lambda::Permission",
+   "Properties": {
+    "Action": "lambda:InvokeFunction",
+    "FunctionName": {
+     "Fn::GetAtt": [
+      "DefaultFunction1A91F45E",
+      "Arn"
+     ]
+    },
+    "Principal": "apigateway.amazonaws.com",
+    "SourceArn": {
+     "Fn::Join": [
+      "",
+      [
+       "arn:aws:execute-api:ap-south-1:856888988795:",
+       {
+        "Ref": "WebSocketApi"
+       },
+       "/*/$default"
+      ]
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-websocket/DefaultFunction/WebSocketDefaultPermission"
+   }
+  },
+  "SendMessageFunctionServiceRoleBA456E9F": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "lambda.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "ManagedPolicyArns": [
+     {
+      "Fn::Join": [
+       "",
+       [
+        "arn:",
+        {
+         "Ref": "AWS::Partition"
+        },
+        ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+       ]
+      ]
+     }
+    ],
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-websocket/SendMessageFunction/ServiceRole/Resource"
+   }
+  },
+  "SendMessageFunctionServiceRoleDefaultPolicy93F13ECD": {
+   "Type": "AWS::IAM::Policy",
+   "Properties": {
+    "PolicyDocument": {
+     "Statement": [
+      {
+       "Action": [
+        "xray:PutTelemetryRecords",
+        "xray:PutTraceSegments"
+       ],
+       "Effect": "Allow",
+       "Resource": "*"
+      },
+      {
+       "Action": "events:PutEvents",
+       "Effect": "Allow",
+       "Resource": "arn:aws:events:ap-south-1:856888988795:event-bus/dev-vyapargyan-events"
+      },
+      {
+       "Action": [
+        "dynamodb:BatchGetItem",
+        "dynamodb:BatchWriteItem",
+        "dynamodb:ConditionCheckItem",
+        "dynamodb:DeleteItem",
+        "dynamodb:DescribeTable",
+        "dynamodb:GetItem",
+        "dynamodb:GetRecords",
+        "dynamodb:GetShardIterator",
+        "dynamodb:PutItem",
+        "dynamodb:Query",
+        "dynamodb:Scan",
+        "dynamodb:UpdateItem"
+       ],
+       "Effect": "Allow",
+       "Resource": [
+        {
+         "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputFnGetAttMainTable74195DABArnE0EC388B"
+        },
+        {
+         "Fn::Join": [
+          "",
+          [
+           {
+            "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputFnGetAttMainTable74195DABArnE0EC388B"
+           },
+           "/index/*"
+          ]
+         ]
+        }
+       ]
+      },
+      {
+       "Action": "execute-api:ManageConnections",
+       "Effect": "Allow",
+       "Resource": {
+        "Fn::Join": [
+         "",
+         [
+          "arn:aws:execute-api:ap-south-1:856888988795:",
+          {
+           "Ref": "WebSocketApi"
+          },
+          "/dev/POST/@connections/*"
+         ]
+        ]
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "PolicyName": "SendMessageFunctionServiceRoleDefaultPolicy93F13ECD",
+    "Roles": [
+     {
+      "Ref": "SendMessageFunctionServiceRoleBA456E9F"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-websocket/SendMessageFunction/ServiceRole/DefaultPolicy/Resource"
+   }
+  },
+  "SendMessageFunctionA37DCB9D": {
+   "Type": "AWS::Lambda::Function",
+   "Properties": {
+    "Architectures": [
+     "arm64"
+    ],
+    "Code": {
+     "S3Bucket": "cdk-hnb659fds-assets-856888988795-ap-south-1",
+     "S3Key": "0c2c1826d9aa7a48f002caa7b4341bb3cb469ecd4b357bfa3733533e3b60b555.zip"
+    },
+    "Environment": {
+     "Variables": {
+      "ENVIRONMENT": "dev",
+      "TABLE_NAME": {
+       "Fn::ImportValue": "dev-vyapargyan-database:ExportsOutputRefMainTable74195DAB4503BD7E"
+      },
+      "USER_POOL_ID": {
+       "Fn::ImportValue": "dev-vyapargyan-auth:ExportsOutputRefUserPool6BA7E5F296FD7236"
+      },
+      "LOG_LEVEL": "info",
+      "WEBSOCKET_API_ENDPOINT": {
+       "Fn::Join": [
+        "",
+        [
+         "https://",
+         {
+          "Ref": "WebSocketApi"
+         },
+         ".execute-api.ap-south-1.amazonaws.com/dev"
+        ]
+       ]
+      },
+      "EVENT_BUS_NAME": "dev-vyapargyan-events"
+     }
+    },
+    "FunctionName": "dev-vyapargyan-ws-send-message",
+    "Handler": "handlers/websocket/send-message.handler",
+    "MemorySize": 256,
+    "Role": {
+     "Fn::GetAtt": [
+      "SendMessageFunctionServiceRoleBA456E9F",
+      "Arn"
+     ]
+    },
+    "Runtime": "nodejs20.x",
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Development"
+     },
+     {
+      "Key": "Environment",
+      "Value": "dev"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "VyaparGyan"
+     }
+    ],
+    "Timeout": 30,
+    "TracingConfig": {
+     "Mode": "Active"
+    }
+   },
+   "DependsOn": [
+    "SendMessageFunctionServiceRoleDefaultPolicy93F13ECD",
+    "SendMessageFunctionServiceRoleBA456E9F"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-websocket/SendMessageFunction/Resource",
+    "aws:asset:path": "asset.0c2c1826d9aa7a48f002caa7b4341bb3cb469ecd4b357bfa3733533e3b60b555",
+    "aws:asset:is-bundled": false,
+    "aws:asset:property": "Code"
+   }
+  },
+  "SendMessageFunctionWebSocketSendMessagePermissionB3EDDFD0": {
+   "Type": "AWS::Lambda::Permission",
+   "Properties": {
+    "Action": "lambda:InvokeFunction",
+    "FunctionName": {
+     "Fn::GetAtt": [
+      "SendMessageFunctionA37DCB9D",
+      "Arn"
+     ]
+    },
+    "Principal": "apigateway.amazonaws.com",
+    "SourceArn": {
+     "Fn::Join": [
+      "",
+      [
+       "arn:aws:execute-api:ap-south-1:856888988795:",
+       {
+        "Ref": "WebSocketApi"
+       },
+       "/*/sendMessage"
+      ]
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-websocket/SendMessageFunction/WebSocketSendMessagePermission"
+   }
+  },
+  "ConnectIntegration": {
+   "Type": "AWS::ApiGatewayV2::Integration",
+   "Properties": {
+    "ApiId": {
+     "Ref": "WebSocketApi"
+    },
+    "IntegrationType": "AWS_PROXY",
+    "IntegrationUri": {
+     "Fn::Join": [
+      "",
+      [
+       "arn:aws:apigateway:ap-south-1:lambda:path/2015-03-31/functions/",
+       {
+        "Fn::GetAtt": [
+         "ConnectFunction52BFC429",
+         "Arn"
+        ]
+       },
+       "/invocations"
+      ]
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-websocket/ConnectIntegration"
+   }
+  },
+  "DisconnectIntegration": {
+   "Type": "AWS::ApiGatewayV2::Integration",
+   "Properties": {
+    "ApiId": {
+     "Ref": "WebSocketApi"
+    },
+    "IntegrationType": "AWS_PROXY",
+    "IntegrationUri": {
+     "Fn::Join": [
+      "",
+      [
+       "arn:aws:apigateway:ap-south-1:lambda:path/2015-03-31/functions/",
+       {
+        "Fn::GetAtt": [
+         "DisconnectFunctionEFD34B26",
+         "Arn"
+        ]
+       },
+       "/invocations"
+      ]
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-websocket/DisconnectIntegration"
+   }
+  },
+  "DefaultIntegration": {
+   "Type": "AWS::ApiGatewayV2::Integration",
+   "Properties": {
+    "ApiId": {
+     "Ref": "WebSocketApi"
+    },
+    "IntegrationType": "AWS_PROXY",
+    "IntegrationUri": {
+     "Fn::Join": [
+      "",
+      [
+       "arn:aws:apigateway:ap-south-1:lambda:path/2015-03-31/functions/",
+       {
+        "Fn::GetAtt": [
+         "DefaultFunction1A91F45E",
+         "Arn"
+        ]
+       },
+       "/invocations"
+      ]
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-websocket/DefaultIntegration"
+   }
+  },
+  "SendMessageIntegration": {
+   "Type": "AWS::ApiGatewayV2::Integration",
+   "Properties": {
+    "ApiId": {
+     "Ref": "WebSocketApi"
+    },
+    "IntegrationType": "AWS_PROXY",
+    "IntegrationUri": {
+     "Fn::Join": [
+      "",
+      [
+       "arn:aws:apigateway:ap-south-1:lambda:path/2015-03-31/functions/",
+       {
+        "Fn::GetAtt": [
+         "SendMessageFunctionA37DCB9D",
+         "Arn"
+        ]
+       },
+       "/invocations"
+      ]
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-websocket/SendMessageIntegration"
+   }
+  },
+  "ConnectRoute": {
+   "Type": "AWS::ApiGatewayV2::Route",
+   "Properties": {
+    "ApiId": {
+     "Ref": "WebSocketApi"
+    },
+    "AuthorizationType": "NONE",
+    "RouteKey": "$connect",
+    "Target": {
+     "Fn::Join": [
+      "",
+      [
+       "integrations/",
+       {
+        "Ref": "ConnectIntegration"
+       }
+      ]
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-websocket/ConnectRoute"
+   }
+  },
+  "DisconnectRoute": {
+   "Type": "AWS::ApiGatewayV2::Route",
+   "Properties": {
+    "ApiId": {
+     "Ref": "WebSocketApi"
+    },
+    "AuthorizationType": "NONE",
+    "RouteKey": "$disconnect",
+    "Target": {
+     "Fn::Join": [
+      "",
+      [
+       "integrations/",
+       {
+        "Ref": "DisconnectIntegration"
+       }
+      ]
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-websocket/DisconnectRoute"
+   }
+  },
+  "DefaultRoute": {
+   "Type": "AWS::ApiGatewayV2::Route",
+   "Properties": {
+    "ApiId": {
+     "Ref": "WebSocketApi"
+    },
+    "AuthorizationType": "NONE",
+    "RouteKey": "$default",
+    "Target": {
+     "Fn::Join": [
+      "",
+      [
+       "integrations/",
+       {
+        "Ref": "DefaultIntegration"
+       }
+      ]
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-websocket/DefaultRoute"
+   }
+  },
+  "SendMessageRoute": {
+   "Type": "AWS::ApiGatewayV2::Route",
+   "Properties": {
+    "ApiId": {
+     "Ref": "WebSocketApi"
+    },
+    "AuthorizationType": "NONE",
+    "RouteKey": "sendMessage",
+    "Target": {
+     "Fn::Join": [
+      "",
+      [
+       "integrations/",
+       {
+        "Ref": "SendMessageIntegration"
+       }
+      ]
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-websocket/SendMessageRoute"
+   }
+  },
+  "WebSocketDeployment": {
+   "Type": "AWS::ApiGatewayV2::Deployment",
+   "Properties": {
+    "ApiId": {
+     "Ref": "WebSocketApi"
+    }
+   },
+   "DependsOn": [
+    "ConnectRoute",
+    "DefaultRoute",
+    "DisconnectRoute",
+    "SendMessageRoute"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-websocket/WebSocketDeployment"
+   }
+  },
+  "WebSocketStage": {
+   "Type": "AWS::ApiGatewayV2::Stage",
+   "Properties": {
+    "ApiId": {
+     "Ref": "WebSocketApi"
+    },
+    "DeploymentId": {
+     "Ref": "WebSocketDeployment"
+    },
+    "Description": "WebSocket API stage for dev",
+    "StageName": "dev",
+    "Tags": {
+     "CostCenter": "Development",
+     "Environment": "dev",
+     "ManagedBy": "CDK",
+     "Project": "VyaparGyan"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-websocket/WebSocketStage"
+   }
+  },
+  "CDKMetadata": {
+   "Type": "AWS::CDK::Metadata",
+   "Properties": {
+    "Analytics": "v2:deflate64:H4sIAAAAAAAA/02NXW7CQAyEz8L7xqWhPQBQIfWpKBwAmY2JTPYnir1E0Sp3rzaoUp/mG8szU0P9sYXtBiepbNtXjm+QL4q2NzjJNePAHSpNOD9ryMd72A9sjvfwHZS6EZVjKLaJSanAFw0uzp6CFndR7GgxDv2tRcinFOxf4j+fafQswjEshtFDbqKjV60jc46O7bz+rbQY2V1RhFRgX8TIDg7J9qQHFFrMeizTHLoS+0k6JF1MiC3BQ96e9SfU8L55CHM1pqDsCZqX/gJ8OTETEAEAAA=="
+   },
+   "Metadata": {
+    "aws:cdk:path": "dev-vyapargyan-websocket/CDKMetadata/Default"
+   }
+  }
+ },
+ "Outputs": {
+  "WebSocketEndpoint": {
+   "Description": "WebSocket API endpoint URL",
+   "Value": {
+    "Fn::Join": [
+     "",
+     [
+      "wss://",
+      {
+       "Ref": "WebSocketApi"
+      },
+      ".execute-api.ap-south-1.amazonaws.com/dev"
+     ]
+    ]
+   },
+   "Export": {
+    "Name": "dev-vyapargyan-websocket-endpoint"
+   }
+  },
+  "WebSocketApiId": {
+   "Description": "WebSocket API ID",
+   "Value": {
+    "Ref": "WebSocketApi"
+   },
+   "Export": {
+    "Name": "dev-vyapargyan-websocket-api-id"
+   }
+  },
+  "ExportsOutputRefWebSocketApi6DDF9954": {
+   "Value": {
+    "Ref": "WebSocketApi"
+   },
+   "Export": {
+    "Name": "dev-vyapargyan-websocket:ExportsOutputRefWebSocketApi6DDF9954"
+   }
+  }
+ },
+ "Parameters": {
+  "BootstrapVersion": {
+   "Type": "AWS::SSM::Parameter::Value<String>",
+   "Default": "/cdk-bootstrap/hnb659fds/version",
+   "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]"
+  }
+ },
+ "Rules": {
+  "CheckBootstrapVersion": {
+   "Assertions": [
+    {
+     "Assert": {
+      "Fn::Not": [
+       {
+        "Fn::Contains": [
+         [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5"
+         ],
+         {
+          "Ref": "BootstrapVersion"
+         }
+        ]
+       }
+      ]
+     },
+     "AssertDescription": "CDK bootstrap stack version 6 required. Please run 'cdk bootstrap' with a recent version of the CDK CLI."
+    }
+   ]
+  }
+ }
+}

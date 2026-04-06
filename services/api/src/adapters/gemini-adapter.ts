@@ -23,6 +23,34 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
   });
 }
 
+/**
+ * Wrap raw PCM audio data in a WAV container header.
+ * Gemini TTS returns raw L16 PCM — adding this 44-byte header makes
+ * the audio playable by Twilio/WhatsApp without any encoding library.
+ */
+function wrapPcmAsWav(pcm: Buffer, sampleRate: number, channels: number, bitsPerSample: number): Buffer {
+  const byteRate = sampleRate * channels * (bitsPerSample / 8);
+  const blockAlign = channels * (bitsPerSample / 8);
+  const dataSize = pcm.length;
+  const header = Buffer.alloc(44);
+
+  header.write('RIFF', 0);                        // ChunkID
+  header.writeUInt32LE(36 + dataSize, 4);          // ChunkSize
+  header.write('WAVE', 8);                         // Format
+  header.write('fmt ', 12);                        // Subchunk1ID
+  header.writeUInt32LE(16, 16);                    // Subchunk1Size (PCM)
+  header.writeUInt16LE(1, 20);                     // AudioFormat (1 = PCM)
+  header.writeUInt16LE(channels, 22);              // NumChannels
+  header.writeUInt32LE(sampleRate, 24);            // SampleRate
+  header.writeUInt32LE(byteRate, 28);              // ByteRate
+  header.writeUInt16LE(blockAlign, 32);            // BlockAlign
+  header.writeUInt16LE(bitsPerSample, 34);         // BitsPerSample
+  header.write('data', 36);                        // Subchunk2ID
+  header.writeUInt32LE(dataSize, 40);              // Subchunk2Size
+
+  return Buffer.concat([header, pcm]);
+}
+
 /** Supported languages for voice transcription */
 const SUPPORTED_LANGUAGES = [
   'English', 'Hindi', 'Tamil', 'Telugu', 'Marathi', 'Bengali', 'Gujarati', 'Kannada',
@@ -512,6 +540,9 @@ Return JSON in this exact format:
       // Use the TTS-specific model with speech generation config.
       // The @google/generative-ai SDK v0.21 doesn't have typed TTS support,
       // so we pass the TTS config fields via generationConfig cast.
+      //
+      // Gemini TTS returns raw PCM L16 at 24kHz. We wrap it in a WAV header
+      // so Twilio can transcode and deliver it to WhatsApp.
       const model = client.getGenerativeModel({
         model: 'gemini-2.5-flash-preview-tts',
         generationConfig: {
@@ -544,13 +575,20 @@ Return JSON in this exact format:
         throw new Error('No audio data in Gemini TTS response');
       }
 
-      const audioBuffer = Buffer.from(inlineData.data, 'base64');
+      const pcmBuffer = Buffer.from(inlineData.data, 'base64');
+      const returnedMimeType = inlineData.mimeType || 'unknown';
+
+      // Wrap raw PCM in a WAV header so Twilio/WhatsApp can play it.
+      // Gemini returns: audio/L16;codec=pcm;rate=24000 (16-bit mono PCM at 24kHz)
+      const audioBuffer = wrapPcmAsWav(pcmBuffer, 24000, 1, 16);
 
       logger.info('TTS audio generated successfully', {
         language,
         voiceStyle,
         textLength: text.length,
-        audioSizeBytes: audioBuffer.length,
+        pcmSizeBytes: pcmBuffer.length,
+        wavSizeBytes: audioBuffer.length,
+        mimeType: returnedMimeType,
       });
 
       return audioBuffer;

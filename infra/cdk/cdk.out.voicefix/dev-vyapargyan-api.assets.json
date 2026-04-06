@@ -1,0 +1,36 @@
+{
+  "version": "50.0.0",
+  "files": {
+    "0c2c1826d9aa7a48f002caa7b4341bb3cb469ecd4b357bfa3733533e3b60b555": {
+      "displayName": "WhatsAppWebhookFunction/Code",
+      "source": {
+        "path": "asset.0c2c1826d9aa7a48f002caa7b4341bb3cb469ecd4b357bfa3733533e3b60b555",
+        "packaging": "zip"
+      },
+      "destinations": {
+        "856888988795-ap-south-1-740dc318": {
+          "bucketName": "cdk-hnb659fds-assets-856888988795-ap-south-1",
+          "objectKey": "0c2c1826d9aa7a48f002caa7b4341bb3cb469ecd4b357bfa3733533e3b60b555.zip",
+          "region": "ap-south-1",
+          "assumeRoleArn": "arn:${AWS::Partition}:iam::856888988795:role/cdk-hnb659fds-file-publishing-role-856888988795-ap-south-1"
+        }
+      }
+    },
+    "7294d768189187925eb30a88618dc695ef123e55ff4653952eb920765cb53d7c": {
+      "displayName": "dev-vyapargyan-api Template",
+      "source": {
+        "path": "dev-vyapargyan-api.template.json",
+        "packaging": "file"
+      },
+      "destinations": {
+        "856888988795-ap-south-1-7b60e8d4": {
+          "bucketName": "cdk-hnb659fds-assets-856888988795-ap-south-1",
+          "objectKey": "7294d768189187925eb30a88618dc695ef123e55ff4653952eb920765cb53d7c.json",
+          "region": "ap-south-1",
+          "assumeRoleArn": "arn:${AWS::Partition}:iam::856888988795:role/cdk-hnb659fds-file-publishing-role-856888988795-ap-south-1"
+        }
+      }
+    }
+  },
+  "dockerImages": {}
+}
