@@ -61,7 +61,8 @@ The core serverless infrastructure and application layer.
 - S3 adapter (presigned URLs, media uploads)
 - Twilio adapter (WhatsApp messaging, voice)
 - Razorpay adapter (payments, commission splitting)
-- Gemini adapter (OCR, voice transcription, TTS, image analysis, market research)
+- Gemini adapter (OCR, voice transcription, intent extraction, image analysis, market research)
+- Polly adapter (neural TTS — Kajal voice, MP3 output for WhatsApp audio delivery)
 - Grok adapter (market trend analysis)
 - Bedrock adapter (AI orchestration)
 - OpenSearch adapter (full-text search, autocomplete)
@@ -83,7 +84,7 @@ The core serverless infrastructure and application layer.
 
 **WhatsApp Commerce:**
 - Automated WhatsApp assistant via Twilio (greeting, browsing, ordering states)
-- Voice note pipeline: download → transcribe (Gemini) → process → TTS response → send audio
+- Voice note pipeline: download (Twilio) → transcribe (Gemini 2.0 Flash) → intent extraction → process → TTS (AWS Polly neural MP3) → S3 pre-signed URL → Twilio WhatsApp delivery
 - Status webhook for delivery tracking (sent/delivered/read/failed)
 - Cross-channel message sync between web chat and WhatsApp
 
@@ -218,7 +219,7 @@ Seven features that extend VyaparGyan into a fully omnichannel, AI-driven commer
 - Financial query intent extraction via Gemini (daily_sales, weekly_revenue, monthly_revenue, best_sellers, pending_orders, stock_summary)
 - DynamoDB query execution mapped to each intent type
 - Multilingual response formatting: 8 Indian languages (Hindi, English, Tamil, Telugu, Marathi, Bengali, Gujarati, Kannada)
-- Voice-in voice-out: transcribe → extract intent → query → format → TTS → send audio reply
+- Voice-in voice-out: transcribe (Gemini) → extract intent → DynamoDB query → format → TTS (Polly MP3) → S3 → pre-signed URL → Twilio WhatsApp audio delivery
 - Target: end-to-end response within 8 seconds
 
 **Property Tests (28 correctness properties, fast-check):**
@@ -253,6 +254,41 @@ Systematic fix of 7 interconnected bugs that broke the end-to-end omnichannel me
 - 9 preservation property tests (confirm no regressions after fixes)
   - Direct intent bypass, numeric reply routing, pincode classification
   - State-based handler routing, message storage independence, seller routing
+
+### Phase 7 — Voice Pipeline Fix & Product Catalog Seeding
+
+End-to-end debugging and fix of the WhatsApp voice response pipeline, plus seeding the Dragon Store product catalog from CSV test data.
+
+**Voice Pipeline Root Cause (2 stacked bugs):**
+1. **Gemini TTS returns raw PCM**: `gemini-2.5-flash-preview-tts` outputs `audio/L16;codec=pcm;rate=24000` (raw 16-bit PCM at 24kHz) — stored as `audio/ogg` but not actually OGG, causing Twilio error 63021 (undelivered)
+2. **WhatsApp rejects OGG/Vorbis**: Even valid OGG/Vorbis (from AWS Polly `ogg_vorbis` format) fails with Twilio error 63021 — WhatsApp requires `audio/ogg; codecs=opus` specifically, not Vorbis
+3. **MP3 is the only Polly format Twilio delivers**: Verified via live Twilio delivery testing — WAV (63019), OGG/Vorbis (63021), PNG image (delivered), MP3 (delivered)
+
+**Voice Pipeline Fix (3 changes):**
+- `gemini-adapter.ts` — Replaced Gemini TTS with AWS Polly neural TTS (voice: `Kajal` for Hindi/English, output: `mp3`)
+- `worker.ts` — S3 upload changed from `.ogg`/`audio/ogg` to `.mp3`/`audio/mpeg`
+- `events-stack.ts` — Added `polly:SynthesizeSpeech` IAM permission to WhatsApp worker Lambda role
+
+**Product Catalog Seeding:**
+- Created `scripts/seed-dragon-store-products.js` — loads 15 products from `test csv/dragon-store-inventory.csv` + 5 demo products into DynamoDB under `SELLER#seller-dragon-001`
+- Products include: Basmati Rice, Tata Tea, Amul Butter, Maggi Noodles, Surf Excel, USB-C Cable, etc.
+- Each product has: `name`, `productName`, `price`, `stockQuantity`, `category`, `description`, `sellerId`, `status`, `isActive`
+- Categories: Grains & Pulses, Beverages, Dairy, Bakery, Instant Food, Spices & Condiments, Personal Care, Home & Kitchen, Electronics, Beauty & Personal Care
+
+**Customer Discovery Debug:**
+- Added structured logging to `enterStore()` product count query (was silently swallowing errors with empty `catch {}`)
+- Fixed stale session state where `currentSellerId` was `seller-dragon` (0 products) instead of `seller-dragon-001` (15 products)
+- Product count query now logs: sellerId, PK value, and result count for debugging
+
+**Verification chain (Twilio delivery tests):**
+
+| Format | Source | Content-Type | Twilio Status | Error |
+|--------|--------|-------------|---------------|-------|
+| Raw PCM as OGG | Gemini TTS | audio/ogg | undelivered | 63021 |
+| Valid WAV | PCM + header | audio/wav | failed | 63019 |
+| Valid OGG/Vorbis | AWS Polly | audio/ogg | undelivered | 63021 |
+| PNG image | Wikipedia | image/png | delivered | — |
+| MP3 | AWS Polly | audio/mpeg | **delivered** | — |
 
 ## Test Coverage
 

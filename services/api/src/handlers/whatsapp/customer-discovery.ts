@@ -352,19 +352,22 @@ async function enterStore(ctx: CustomerDiscoveryContext, store: StoreResult): Pr
   let productCount = 0;
   try {
     const table = await tableName();
+    const pkValue = `SELLER#${store.sellerId}`;
+    logger.info('enterStore product count query', { sellerId: store.sellerId, pkValue });
     // Try the primary PK pattern
     const res = await docClient.send(
       new QueryCommand({
         TableName: table,
         KeyConditionExpression: 'PK = :pk AND begins_with(SK, :prefix)',
         ExpressionAttributeValues: {
-          ':pk': `SELLER#${store.sellerId}`,
+          ':pk': pkValue,
           ':prefix': 'PRODUCT#',
         },
         Select: 'COUNT',
       }),
     );
     productCount = res.Count ?? 0;
+    logger.info('enterStore product count result', { pkValue, productCount });
 
     // If no products found, also try scanning PRODUCT# items with sellerId attribute
     if (productCount === 0) {
@@ -381,8 +384,11 @@ async function enterStore(ctx: CustomerDiscoveryContext, store: StoreResult): Pr
         }),
       );
       productCount = scanRes.Count ?? 0;
+      logger.info('enterStore scan fallback result', { sellerId: store.sellerId, productCount });
     }
-  } catch { /* ignore — show 0 */ }
+  } catch (err) {
+    logger.error('enterStore product count failed', { sellerId: store.sellerId, error: err instanceof Error ? err.message : String(err) });
+  }
 
   const msg = [
     `🏪 *Welcome to ${store.storeName}!*`,

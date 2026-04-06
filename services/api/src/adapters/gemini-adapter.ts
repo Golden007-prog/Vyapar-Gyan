@@ -560,7 +560,7 @@ Return JSON in this exact format:
 
       const command = new SynthesizeSpeechCommand({
         Text: text,
-        OutputFormat: 'ogg_vorbis',
+        OutputFormat: 'mp3',
         VoiceId: voice.voiceId as any,
         LanguageCode: voice.langCode as any,
         Engine: voice.engine as any,

@@ -1,7 +1,8 @@
 # VyaparGyan
 
-AI-powered multi-seller marketplace for local Indian retailers. Sellers manage products and orders via web dashboard while customers browse and purchase through WhatsApp and web chat. The platform acts as an intelligent business manager with proactive AI insights, automated marketing campaigns, and Khata book OCR.
+AI-powered multi-seller marketplace for local Indian retailers. Sellers manage products and orders via web dashboard while customers browse and purchase through WhatsApp and web chat. The platform acts as an intelligent business manager with proactive AI insights, automated marketing campaigns, Khata book OCR, and voice-first financial reports.
 
+**Live Demo:** https://golden007-prog.github.io/Vyapar-Gyan/
 **GitHub:** https://github.com/Golden007-prog/Vyapar-Gyan.git
 
 ## Demo Quick Start
@@ -22,8 +23,8 @@ pnpm --filter @vyapargyan/web dev
 
 | Role | Phone | Password | What You'll See |
 |------|-------|----------|-----------------|
-| Seller (Dragon Store Owner) | +91 8927049085 | DemoSeller@123 | AI insights, approval inbox, inventory upload (CSV + OCR), customer inbox, orders, campaigns |
-| Customer (Enigma) | +91 7001124396 | DemoCustomer@123 | Product catalog, real-time chat with seller, order tracking, account settings |
+| Seller (Dragon Store Owner) | +91 8927049085 | DemoSeller@123 | AI insights, approval inbox, inventory upload (CSV + OCR), customer inbox, orders, campaigns, voice financial reports |
+| Customer (Enigma) | +91 7001124396 | DemoCustomer@123 | Store discovery, product catalog (15 products), real-time chat with seller, order tracking |
 | Admin (Platform) | 9000000001 | DemoAdmin@123 | Platform metrics, seller moderation, system health, audit logs |
 
 **WhatsApp Bot:** +1 (947) 234-9399 — Send any message to start the omnichannel experience (role-based routing auto-detects seller/customer/new user).
@@ -33,7 +34,7 @@ pnpm --filter @vyapargyan/web dev
 VyaparGyan bridges the gap between traditional retail and digital commerce by providing:
 
 - **Omnichannel Commerce**: Customers shop via web chat and WhatsApp (Twilio), sellers manage everything from one unified inbox
-- **Voice-First Shopping**: Multilingual voice note support (Hindi, English, Tamil, Telugu, Marathi, Bengali, Gujarati, Kannada) with automatic transcription and product intent extraction via Gemini 2.0
+- **Voice-First Shopping**: Multilingual voice note support (Hindi, English, Tamil, Telugu, Marathi, Bengali, Gujarati, Kannada) with Gemini 2.0 transcription, product intent extraction, and AWS Polly neural TTS audio responses (MP3 via WhatsApp)
 - **AI Business Manager**: Proactive insights for dead stock detection, dynamic pricing, and automated WhatsApp marketing campaigns (Bedrock + Gemini + Grok)
 - **Khata Book OCR**: Sellers photograph handwritten ledgers; Gemini Vision digitizes inventory automatically
 - **CSV Stock Ingestion**: Bulk inventory upload with smart column mapping and error feedback
@@ -45,7 +46,7 @@ VyaparGyan bridges the gap between traditional retail and digital commerce by pr
 
 Modern AWS serverless architecture built for scale and operational simplicity:
 
-- **Compute**: AWS Lambda (Node.js 20, TypeScript) — 65+ handlers across 12 domains
+- **Compute**: AWS Lambda (Node.js 20, ARM64, TypeScript) — 65+ handlers across 12 domains
 - **API**: API Gateway HTTP API with JWT authorization + WebSocket API for real-time messaging
 - **Authentication**: Amazon Cognito User Pools with role-based groups (admin/seller/customer)
 - **Database**: DynamoDB (single-table design with multi-seller partition strategy, 6 GSIs including phone lookup, seller orders, location, city, stock, transfers)
@@ -56,9 +57,10 @@ Modern AWS serverless architecture built for scale and operational simplicity:
 - **Messaging**: Twilio SDK for omnichannel messaging (WhatsApp, SMS, in-app chat routing)
 - **Payments**: Razorpay Route (Transfers) for automated commission splitting, seller payouts, and UPI Payment Links
 - **AI — Orchestration**: Amazon Bedrock for dead-stock detection and discount campaign generation
-- **AI — Analysis**: Google Gemini 2.0 Flash for OCR, multilingual voice transcription, TTS, intent extraction, product image analysis, and market research
+- **AI — Transcription**: Google Gemini 2.0 Flash for OCR, multilingual voice transcription (8 languages), intent extraction, product image analysis, and market research
+- **AI — TTS**: AWS Polly neural voices (Kajal Hindi/English) for voice response generation (MP3 format for WhatsApp delivery via Twilio)
 - **AI — Trends**: xAI Grok for live market trend research and dynamic pricing
-- **Frontend**: Next.js 14 with Tailwind CSS (30+ pages, 20+ components)
+- **Frontend**: Next.js 14 with Tailwind CSS (41 pages, 44 components)
 - **Observability**: CloudWatch Logs, Metrics, Alarms, and X-Ray tracing
 - **Infrastructure**: AWS CDK v2 with TypeScript (8 CloudFormation stacks)
 - **Developer Tools**: Kiro IDE with 3 MCP servers for platform data access
@@ -77,25 +79,35 @@ vyapargyan/
 │   └── cdk.json                  # CDK configuration
 ├── services/api/                 # Lambda handlers and backend logic
 │   ├── src/
-│   │   ├── handlers/             # Lambda function handlers by domain
-│   │   │   ├── whatsapp/         # WhatsApp webhook and message processing
+│   │   ├── handlers/             # Lambda function handlers by domain (121 files)
+│   │   │   ├── whatsapp/         # WhatsApp webhook, worker, voice pipeline, customer discovery
 │   │   │   ├── auth/             # Authentication endpoints
 │   │   │   ├── admin/            # Admin operations
 │   │   │   ├── seller/           # Seller operations
 │   │   │   ├── catalog/          # Public catalog browsing
+│   │   │   ├── cart/             # Shopping cart
+│   │   │   ├── chat/             # Web chat messaging
 │   │   │   ├── orders/           # Order management
-│   │   │   └── payments/         # Payment webhooks
-│   │   ├── repositories/         # Data access layer for DynamoDB
-│   │   ├── services/             # Business logic and external integrations
+│   │   │   ├── payments/         # Payment webhooks
+│   │   │   ├── websocket/        # Real-time WebSocket handlers
+│   │   │   ├── ai/              # AI integrations
+│   │   │   ├── bedrock/         # Bedrock orchestration
+│   │   │   └── workers/         # Async worker functions
+│   │   ├── adapters/             # External service integrations (Gemini, Twilio, Razorpay, OpenSearch)
+│   │   ├── repositories/         # Data access layer for DynamoDB (6 repositories)
+│   │   ├── services/             # Business logic (38 service files)
 │   │   └── utils/                # Shared utilities and configuration
 │   ├── DYNAMODB_SCHEMA.md        # Single-table design documentation
 │   └── package.json
-├── apps/web/                     # Next.js Admin/Seller web application
+├── apps/web/                     # Next.js web application (customer, seller, admin)
 │   ├── src/
-│   │   ├── app/                  # Next.js app router pages
-│   │   ├── components/           # React components
+│   │   ├── app/                  # Next.js app router (41 pages)
+│   │   ├── components/           # React components (44 components)
+│   │   ├── hooks/                # Custom hooks (useWebSocket)
 │   │   └── lib/                  # Client utilities
 │   └── package.json
+├── scripts/                      # Seed data and utility scripts
+│   └── seed-dragon-store-products.js  # Dragon Store product seeder
 ├── packages/
 │   └── shared-contracts/         # Shared TypeScript types and API contracts
 ├── tools/mcp/                    # MCP servers for developer/operator tooling
@@ -218,7 +230,7 @@ cd tools/mcp/commerce-admin && pnpm install && pnpm build
 - Omnichannel messaging: customers and sellers communicate via web chat and WhatsApp (Twilio) with unified message storage and bi-directional sync
 - Role-based WhatsApp routing: seller → Copilot (stock check, trend alerts, campaign approval), customer → Discovery (favorites, pincode/city search, global search), unregistered → Onboarding
 - Voice-first shopping: send voice notes in any Indian language (Hindi, English, Tamil, Telugu, Marathi, Bengali, Gujarati, Kannada) — Gemini 2.0 transcribes, extracts product intents, and matches catalog automatically
-- Voice-activated financial reports: sellers ask business questions via voice note and receive text + audio responses in their language
+- Voice-activated financial reports: sellers ask business questions via voice note and receive text + MP3 audio responses via AWS Polly neural TTS (Kajal voice for Hindi/English)
 - Automated stock ingestion: CSV/Excel upload and Khata book OCR via WhatsApp or web dashboard (Gemini Vision)
 - Gemini intent extraction: contextual routing based on product intent, store intent, and detected language
 - Human handoff protocol: seller takes over from AI bot via web inbox, auto-resets after 30 min inactivity

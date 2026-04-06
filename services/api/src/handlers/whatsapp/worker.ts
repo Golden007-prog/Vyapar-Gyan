@@ -1376,13 +1376,13 @@ async function _executeVoicePipeline(context: VoiceContext, pipelineStart: numbe
   // ── Step 9: Store outbound audio in S3 and generate pre-signed URL ──
   let presignedUrl: string;
   const outboundTs = Date.now();
-  const outboundKey = `${VOICE_CONFIG.s3OutboundPrefix}/${userId}/${outboundTs}.ogg`;
+  const outboundKey = `${VOICE_CONFIG.s3OutboundPrefix}/${userId}/${outboundTs}.mp3`;
   try {
     await s3Client.send(new PutObjectCommand({
       Bucket: voiceConfig.productImagesBucket,
       Key: outboundKey,
       Body: ttsAudioBuffer,
-      ContentType: 'audio/wav',
+      ContentType: 'audio/mpeg',
       Tagging: 'mediaType=voice&direction=outbound',
     }));
 

@@ -231,6 +231,15 @@ export class EventsStack extends cdk.Stack {
       })
     );
 
+    // Grant Polly permissions for voice TTS (OGG/Opus output for WhatsApp)
+    this.whatsappWorkerFunction.addToRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['polly:SynthesizeSpeech'],
+        resources: ['*'],
+      })
+    );
+
     // Add SQS event source to worker function
     this.whatsappWorkerFunction.addEventSource(
       new SqsEventSource(this.whatsappMessagesQueue, {
