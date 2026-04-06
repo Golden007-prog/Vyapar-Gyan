@@ -617,15 +617,15 @@ export default function SellerOrdersPage() {
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Order Management</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Order Management</h1>
           <p className="mt-1 text-sm text-gray-500">Track and manage your customer orders</p>
         </div>
         <button
           onClick={loadOrders}
           disabled={loading}
-          className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+          className="self-start flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
         >
           <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
           Refresh

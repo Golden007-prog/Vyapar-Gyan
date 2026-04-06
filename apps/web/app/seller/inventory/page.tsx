@@ -400,19 +400,19 @@ export default function InventoryPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Inventory Hub</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Inventory Hub</h1>
           <p className="mt-1 text-sm text-gray-500">Manage your product catalog and bulk upload inventory</p>
         </div>
         <div className="flex gap-2">
           <button onClick={() => { resetImageModal(); setShowImageModal(true); }}
-            className="flex items-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
-            <Camera className="h-4 w-4" /> Khata Book OCR
+            className="flex items-center gap-2 rounded-lg border border-gray-300 px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium text-gray-700 hover:bg-gray-50">
+            <Camera className="h-4 w-4" /> <span className="hidden sm:inline">Khata Book</span> OCR
           </button>
           <button onClick={() => { resetCsvModal(); setShowCsvModal(true); }}
-            className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
-            <Upload className="h-4 w-4" /> Smart CSV Upload
+            className="flex items-center gap-2 rounded-lg bg-indigo-600 px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium text-white hover:bg-indigo-700">
+            <Upload className="h-4 w-4" /> <span className="hidden sm:inline">Smart</span> CSV Upload
           </button>
         </div>
       </div>

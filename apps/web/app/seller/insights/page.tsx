@@ -182,13 +182,13 @@ function InsightCard({ insight, onApprove, onDismiss, onRecover, isProcessing }:
 
       {/* Action buttons */}
       {insight.status === 'PENDING' && (
-        <div className="mt-4 flex gap-3">
+        <div className="mt-4 flex flex-col sm:flex-row gap-2 sm:gap-3">
           <button onClick={() => onApprove(insight.id)} disabled={isProcessing}
-            className="flex-1 rounded-lg bg-white px-4 py-2 text-sm font-medium text-gray-900 shadow-sm hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+            className="flex-1 rounded-lg bg-white px-4 py-2.5 text-sm font-medium text-gray-900 shadow-sm hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
             {isProcessing ? <><Loader2 className="h-4 w-4 animate-spin" />Processing...</> : <><CheckCircle className="h-4 w-4 text-green-600" />Approve &amp; Send</>}
           </button>
           <button onClick={() => onDismiss(insight.id)} disabled={isProcessing}
-            className="rounded-lg bg-white px-4 py-2 text-sm font-medium text-gray-600 shadow-sm hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
+            className="rounded-lg bg-white px-4 py-2.5 text-sm font-medium text-gray-600 shadow-sm hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center sm:justify-start gap-2">
             <Archive className="h-4 w-4" /> Dismiss
           </button>
         </div>
@@ -345,20 +345,20 @@ export default function AIInsightsPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">AI Insights</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">AI Insights</h1>
           <p className="mt-1 text-sm text-gray-600">Review and approve AI-generated pricing and inventory recommendations</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
           <button onClick={handleRefresh} disabled={refreshing}
             className="flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-50">
             <RotateCcw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
-            {refreshing ? 'Refreshing...' : 'Refresh'}
+            <span className="hidden sm:inline">{refreshing ? 'Refreshing...' : 'Refresh'}</span>
           </button>
-          <div className="flex items-center gap-2 rounded-lg bg-indigo-50 px-4 py-2">
-            <Sparkles className="h-5 w-5 text-indigo-600" />
-            <span className="text-sm font-medium text-indigo-900">{pendingCount} pending review</span>
+          <div className="flex items-center gap-2 rounded-lg bg-indigo-50 px-3 sm:px-4 py-2">
+            <Sparkles className="h-4 w-4 sm:h-5 sm:w-5 text-indigo-600" />
+            <span className="text-xs sm:text-sm font-medium text-indigo-900">{pendingCount} pending</span>
           </div>
         </div>
       </div>

@@ -141,16 +141,16 @@ export default function CampaignsPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Campaign Tracker</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Campaign Tracker</h1>
           <p className="mt-1 text-sm text-gray-500">
             Monitor your automated AI-powered marketing campaigns
           </p>
         </div>
         <button
           onClick={fetchCampaigns}
-          className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+          className="self-start rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
         >
           Refresh
         </button>
@@ -238,9 +238,87 @@ export default function CampaignsPage() {
         </div>
       )}
 
-      {/* Campaigns Table */}
+      {/* Mobile Campaign Cards */}
       {!loading && !error && campaigns.length > 0 && (
-        <div className="overflow-hidden rounded-lg border bg-white shadow">
+        <div className="space-y-3 md:hidden">
+          {campaigns.map((campaign) => {
+            const statusConfig = getStatusBadge(campaign.status);
+            const StatusIcon = statusConfig.icon;
+            const deliveryRate = calculateDeliveryRate(campaign);
+            const channelBadge = getChannelBadge(campaign.channel);
+
+            return (
+              <div key={campaign.id} className="rounded-lg border bg-white p-4 shadow-sm">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-gray-900 truncate">{campaign.insightTitle}</p>
+                    <p className="text-xs text-gray-500">{getInsightTypeLabel(campaign.insightType)}</p>
+                  </div>
+                  <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium flex-shrink-0 ${statusConfig.color}`}>
+                    <StatusIcon className="h-3 w-3" />
+                    {statusConfig.label}
+                  </span>
+                </div>
+
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  {campaign.discountPercent ? (
+                    <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800">
+                      {campaign.discountPercent}% OFF
+                    </span>
+                  ) : campaign.priceIncrease ? (
+                    <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">
+                      +₹{campaign.priceIncrease}
+                    </span>
+                  ) : null}
+                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${channelBadge.color}`}>
+                    {channelBadge.label}
+                  </span>
+                </div>
+
+                <div className="mt-3 grid grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <p className="text-gray-500">Target</p>
+                    <p className="font-medium text-gray-900">{campaign.targetCustomers.toLocaleString()} customers</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-500">Est. Conversions</p>
+                    <p className="font-medium text-green-600">{campaign.estimatedConversions}</p>
+                  </div>
+                </div>
+
+                {/* Delivery progress */}
+                <div className="mt-3">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-gray-500">Delivery Rate</span>
+                    <span className="font-medium text-gray-900">{deliveryRate}%</span>
+                  </div>
+                  <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-gray-200">
+                    <div
+                      className={`h-full ${deliveryRate >= 80 ? 'bg-green-500' : deliveryRate >= 50 ? 'bg-yellow-500' : 'bg-red-500'}`}
+                      style={{ width: `${deliveryRate}%` }}
+                    />
+                  </div>
+                  <p className="mt-1 text-[11px] text-gray-400">{campaign.messagesDelivered}/{campaign.messagesSent} delivered</p>
+                </div>
+
+                {/* Channel breakdown */}
+                {campaign.channel === 'both' && (
+                  <div className="mt-3 flex gap-4 text-xs text-gray-600">
+                    <span>Web: {campaign.webSent}/{campaign.webDelivered}</span>
+                    <span>WhatsApp: {campaign.whatsappSent}/{campaign.whatsappDelivered}</span>
+                  </div>
+                )}
+
+                <p className="mt-3 text-[11px] text-gray-400">{formatDate(campaign.createdAt)}</p>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Desktop Campaigns Table */}
+      {!loading && !error && campaigns.length > 0 && (
+        <div className="hidden md:block overflow-hidden rounded-lg border bg-white shadow">
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">

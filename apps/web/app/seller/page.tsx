@@ -15,21 +15,21 @@ interface MetricCardProps {
 
 function MetricCard({ title, value, change, icon: Icon, trend, loading }: MetricCardProps) {
   return (
-    <div className="min-h-[80px] rounded-lg border bg-white p-6 shadow-sm">
+    <div className="min-h-[72px] rounded-lg border bg-white p-4 sm:p-6 shadow-sm">
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-sm font-medium text-gray-600">{title}</p>
+          <p className="text-xs sm:text-sm font-medium text-gray-600">{title}</p>
           {loading ? (
-            <div className="mt-2 h-9 w-24 animate-pulse rounded bg-gray-200" />
+            <div className="mt-1.5 sm:mt-2 h-7 sm:h-9 w-20 sm:w-24 animate-pulse rounded bg-gray-200" />
           ) : (
-            <p className="mt-2 text-3xl font-bold text-gray-900">{value}</p>
+            <p className="mt-1.5 sm:mt-2 text-2xl sm:text-3xl font-bold text-gray-900">{value}</p>
           )}
           {loading ? (
-            <div className="mt-2 h-4 w-32 animate-pulse rounded bg-gray-100" />
+            <div className="mt-1.5 sm:mt-2 h-4 w-28 sm:w-32 animate-pulse rounded bg-gray-100" />
           ) : (
             change && (
               <p
-                className={`mt-2 text-sm ${
+                className={`mt-1 sm:mt-2 text-xs sm:text-sm ${
                   trend === 'up' ? 'text-green-600' : 'text-red-600'
                 }`}
               >
@@ -38,8 +38,8 @@ function MetricCard({ title, value, change, icon: Icon, trend, loading }: Metric
             )
           )}
         </div>
-        <div className="rounded-full bg-indigo-50 p-3">
-          <Icon className="h-6 w-6 text-indigo-600" />
+        <div className="rounded-full bg-indigo-50 p-2 sm:p-3">
+          <Icon className="h-5 w-5 sm:h-6 sm:w-6 text-indigo-600" />
         </div>
       </div>
     </div>
@@ -87,17 +87,17 @@ export default function SellerDashboard() {
   }, []);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* Welcome banner */}
-      <div className="rounded-lg bg-gradient-to-r from-indigo-500 to-purple-600 p-6 text-white">
-        <h1 className="text-2xl font-bold">Welcome back, Dragon Store!</h1>
-        <p className="mt-2 text-indigo-100">
+      <div className="rounded-lg bg-gradient-to-r from-indigo-500 to-purple-600 p-4 sm:p-6 text-white">
+        <h1 className="text-xl sm:text-2xl font-bold">Welcome back, Dragon Store!</h1>
+        <p className="mt-1 sm:mt-2 text-sm sm:text-base text-indigo-100">
           Your AI business manager is working to optimize your inventory and boost sales.
         </p>
       </div>
 
       {/* Metrics grid */}
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-6 md:grid-cols-2 lg:grid-cols-4">
         <MetricCard
           title="Total Sales"
           value={metrics.totalSales}
@@ -131,11 +131,11 @@ export default function SellerDashboard() {
       </div>
 
       {/* Quick actions */}
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid gap-4 sm:gap-6 lg:grid-cols-2">
         {/* AI Insights preview */}
-        <div className="rounded-lg border bg-white p-6 shadow-sm">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-gray-900">
+        <div className="rounded-lg border bg-white p-4 sm:p-6 shadow-sm">
+          <div className="mb-3 sm:mb-4 flex items-center justify-between">
+            <h2 className="text-base sm:text-lg font-semibold text-gray-900">
               Latest AI Insights
             </h2>
             <Sparkles className="h-5 w-5 text-indigo-600" />
@@ -167,8 +167,8 @@ export default function SellerDashboard() {
         </div>
 
         {/* Recent activity */}
-        <div className="rounded-lg border bg-white p-6 shadow-sm">
-          <h2 className="mb-4 text-lg font-semibold text-gray-900">
+        <div className="rounded-lg border bg-white p-4 sm:p-6 shadow-sm">
+          <h2 className="mb-3 sm:mb-4 text-base sm:text-lg font-semibold text-gray-900">
             Recent Activity
           </h2>
           <div className="space-y-4">
