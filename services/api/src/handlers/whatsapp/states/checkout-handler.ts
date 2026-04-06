@@ -3,7 +3,6 @@ import { whatsappSender } from '../../../services/whatsapp-sender';
 import { MessageRepository } from '../../../repositories/message-repository';
 import { SessionRepository } from '../../../repositories/session-repository';
 import { OrderService } from '../../../services/order-service';
-import { generateWhatsAppPaymentLink } from '../../../services/payment-link';
 import type { MessageContext } from './router';
 
 const messageRepository = new MessageRepository();
@@ -206,70 +205,57 @@ async function handleOrderConfirmation(context: MessageContext): Promise<void> {
     session.id
   );
 
-  // Create order using OrderService
+  // Determine sellerId from cart items
+  const sellerId = cart[0]?.sellerId;
+  if (!sellerId) {
+    await whatsappSender.sendMessage(
+      customer.phoneNumber,
+      { type: 'text', text: '❌ Unable to determine seller. Please try again.' },
+      session.id,
+    );
+    return;
+  }
+
+  // Create order using OrderService with pending_seller_confirmation status
   const result = await orderService.createOrder({
     customerId: customer.id,
     customerPhone: customer.phoneNumber,
+    sellerId,
     cartItems: cart,
-    // TODO: Collect shipping address in future
+    channel: 'whatsapp',
   });
 
   if (result.success && result.order) {
-    // Order created successfully
     const order = result.order;
 
-    // Generate Razorpay payment link via payment-link service (Req 20.1, 20.2)
-    try {
-      const { whatsappMessage } = await generateWhatsAppPaymentLink(order);
+    // Resolve seller name for the confirmation message
+    const sellerName = await resolveSellerName(order.sellerId);
 
-      await whatsappSender.sendMessage(
-        customer.phoneNumber,
-        { type: 'text', text: whatsappMessage },
-        session.id,
-      );
+    // Send confirmation message per Req 2.7, 16.3
+    const confirmMsg = `🛒 Order #${order.orderId} placed! Waiting for ${sellerName} to confirm. We'll notify you once confirmed.`;
 
-      logger.info('Payment link message sent', {
-        sessionId: session.id,
-        orderId: order.orderId,
-        amount: order.totalAmount,
-      });
-    } catch (error) {
-      logger.error('Failed to generate payment link', {
-        sessionId: session.id,
-        orderId: order.orderId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-
-      // Fallback: send order confirmation without payment link
-      let fallbackMsg = '✅ *Order Created!*\n\n';
-      fallbackMsg += `📦 Order ID: *${order.orderId}*\n`;
-      fallbackMsg += `💰 Total: *₹${order.totalAmount}*\n\n`;
-      fallbackMsg += 'Payment link will be sent shortly. Please wait for payment instructions.\n\n';
-      fallbackMsg += 'Thank you for shopping with VyaparGyan! 🎉';
-
-      await whatsappSender.sendMessage(
-        customer.phoneNumber,
-        { type: 'text', text: fallbackMsg },
-        session.id,
-      );
-    }
+    await whatsappSender.sendMessage(
+      customer.phoneNumber,
+      { type: 'text', text: confirmMsg },
+      session.id,
+    );
 
     // Clear cart
     await sessionRepository.clearCart(customer.id, customer.phoneNumber);
 
-    // Update session state back to browsing
+    // Transition WhatsApp session state to tracking (Req 2.5)
     await sessionRepository.updateState(
       session.id,
       customer.id,
       customer.phoneNumber,
-      'browsing'
+      'tracking'
     );
 
-    logger.info('Order placed successfully', {
+    logger.info('Order placed successfully with pending_seller_confirmation', {
       sessionId: session.id,
       orderId: order.orderId,
       totalAmount: order.totalAmount,
-      hasPaymentLink: !!paymentLink,
+      sellerId: order.sellerId,
     });
   } else {
     // Order creation failed
@@ -300,6 +286,21 @@ async function handleOrderConfirmation(context: MessageContext): Promise<void> {
       error: result.error,
       outOfStockItems: result.outOfStockItems,
     });
+  }
+}
+
+/**
+ * Resolve seller display name from sellerId.
+ * Falls back to "the seller" if lookup fails.
+ */
+async function resolveSellerName(sellerId: string): Promise<string> {
+  try {
+    const { UserRepository } = await import('../../../repositories/user-repository');
+    const userRepo = new UserRepository();
+    const seller = await userRepo.getUserById(sellerId);
+    return seller?.email?.split('@')[0] || 'the seller';
+  } catch {
+    return 'the seller';
   }
 }
 

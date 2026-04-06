@@ -2,6 +2,7 @@ import type { SQSEvent, SQSRecord } from 'aws-lambda';
 import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
+import { EventBridgeClient, PutEventsCommand } from '@aws-sdk/client-eventbridge';
 import { logger } from '../../utils/logger';
 import { idempotencyService } from '../../utils/idempotency';
 import { CustomerRepository } from '../../repositories/customer-repository';
@@ -32,6 +33,7 @@ import {
 // Clients reused across invocations
 const s3Client = new S3Client({});
 const sqsClient = new SQSClient({});
+const ebClient = new EventBridgeClient({});
 
 // Allowed image MIME types and max size
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const;
@@ -517,6 +519,44 @@ async function handleCustomerMessage(context: {
 
   // Update consent service window on inbound
   await recordInboundMessage(userId);
+
+  // Publish message.created for omnichannel fan-out (fire-and-forget)
+  // Determine recipientUserId (seller) for real-time WebSocket push
+  const recipientSellerId = sessionResult.session.handoffSellerId
+    || sessionResult.session.lastIntent?.store?.sellerId
+    || undefined;
+
+  if (recipientSellerId) {
+    try {
+      await ebClient.send(
+        new PutEventsCommand({
+          Entries: [
+            {
+              Source: 'vyapargyan.messaging',
+              DetailType: 'message.created',
+              Detail: JSON.stringify({
+                messageId: message.id,
+                threadId: `THREAD#${userId}`,
+                senderUserId: userId,
+                senderType: 'customer',
+                recipientUserId: recipientSellerId,
+                channel: 'whatsapp',
+                content: message.text?.body || '',
+              }),
+              EventBusName: process.env.EVENT_BUS_NAME ?? '',
+            },
+          ],
+        }),
+      );
+    } catch (ebErr) {
+      // Fire-and-forget — don't fail message processing if fan-out publish fails
+      logger.error('Failed to publish message.created event', ebErr, {
+        messageId: message.id,
+        userId,
+        recipientSellerId,
+      });
+    }
+  }
 
   logger.info('Customer and session resolved', {
     userId,

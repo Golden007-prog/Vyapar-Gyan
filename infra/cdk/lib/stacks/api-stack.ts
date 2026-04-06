@@ -54,6 +54,10 @@ export interface APIStackProps extends cdk.StackProps {
   mediaProcessingQueue?: Queue;
   /** Media processing DLQ from EventsStack */
   mediaProcessingDLQ?: Queue;
+  /** Order nudge scheduler role ARN from EventsStack */
+  orderSchedulerRoleArn?: string;
+  /** Notification router Lambda ARN from EventsStack */
+  notificationRouterArn?: string;
 }
 
 /**
@@ -2352,6 +2356,299 @@ export class APIStack extends cdk.Stack {
       path: '/api/v1/admin/catalog/categories/{id}/aliases/{alias}',
       methods: [HttpMethod.DELETE],
       integration: adminCatalogManagerIntegration,
+      authorizer: this.jwtAuthorizer,
+    });
+
+    // ========================================================================
+    // Seller Order Management Lambda Functions — JWT-protected (seller role)
+    // Accept, reject, status update, and list seller orders
+    // ========================================================================
+
+    const commonOrderEnv = {
+      ENVIRONMENT: config.environment,
+      TABLE_NAME: table.tableName,
+      EVENT_BUS_NAME: eventBus.eventBusName,
+      LOG_LEVEL: 'info',
+      ...(props.orderSchedulerRoleArn ? { SCHEDULER_ROLE_ARN: props.orderSchedulerRoleArn } : {}),
+      ...(props.notificationRouterArn ? { NOTIFICATION_ROUTER_ARN: props.notificationRouterArn } : {}),
+    };
+
+    const sellerOrdersListFunction = new Function(this, 'SellerOrdersListFunction', {
+      functionName: `${config.resourcePrefix}-seller-orders-list`,
+      runtime: Runtime.NODEJS_20_X,
+      architecture: Architecture.ARM_64,
+      handler: 'handlers/seller/seller-orders-handler.handler',
+      code: Code.fromAsset('../../services/api/dist'),
+      timeout: Duration.seconds(10),
+      memorySize: 256,
+      environment: commonOrderEnv,
+    });
+    table.grantReadData(sellerOrdersListFunction);
+
+    const orderAcceptFunction = new Function(this, 'OrderAcceptFunction', {
+      functionName: `${config.resourcePrefix}-order-accept`,
+      runtime: Runtime.NODEJS_20_X,
+      architecture: Architecture.ARM_64,
+      handler: 'handlers/seller/order-accept-handler.handler',
+      code: Code.fromAsset('../../services/api/dist'),
+      timeout: Duration.seconds(15),
+      memorySize: 512,
+      environment: commonOrderEnv,
+    });
+    table.grantReadWriteData(orderAcceptFunction);
+    eventBus.grantPutEventsTo(orderAcceptFunction);
+
+    const orderRejectFunction = new Function(this, 'OrderRejectFunction', {
+      functionName: `${config.resourcePrefix}-order-reject`,
+      runtime: Runtime.NODEJS_20_X,
+      architecture: Architecture.ARM_64,
+      handler: 'handlers/seller/order-reject-handler.handler',
+      code: Code.fromAsset('../../services/api/dist'),
+      timeout: Duration.seconds(15),
+      memorySize: 512,
+      environment: commonOrderEnv,
+    });
+    table.grantReadWriteData(orderRejectFunction);
+    eventBus.grantPutEventsTo(orderRejectFunction);
+
+    const orderStatusUpdateFunction = new Function(this, 'OrderStatusUpdateFunction', {
+      functionName: `${config.resourcePrefix}-order-status-update`,
+      runtime: Runtime.NODEJS_20_X,
+      architecture: Architecture.ARM_64,
+      handler: 'handlers/seller/order-status-handler.handler',
+      code: Code.fromAsset('../../services/api/dist'),
+      timeout: Duration.seconds(15),
+      memorySize: 512,
+      environment: commonOrderEnv,
+    });
+    table.grantReadWriteData(orderStatusUpdateFunction);
+    eventBus.grantPutEventsTo(orderStatusUpdateFunction);
+
+    // Grant Secrets Manager + SSM to order handlers that need config
+    for (const fn of [orderAcceptFunction, orderRejectFunction, orderStatusUpdateFunction]) {
+      fn.addToRolePolicy(
+        new PolicyStatement({
+          effect: Effect.ALLOW,
+          actions: ['secretsmanager:GetSecretValue'],
+          resources: [
+            `arn:aws:secretsmanager:${config.region}:${config.account}:secret:/${config.environment}/twilio/*`,
+            `arn:aws:secretsmanager:${config.region}:${config.account}:secret:/${config.environment}/razorpay/*`,
+            `arn:aws:secretsmanager:${config.region}:${config.account}:secret:GEMINI_API_KEY-*`,
+            `arn:aws:secretsmanager:${config.region}:${config.account}:secret:GROK_API_KEY-*`,
+          ],
+        }),
+      );
+      fn.addToRolePolicy(
+        new PolicyStatement({
+          effect: Effect.ALLOW,
+          actions: ['ssm:GetParameter', 'ssm:GetParameters'],
+          resources: [`arn:aws:ssm:${config.region}:${config.account}:parameter/${config.environment}/*`],
+        }),
+      );
+    }
+
+    // Seller order route integrations — all JWT-protected
+    const sellerOrdersListIntegration = new HttpLambdaIntegration('SellerOrdersListIntegration', sellerOrdersListFunction, {
+      payloadFormatVersion: PayloadFormatVersion.VERSION_2_0,
+    });
+    const orderAcceptIntegration = new HttpLambdaIntegration('OrderAcceptIntegration', orderAcceptFunction, {
+      payloadFormatVersion: PayloadFormatVersion.VERSION_2_0,
+    });
+    const orderRejectIntegration = new HttpLambdaIntegration('OrderRejectIntegration', orderRejectFunction, {
+      payloadFormatVersion: PayloadFormatVersion.VERSION_2_0,
+    });
+    const orderStatusUpdateIntegration = new HttpLambdaIntegration('OrderStatusUpdateIntegration', orderStatusUpdateFunction, {
+      payloadFormatVersion: PayloadFormatVersion.VERSION_2_0,
+    });
+
+    // GET /api/v1/seller/orders — list seller orders
+    this.httpApi.addRoutes({
+      path: '/api/v1/seller/orders',
+      methods: [HttpMethod.GET],
+      integration: sellerOrdersListIntegration,
+      authorizer: this.jwtAuthorizer,
+    });
+    // POST /api/v1/seller/orders — create order from seller side (uses same list handler for POST)
+    this.httpApi.addRoutes({
+      path: '/api/v1/seller/orders',
+      methods: [HttpMethod.POST],
+      integration: sellerOrdersListIntegration,
+      authorizer: this.jwtAuthorizer,
+    });
+    // POST /api/v1/seller/orders/{orderId}/accept
+    this.httpApi.addRoutes({
+      path: '/api/v1/seller/orders/{orderId}/accept',
+      methods: [HttpMethod.POST],
+      integration: orderAcceptIntegration,
+      authorizer: this.jwtAuthorizer,
+    });
+    // POST /api/v1/seller/orders/{orderId}/reject
+    this.httpApi.addRoutes({
+      path: '/api/v1/seller/orders/{orderId}/reject',
+      methods: [HttpMethod.POST],
+      integration: orderRejectIntegration,
+      authorizer: this.jwtAuthorizer,
+    });
+    // POST /api/v1/seller/orders/{orderId}/status
+    this.httpApi.addRoutes({
+      path: '/api/v1/seller/orders/{orderId}/status',
+      methods: [HttpMethod.POST],
+      integration: orderStatusUpdateIntegration,
+      authorizer: this.jwtAuthorizer,
+    });
+
+    // ========================================================================
+    // Customer Order Lambda Functions — JWT-protected (customer role)
+    // Create, list, get detail, and cancel orders
+    // ========================================================================
+
+    const createOrderFunction = new Function(this, 'CreateOrderFunction', {
+      functionName: `${config.resourcePrefix}-create-order`,
+      runtime: Runtime.NODEJS_20_X,
+      architecture: Architecture.ARM_64,
+      handler: 'handlers/orders/create-order-handler.handler',
+      code: Code.fromAsset('../../services/api/dist'),
+      timeout: Duration.seconds(15),
+      memorySize: 512,
+      environment: commonOrderEnv,
+    });
+    table.grantReadWriteData(createOrderFunction);
+    eventBus.grantPutEventsTo(createOrderFunction);
+
+    const listCustomerOrdersFunction = new Function(this, 'ListCustomerOrdersFunction', {
+      functionName: `${config.resourcePrefix}-list-customer-orders`,
+      runtime: Runtime.NODEJS_20_X,
+      architecture: Architecture.ARM_64,
+      handler: 'handlers/orders/list-orders-handler.handler',
+      code: Code.fromAsset('../../services/api/dist'),
+      timeout: Duration.seconds(10),
+      memorySize: 256,
+      environment: commonOrderEnv,
+    });
+    table.grantReadData(listCustomerOrdersFunction);
+
+    const getOrderDetailFunction = new Function(this, 'GetOrderDetailFunction', {
+      functionName: `${config.resourcePrefix}-get-order-detail`,
+      runtime: Runtime.NODEJS_20_X,
+      architecture: Architecture.ARM_64,
+      handler: 'handlers/orders/get-order-handler.handler',
+      code: Code.fromAsset('../../services/api/dist'),
+      timeout: Duration.seconds(10),
+      memorySize: 256,
+      environment: commonOrderEnv,
+    });
+    table.grantReadData(getOrderDetailFunction);
+
+    const cancelOrderFunction = new Function(this, 'CancelOrderFunction', {
+      functionName: `${config.resourcePrefix}-cancel-order`,
+      runtime: Runtime.NODEJS_20_X,
+      architecture: Architecture.ARM_64,
+      handler: 'handlers/orders/cancel-order-handler.handler',
+      code: Code.fromAsset('../../services/api/dist'),
+      timeout: Duration.seconds(15),
+      memorySize: 512,
+      environment: commonOrderEnv,
+    });
+    table.grantReadWriteData(cancelOrderFunction);
+    eventBus.grantPutEventsTo(cancelOrderFunction);
+
+    // Grant Secrets Manager + SSM to customer order handlers that need config
+    for (const fn of [createOrderFunction, cancelOrderFunction]) {
+      fn.addToRolePolicy(
+        new PolicyStatement({
+          effect: Effect.ALLOW,
+          actions: ['secretsmanager:GetSecretValue'],
+          resources: [
+            `arn:aws:secretsmanager:${config.region}:${config.account}:secret:/${config.environment}/twilio/*`,
+            `arn:aws:secretsmanager:${config.region}:${config.account}:secret:/${config.environment}/razorpay/*`,
+            `arn:aws:secretsmanager:${config.region}:${config.account}:secret:GEMINI_API_KEY-*`,
+            `arn:aws:secretsmanager:${config.region}:${config.account}:secret:GROK_API_KEY-*`,
+          ],
+        }),
+      );
+      fn.addToRolePolicy(
+        new PolicyStatement({
+          effect: Effect.ALLOW,
+          actions: ['ssm:GetParameter', 'ssm:GetParameters'],
+          resources: [`arn:aws:ssm:${config.region}:${config.account}:parameter/${config.environment}/*`],
+        }),
+      );
+    }
+
+    // Grant EventBridge Scheduler permissions to all order handlers that create/cancel schedules
+    // createOrderFunction: scheduleSellerReminders after order creation
+    // orderAcceptFunction: schedulePaymentNudges after payment link generation
+    // orderRejectFunction, cancelOrderFunction: cancelOrderSchedules on rejection/cancellation
+    if (props.orderSchedulerRoleArn) {
+      for (const fn of [orderAcceptFunction, orderRejectFunction, createOrderFunction, cancelOrderFunction]) {
+        fn.addToRolePolicy(
+          new PolicyStatement({
+            effect: Effect.ALLOW,
+            actions: [
+              'scheduler:CreateSchedule',
+              'scheduler:DeleteSchedule',
+              'scheduler:GetSchedule',
+            ],
+            resources: [
+              `arn:aws:scheduler:${config.region}:${config.account}:schedule/default/order-*`,
+            ],
+          }),
+        );
+        fn.addToRolePolicy(
+          new PolicyStatement({
+            effect: Effect.ALLOW,
+            actions: ['iam:PassRole'],
+            resources: [props.orderSchedulerRoleArn],
+            conditions: {
+              StringEquals: {
+                'iam:PassedToService': 'scheduler.amazonaws.com',
+              },
+            },
+          }),
+        );
+      }
+    }
+
+    // Customer order route integrations — all JWT-protected
+    const createOrderIntegration = new HttpLambdaIntegration('CreateOrderIntegration', createOrderFunction, {
+      payloadFormatVersion: PayloadFormatVersion.VERSION_2_0,
+    });
+    const listCustomerOrdersIntegration = new HttpLambdaIntegration('ListCustomerOrdersIntegration', listCustomerOrdersFunction, {
+      payloadFormatVersion: PayloadFormatVersion.VERSION_2_0,
+    });
+    const getOrderDetailIntegration = new HttpLambdaIntegration('GetOrderDetailIntegration', getOrderDetailFunction, {
+      payloadFormatVersion: PayloadFormatVersion.VERSION_2_0,
+    });
+    const cancelOrderIntegration = new HttpLambdaIntegration('CancelOrderIntegration', cancelOrderFunction, {
+      payloadFormatVersion: PayloadFormatVersion.VERSION_2_0,
+    });
+
+    // POST /api/v1/orders — create order
+    this.httpApi.addRoutes({
+      path: '/api/v1/orders',
+      methods: [HttpMethod.POST],
+      integration: createOrderIntegration,
+      authorizer: this.jwtAuthorizer,
+    });
+    // GET /api/v1/orders — list customer orders
+    this.httpApi.addRoutes({
+      path: '/api/v1/orders',
+      methods: [HttpMethod.GET],
+      integration: listCustomerOrdersIntegration,
+      authorizer: this.jwtAuthorizer,
+    });
+    // GET /api/v1/orders/{orderId} — get order detail
+    this.httpApi.addRoutes({
+      path: '/api/v1/orders/{orderId}',
+      methods: [HttpMethod.GET],
+      integration: getOrderDetailIntegration,
+      authorizer: this.jwtAuthorizer,
+    });
+    // POST /api/v1/orders/{orderId}/cancel — cancel order
+    this.httpApi.addRoutes({
+      path: '/api/v1/orders/{orderId}/cancel',
+      methods: [HttpMethod.POST],
+      integration: cancelOrderIntegration,
       authorizer: this.jwtAuthorizer,
     });
 

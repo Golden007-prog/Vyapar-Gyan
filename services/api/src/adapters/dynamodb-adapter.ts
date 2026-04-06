@@ -48,7 +48,7 @@ export interface UserProfile {
 
 export interface UnifiedSession {
   userId: string;
-  state: 'greeting' | 'browsing' | 'product_inquiry' | 'ordering' | 'payment' | 'tracking' | 'idle' | 'closed' | 'onboarding';
+  state: 'greeting' | 'browsing' | 'product_inquiry' | 'ordering' | 'payment' | 'tracking' | 'idle' | 'closed' | 'onboarding' | 'seller_orders';
   lastActiveChannel: 'whatsapp' | 'web';
   lastActivityAt: string;
   phoneNumber: string;
@@ -232,6 +232,21 @@ async function tableName(): Promise<string> {
   return _tableName;
 }
 
+
+// ============================================================================
+// Generic Item Operations
+// ============================================================================
+
+/**
+ * Put a generic item into DynamoDB. Requires PK and SK fields.
+ * Used for notification records and other ad-hoc entities.
+ */
+export async function putItem(item: Record<string, unknown>): Promise<void> {
+  const table = await tableName();
+  await docClient.send(
+    new PutCommand({ TableName: table, Item: item }),
+  );
+}
 
 // ============================================================================
 // 1. User Profile — PK: USER#{userId}  SK: PROFILE

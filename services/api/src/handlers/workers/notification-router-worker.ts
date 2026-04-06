@@ -1,29 +1,31 @@
 /**
  * Notification Router Worker
  *
- * EventBridge-triggered Lambda that handles cross-channel message bridging.
- * Routes customer messages to sellers (and seller replies to customers)
- * based on each party's preferredChannel setting.
+ * EventBridge-triggered Lambda that handles:
+ * 1. Cross-channel message bridging (CustomerMessageSent from vyapargyan.chat)
+ * 2. Order event notifications (order.* from vyapargyan.orders)
  *
- * Event pattern consumed:
- *   source: vyapargyan.chat
- *   detail-type: CustomerMessageSent
- *
- * Routing logic (customer → seller):
- *   1. Look up seller's preferredChannel from USER#{sellerId} PROFILE
- *   2. whatsapp → send via TwilioAdapter (with service window / template check)
- *   3. web     → message already in THREAD#{sellerId}, appears on next inbox poll
- *   4. both    → deliver to both channels
- *   5. Always store message in THREAD#{sellerId} for the seller's inbox view
+ * For order events:
+ *   - Queries recipient active channels (WebSocket connection, WhatsApp service window)
+ *   - Formats notification per channel using order notification formatter
+ *   - Delivers to all active channels; logs failures without blocking
+ *   - Creates notification record in DynamoDB (PK: NOTIFICATION#{id}, SK: METADATA)
  *
  * Lambda config: timeout 30s, memory 256MB, triggered by EventBridge
  */
 
+import { randomUUID } from 'crypto';
 import type { EventBridgeEvent } from 'aws-lambda';
 import { logger } from '../../utils/logger';
-import { getUserProfile, putMessage } from '../../adapters/dynamodb-adapter';
+import { getUserProfile, putMessage, putItem } from '../../adapters/dynamodb-adapter';
 import { checkSendPermission } from '../../services/consent-service';
 import { twilioAdapter } from '../../adapters/twilio-adapter';
+import {
+  formatOrderNotification,
+  type OrderEventDetail,
+  type NotificationChannel,
+  type RecipientRole,
+} from '../../services/order-notification-formatter';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -51,9 +53,18 @@ const MESSAGE_TTL_DAYS = 30;
 // ---------------------------------------------------------------------------
 
 export async function handler(
-  event: EventBridgeEvent<'CustomerMessageSent', CustomerMessageSentDetail>,
+  event: EventBridgeEvent<string, any>,
 ): Promise<void> {
-  const detail = event.detail;
+  const source = event.source;
+
+  // Route based on event source
+  if (source === 'vyapargyan.orders') {
+    await handleOrderEvent(event as EventBridgeEvent<string, OrderEventDetail>);
+    return;
+  }
+
+  // Default: handle chat message routing (CustomerMessageSent)
+  const detail = event.detail as CustomerMessageSentDetail;
 
   logger.info('Notification router processing', {
     userId: detail.userId,
@@ -194,6 +205,212 @@ async function sendToWhatsApp(
     logger.error('Failed to deliver WhatsApp message', error, {
       recipientUserId,
       senderUserId,
+    });
+  }
+}
+
+
+// ---------------------------------------------------------------------------
+// Order Event Handling
+// ---------------------------------------------------------------------------
+
+/**
+ * Handle order lifecycle events from vyapargyan.orders source.
+ *
+ * 1. Resolve customer and seller profiles for display names and channels
+ * 2. Format notifications per channel using order notification formatter
+ * 3. Deliver to all active channels; log failures without blocking
+ * 4. Create notification records in DynamoDB
+ */
+async function handleOrderEvent(
+  event: EventBridgeEvent<string, OrderEventDetail>,
+): Promise<void> {
+  const detailType = event['detail-type'];
+  const detail = event.detail;
+
+  logger.info('Order event received', {
+    detailType,
+    orderId: detail.humanReadableId || detail.orderId,
+    sellerId: detail.sellerId,
+    customerId: detail.customerId,
+    status: detail.status,
+  });
+
+  // Resolve profiles for display names and channel preferences
+  const [sellerProfile, customerProfile] = await Promise.all([
+    getUserProfile(detail.sellerId).catch(() => null),
+    getUserProfile(detail.customerId).catch(() => null),
+  ]);
+
+  // Enrich event with display names
+  const enrichedEvent: OrderEventDetail = {
+    ...detail,
+    sellerName: sellerProfile?.businessName || sellerProfile?.displayName || detail.sellerId,
+    customerName: customerProfile?.profileName || customerProfile?.displayName || detail.customerId,
+  };
+
+  // Determine which recipients to notify based on event type
+  const recipients = getRecipientsForEvent(detailType);
+
+  // Deliver to each recipient on all their active channels
+  const deliveryPromises: Promise<void>[] = [];
+
+  for (const recipient of recipients) {
+    const profile = recipient.role === 'seller' ? sellerProfile : customerProfile;
+    const userId = recipient.role === 'seller' ? detail.sellerId : detail.customerId;
+
+    if (!profile) {
+      logger.warn('Profile not found for notification recipient', {
+        userId,
+        role: recipient.role,
+      });
+      continue;
+    }
+
+    const channels = resolveActiveChannels(profile);
+
+    for (const channel of channels) {
+      deliveryPromises.push(
+        deliverOrderNotification(
+          detailType,
+          enrichedEvent,
+          channel,
+          recipient.role,
+          userId,
+          profile,
+        ),
+      );
+    }
+  }
+
+  // Deliver all notifications in parallel; failures are logged, not thrown
+  await Promise.allSettled(deliveryPromises);
+}
+
+/**
+ * Determine which recipients (customer, seller, or both) should be notified
+ * for a given order event type.
+ */
+function getRecipientsForEvent(detailType: string): Array<{ role: RecipientRole }> {
+  switch (detailType) {
+    // Seller-only notifications
+    case 'order.created':
+    case 'order.cancelled':
+      return [{ role: 'seller' }];
+
+    // Customer-only notifications
+    case 'order.confirmed':
+    case 'order.payment_pending':
+    case 'order.preparing':
+    case 'order.shipped':
+    case 'order.delivered':
+    case 'order.rejected':
+    case 'order.expired':
+    case 'order.payment_failed':
+      return [{ role: 'customer' }];
+
+    // Both parties
+    case 'order.paid':
+      return [{ role: 'customer' }, { role: 'seller' }];
+
+    default:
+      return [{ role: 'customer' }, { role: 'seller' }];
+  }
+}
+
+/**
+ * Resolve active notification channels for a user profile.
+ * Checks preferredChannel setting to determine which channels to use.
+ */
+function resolveActiveChannels(profile: any): NotificationChannel[] {
+  const preferred = profile.preferredChannel || 'web';
+  const hasPhone = !!profile.phoneNumber || !!profile.phone;
+
+  if (preferred === 'both' && hasPhone) return ['whatsapp', 'web'];
+  if (preferred === 'whatsapp' && hasPhone) return ['whatsapp'];
+  return ['web'];
+}
+
+/**
+ * Deliver a formatted order notification to a specific channel.
+ * Creates a notification record in DynamoDB after delivery.
+ */
+async function deliverOrderNotification(
+  detailType: string,
+  event: OrderEventDetail,
+  channel: NotificationChannel,
+  recipientRole: RecipientRole,
+  recipientUserId: string,
+  profile: any,
+): Promise<void> {
+  const notificationId = randomUUID();
+  let deliveryStatus: 'sent' | 'failed' = 'sent';
+
+  try {
+    const formatted = formatOrderNotification(detailType, event, channel, recipientRole);
+
+    if (channel === 'whatsapp') {
+      const phone = profile.phoneNumber || profile.phone;
+      if (!phone) {
+        logger.warn('No phone number for WhatsApp order notification', { recipientUserId });
+        deliveryStatus = 'failed';
+      } else {
+        // Check consent before sending
+        const permission = await checkSendPermission(recipientUserId, 'transactional');
+        if (!permission.allowed) {
+          logger.info('WhatsApp order notification blocked by consent', {
+            recipientUserId,
+            reason: permission.reason,
+          });
+          deliveryStatus = 'failed';
+        } else {
+          const formattedPhone = phone.startsWith('+') ? phone : `+${phone}`;
+          await twilioAdapter.sendWhatsAppMessage(formattedPhone, formatted.body);
+          logger.info('WhatsApp order notification sent', {
+            recipientUserId,
+            detailType,
+            orderId: event.humanReadableId,
+          });
+        }
+      }
+    } else {
+      // Web channel — notification is stored in DynamoDB for frontend polling/WebSocket push
+      logger.info('Web order notification recorded', {
+        recipientUserId,
+        detailType,
+        orderId: event.humanReadableId,
+      });
+    }
+  } catch (error) {
+    deliveryStatus = 'failed';
+    logger.error('Failed to deliver order notification', error, {
+      recipientUserId,
+      channel,
+      detailType,
+      orderId: event.humanReadableId,
+    });
+  }
+
+  // Create notification record in DynamoDB
+  try {
+    await putItem({
+      PK: `NOTIFICATION#${notificationId}`,
+      SK: 'METADATA',
+      notificationId,
+      channel,
+      recipientId: recipientUserId,
+      recipientRole,
+      orderId: event.orderId,
+      humanReadableId: event.humanReadableId,
+      detailType,
+      status: deliveryStatus,
+      createdAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    // Non-fatal — notification was already delivered (or attempted)
+    logger.error('Failed to create notification record', error, {
+      notificationId,
+      recipientUserId,
     });
   }
 }

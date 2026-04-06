@@ -16,6 +16,7 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { randomUUID } from 'crypto';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { EventBridgeClient, PutEventsCommand } from '@aws-sdk/client-eventbridge';
 import {
   DynamoDBDocumentClient,
   DeleteCommand,
@@ -39,6 +40,7 @@ const rawDdb = new DynamoDBClient({});
 const ddb = DynamoDBDocumentClient.from(rawDdb, {
   marshallOptions: { removeUndefinedValues: true },
 });
+const ebClient = new EventBridgeClient({});
 
 function getTableName(): string {
   return process.env.TABLE_NAME ?? '';
@@ -346,6 +348,37 @@ export const handler = async (
     ]);
 
     logger.info('Message stored in dual threads', { messageId, senderId, recipientId });
+
+    // Publish message.created for omnichannel fan-out (fire-and-forget)
+    try {
+      const senderType = senderRole === 'seller' ? 'seller' : senderRole === 'admin' ? 'admin' : 'customer';
+      await ebClient.send(
+        new PutEventsCommand({
+          Entries: [
+            {
+              Source: 'vyapargyan.messaging',
+              DetailType: 'message.created',
+              Detail: JSON.stringify({
+                messageId,
+                threadId: `THREAD#${recipientId}`,
+                senderUserId: senderId,
+                senderType,
+                recipientUserId: recipientId,
+                channel: 'web',
+                content,
+              }),
+              EventBusName: process.env.EVENT_BUS_NAME ?? '',
+            },
+          ],
+        }),
+      );
+    } catch (ebErr) {
+      logger.error('Failed to publish message.created event', ebErr, {
+        messageId,
+        senderId,
+        recipientId,
+      });
+    }
   } catch (err: unknown) {
     // DynamoDB write failure → mark as failed, notify sender
     logger.error('sendMessage: DynamoDB write failed', err, { messageId, senderId, recipientId });

@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Package, Loader2, ChevronRight } from 'lucide-react';
-import { listOrders, type Order, type OrderStatus } from '@/lib/api-orders';
+import { Package, ChevronRight } from 'lucide-react';
+import { listOrders, type Order } from '@/lib/api-orders';
 import { getDemoOrders } from '@/lib/demo-orders';
 import StatusPill from '@/components/ui/StatusPill';
 import EmptyState from '@/components/ui/EmptyState';
@@ -20,16 +20,26 @@ const FILTER_TABS: { key: FilterTab; label: string }[] = [
   { key: 'cancelled', label: 'Cancelled' },
 ];
 
+const ACTIVE_STATUSES = [
+  'pending_seller_confirmation', 'confirmed', 'payment_pending', 'paid',
+  'preparing', 'shipped',
+  // Legacy
+  'PENDING_PAYMENT', 'PAID', 'PROCESSING', 'SHIPPED',
+];
+
+const DELIVERED_STATUSES = ['delivered', 'completed', 'DELIVERED'];
+const CANCELLED_STATUSES = [
+  'cancelled', 'rejected', 'expired', 'payment_failed', 'CANCELLED',
+];
+
 function filterOrders(orders: Order[], tab: FilterTab): Order[] {
   switch (tab) {
     case 'active':
-      return orders.filter((o) =>
-        ['PENDING_PAYMENT', 'PAID', 'PROCESSING', 'SHIPPED'].includes(o.status),
-      );
+      return orders.filter((o) => ACTIVE_STATUSES.includes(o.status));
     case 'delivered':
-      return orders.filter((o) => o.status === 'DELIVERED');
+      return orders.filter((o) => DELIVERED_STATUSES.includes(o.status));
     case 'cancelled':
-      return orders.filter((o) => o.status === 'CANCELLED');
+      return orders.filter((o) => CANCELLED_STATUSES.includes(o.status));
     default:
       return orders;
   }
@@ -47,12 +57,12 @@ export default function OrdersPage() {
     setLoading(true);
     listOrders({ limit: 50 })
       .then((res) => {
-        // Merge API orders with any demo orders from sessionStorage
         const demoOrders = getDemoOrders().map(d => ({
           id: d.id,
           orderId: d.orderId,
           customerId: d.customerId,
           sellerId: d.sellerId,
+          sellerName: d.storeName,
           items: d.items,
           subtotal: d.subtotal,
           commissionAmount: d.commissionAmount,
@@ -62,18 +72,19 @@ export default function OrdersPage() {
           updatedAt: d.updatedAt,
         }));
         const apiOrders = res.orders ?? [];
-        // Deduplicate by orderId
         const seen = new Set(apiOrders.map(o => o.orderId));
         const merged = [...apiOrders, ...demoOrders.filter(d => !seen.has(d.orderId))];
+        // Sort by creation date descending
+        merged.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
         setOrders(merged);
       })
       .catch(() => {
-        // API unavailable — show demo orders from sessionStorage + hardcoded fallbacks
         const demoOrders = getDemoOrders().map(d => ({
           id: d.id,
           orderId: d.orderId,
           customerId: d.customerId,
           sellerId: d.sellerId,
+          sellerName: d.storeName,
           items: d.items,
           subtotal: d.subtotal,
           commissionAmount: d.commissionAmount,
@@ -85,22 +96,30 @@ export default function OrdersPage() {
 
         const fallbackOrders: Order[] = [
           {
-            id: 'demo-o1', orderId: 'ORD-2025-001', customerId: 'cust-demo', sellerId: 'seller-demo',
-            items: [{ productId: 'p1', sellerId: 's1', name: 'Tata Salt 1kg', price: 25, quantity: 2 }, { productId: 'p2', sellerId: 's1', name: 'Amul Butter 500g', price: 280, quantity: 1 }],
-            subtotal: 330, commissionAmount: 33, totalAmount: 363, status: 'DELIVERED',
-            createdAt: new Date(Date.now() - 86400000 * 3).toISOString(), updatedAt: new Date(Date.now() - 86400000).toISOString(),
+            id: 'demo-o1', orderId: 'VG-20250101-0001', customerId: 'cust-demo', sellerId: 'seller-demo',
+            sellerName: 'Dragon Store',
+            items: [
+              { productId: 'p1', sellerId: 's1', name: 'Tata Salt 1kg', price: 25, quantity: 2 },
+              { productId: 'p2', sellerId: 's1', name: 'Amul Butter 500g', price: 280, quantity: 1 },
+            ],
+            subtotal: 330, commissionAmount: 33, totalAmount: 363, status: 'delivered',
+            createdAt: new Date(Date.now() - 86400000 * 3).toISOString(),
+            updatedAt: new Date(Date.now() - 86400000).toISOString(),
           },
           {
-            id: 'demo-o2', orderId: 'ORD-2025-002', customerId: 'cust-demo', sellerId: 'seller-demo',
+            id: 'demo-o2', orderId: 'VG-20250102-0001', customerId: 'cust-demo', sellerId: 'seller-demo',
+            sellerName: 'Dragon Store',
             items: [{ productId: 'p3', sellerId: 's1', name: 'Maggi Noodles Pack', price: 144, quantity: 1 }],
-            subtotal: 144, commissionAmount: 14, totalAmount: 158, status: 'PROCESSING',
-            createdAt: new Date(Date.now() - 86400000).toISOString(), updatedAt: new Date().toISOString(),
+            subtotal: 144, commissionAmount: 14, totalAmount: 158, status: 'preparing',
+            createdAt: new Date(Date.now() - 86400000).toISOString(),
+            updatedAt: new Date().toISOString(),
           },
         ];
 
-        // Demo orders from checkout go first, then fallbacks
         const seen = new Set(demoOrders.map(o => o.orderId));
-        setOrders([...demoOrders, ...fallbackOrders.filter(f => !seen.has(f.orderId))]);
+        const merged = [...demoOrders, ...fallbackOrders.filter(f => !seen.has(f.orderId))];
+        merged.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        setOrders(merged);
       })
       .finally(() => setLoading(false));
   }, []);
@@ -179,6 +198,7 @@ function OrderCard({ order }: { order: Order }) {
           <StatusPill status={order.status} domain="order" />
         </div>
         <p className="mt-1 text-xs text-gray-500">
+          {order.sellerName && <span>{order.sellerName} · </span>}
           {date} · {itemCount} {itemCount === 1 ? 'item' : 'items'}
         </p>
         <p className="mt-0.5 text-xs text-gray-400 truncate">

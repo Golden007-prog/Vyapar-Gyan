@@ -42,6 +42,8 @@ export interface EventsStackProps extends cdk.StackProps {
   documentsBucket: any;
   /** Product images S3 bucket from StorageStack */
   productImagesBucket: any;
+  /** WebSocket callback URL (https://) for API Gateway Management API push */
+  webSocketEndpoint?: string;
 }
 
 /**
@@ -80,6 +82,9 @@ export class EventsStack extends cdk.Stack {
 
   /** WhatsApp messages dead-letter queue */
   public readonly whatsappMessagesDLQ: Queue;
+
+  /** Order nudge scheduler IAM role */
+  public readonly orderSchedulerRole: cdk.aws_iam.Role;
 
   constructor(scope: Construct, id: string, props: EventsStackProps) {
     super(scope, id, props);
@@ -327,6 +332,25 @@ export class EventsStack extends cdk.Stack {
     cdk.Tags.of(schedulerRole).add('Name', `${config.resourcePrefix}-trend-scheduler-role`);
     cdk.Tags.of(schedulerRole).add('Service', 'ai-insights');
 
+    // -----------------------------------------------------------------------
+    // Order Nudge Scheduler — IAM role for EventBridge Scheduler to invoke
+    // the notification router Lambda for payment nudges and seller reminders.
+    // Separate from the trend scheduler role (different target Lambda).
+    // Requirements: 11.3
+    // -----------------------------------------------------------------------
+
+    this.orderSchedulerRole = new cdk.aws_iam.Role(this, 'OrderNudgeSchedulerRole', {
+      roleName: `${config.resourcePrefix}-order-nudge-scheduler-role`,
+      assumedBy: new cdk.aws_iam.ServicePrincipal('scheduler.amazonaws.com'),
+      description: 'Role assumed by EventBridge Scheduler to invoke notification router for order nudges',
+    });
+
+    // Allow the scheduler role to invoke the notification router function
+    this.notificationRouterFunction.grantInvoke(this.orderSchedulerRole);
+
+    cdk.Tags.of(this.orderSchedulerRole).add('Name', `${config.resourcePrefix}-order-nudge-scheduler-role`);
+    cdk.Tags.of(this.orderSchedulerRole).add('Service', 'order-nudges');
+
     // Create Campaign Worker Lambda function for automated WhatsApp campaigns
     this.campaignWorkerFunction = new Function(this, 'CampaignWorkerFunction', {
       functionName: `${config.resourcePrefix}-campaign-worker`,
@@ -437,6 +461,30 @@ export class EventsStack extends cdk.Stack {
       targets: [new LambdaFunction(this.notificationRouterFunction)],
     });
 
+    // EventBridge rule: route order events to notification router for omnichannel delivery
+    new Rule(this, 'OrderEventNotificationRule', {
+      ruleName: `${config.resourcePrefix}-order-notification`,
+      description: 'Route order lifecycle events to notification router for customer and seller notifications',
+      eventBus: this.eventBus,
+      eventPattern: {
+        source: ['vyapargyan.orders'],
+        detailType: [
+          'order.created',
+          'order.confirmed',
+          'order.payment_pending',
+          'order.paid',
+          'order.preparing',
+          'order.shipped',
+          'order.delivered',
+          'order.rejected',
+          'order.cancelled',
+          'order.expired',
+          'order.payment_failed',
+        ],
+      },
+      targets: [new LambdaFunction(this.notificationRouterFunction)],
+    });
+
     // Add tags to notification router
     cdk.Tags.of(this.notificationRouterFunction).add('Name', `${config.resourcePrefix}-notification-router`);
     cdk.Tags.of(this.notificationRouterFunction).add('Service', 'messaging');
@@ -447,23 +495,32 @@ export class EventsStack extends cdk.Stack {
     // Pushes messages to all active recipient channels except the originator
     // -----------------------------------------------------------------------
 
+    // Extract props for fan-out Lambda to keep constructor clean
+    const fanoutCode = Code.fromAsset('../../services/api/dist');
+    const fanoutTimeout = Duration.seconds(30);
+    const fanoutTwilioAccountSid = twilioSecret.secretValueFromJson('accountSid').unsafeUnwrap();
+    const fanoutTwilioAuthToken = twilioSecret.secretValueFromJson('authToken').unsafeUnwrap();
+    const fanoutTwilioPhoneNumber = twilioSecret.secretValueFromJson('phoneNumber').unsafeUnwrap();
+
+    // messageFanoutFunction = new Function(), { environment: { WEBSOCKET_API_ENDPOINT, TABLE_NAME, EVENT_BUS_NAME } }
     this.messageFanoutFunction = new Function(this, 'MessageFanoutFunction', {
       functionName: `${config.resourcePrefix}-message-fanout`,
       runtime: Runtime.NODEJS_20_X,
       architecture: Architecture.ARM_64,
       handler: 'handlers/messaging/fanout.handler',
-      code: Code.fromAsset('../../services/api/dist'),
-      timeout: Duration.seconds(30),
+      code: fanoutCode,
+      timeout: fanoutTimeout,
       memorySize: 256,
       tracing: Tracing.ACTIVE,
       environment: {
         ENVIRONMENT: config.environment,
         TABLE_NAME: table.tableName,
         EVENT_BUS_NAME: this.eventBus.eventBusName,
+        WEBSOCKET_API_ENDPOINT: props.webSocketEndpoint || '',
         LOG_LEVEL: 'info',
-        TWILIO_ACCOUNT_SID: twilioSecret.secretValueFromJson('accountSid').unsafeUnwrap(),
-        TWILIO_AUTH_TOKEN: twilioSecret.secretValueFromJson('authToken').unsafeUnwrap(),
-        TWILIO_PHONE_NUMBER: twilioSecret.secretValueFromJson('phoneNumber').unsafeUnwrap(),
+        TWILIO_ACCOUNT_SID: fanoutTwilioAccountSid,
+        TWILIO_AUTH_TOKEN: fanoutTwilioAuthToken,
+        TWILIO_PHONE_NUMBER: fanoutTwilioPhoneNumber,
       },
     });
 

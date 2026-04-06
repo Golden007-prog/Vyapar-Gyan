@@ -131,6 +131,8 @@ const apiStack = new APIStack(app, `${config.resourcePrefix}-api`, {
   productImagesBucket: storageStack.productImagesBucket,
   mediaProcessingQueue: eventsStack.mediaProcessingQueue,
   mediaProcessingDLQ: eventsStack.mediaProcessingDLQ,
+  orderSchedulerRoleArn: eventsStack.orderSchedulerRole.roleArn,
+  notificationRouterArn: eventsStack.notificationRouterFunction.functionArn,
   env: {
     account,
     region,
@@ -144,14 +146,102 @@ apiStack.addDependency(eventsStack);
 apiStack.addDependency(storageStack);
 console.log(`APIStack instantiated: ${apiStack.stackName}`);
 
+// -----------------------------------------------------------------------
+// Wire Order Nudge Scheduler — cross-stack env vars and IAM permissions
+// The order scheduler service (in API Lambda handlers) needs:
+//   SCHEDULER_ROLE_ARN — the role EventBridge Scheduler assumes to invoke notification router
+//   NOTIFICATION_ROUTER_ARN — the target Lambda for scheduled nudges
+//   scheduler:CreateSchedule, scheduler:DeleteSchedule, scheduler:GetSchedule — to manage schedules
+//   iam:PassRole — to pass the scheduler role to EventBridge Scheduler
+// Requirements: 11.3
+// -----------------------------------------------------------------------
+
+// Razorpay webhook also calls cancelOrderSchedules
+const orderSchedulerFunctions = [
+  apiStack.razorpayWebhookFunction,
+];
+
+// Add SCHEDULER_ROLE_ARN and NOTIFICATION_ROUTER_ARN env vars
+for (const fn of orderSchedulerFunctions) {
+  fn.addEnvironment('SCHEDULER_ROLE_ARN', eventsStack.orderSchedulerRole.roleArn);
+  fn.addEnvironment('NOTIFICATION_ROUTER_ARN', eventsStack.notificationRouterFunction.functionArn);
+
+  // Grant scheduler:CreateSchedule, scheduler:DeleteSchedule, scheduler:GetSchedule
+  fn.addToRolePolicy(
+    new PolicyStatement({
+      effect: Effect.ALLOW,
+      actions: [
+        'scheduler:CreateSchedule',
+        'scheduler:DeleteSchedule',
+        'scheduler:GetSchedule',
+      ],
+      resources: [
+        `arn:aws:scheduler:${region}:${account}:schedule/default/order-*`,
+      ],
+    }),
+  );
+
+  // Grant iam:PassRole for the order scheduler role
+  fn.addToRolePolicy(
+    new PolicyStatement({
+      effect: Effect.ALLOW,
+      actions: ['iam:PassRole'],
+      resources: [eventsStack.orderSchedulerRole.roleArn],
+      conditions: {
+        StringEquals: {
+          'iam:PassedToService': 'scheduler.amazonaws.com',
+        },
+      },
+    }),
+  );
+}
+
+// Also wire env vars to the WhatsApp worker (handles order creation → scheduleSellerReminders)
+// and the notification router (may need to create schedules for payment nudges after acceptance)
+eventsStack.whatsappWorkerFunction.addEnvironment('SCHEDULER_ROLE_ARN', eventsStack.orderSchedulerRole.roleArn);
+eventsStack.whatsappWorkerFunction.addEnvironment('NOTIFICATION_ROUTER_ARN', eventsStack.notificationRouterFunction.functionArn);
+
+// Grant WhatsApp worker scheduler permissions for order nudges
+eventsStack.whatsappWorkerFunction.addToRolePolicy(
+  new PolicyStatement({
+    effect: Effect.ALLOW,
+    actions: [
+      'scheduler:CreateSchedule',
+      'scheduler:DeleteSchedule',
+      'scheduler:GetSchedule',
+    ],
+    resources: [
+      `arn:aws:scheduler:${region}:${account}:schedule/default/order-*`,
+    ],
+  }),
+);
+eventsStack.whatsappWorkerFunction.addToRolePolicy(
+  new PolicyStatement({
+    effect: Effect.ALLOW,
+    actions: ['iam:PassRole'],
+    resources: [eventsStack.orderSchedulerRole.roleArn],
+    conditions: {
+      StringEquals: {
+        'iam:PassedToService': 'scheduler.amazonaws.com',
+      },
+    },
+  }),
+);
+
 // API_BASE_URL is now injected via APIStack props (eventsWorkerFunctions)
 // to avoid cyclic cross-stack references
 
-// 5b. WebSocket Stack (depends on Database and Auth)
+// 5b. WebSocket Stack (depends on Database, Auth, and Events for EventBridge)
+// Pass event bus name/ARN as strings to avoid cyclic cross-stack references
+// (events-stack reads webSocketCallbackUrl from websocket-stack, so websocket-stack cannot also import from events-stack)
+const eventBusName = `${config.resourcePrefix}-events`;
+const eventBusArn = `arn:aws:events:${region}:${account}:event-bus/${eventBusName}`;
 const webSocketStack = new WebSocketStack(app, `${config.resourcePrefix}-websocket`, {
   config,
   table: databaseStack.table,
   userPool: authStack.userPool,
+  eventBusName,
+  eventBusArn,
   env: {
     account,
     region,
@@ -162,6 +252,12 @@ const webSocketStack = new WebSocketStack(app, `${config.resourcePrefix}-websock
 webSocketStack.addDependency(databaseStack);
 webSocketStack.addDependency(authStack);
 console.log(`WebSocketStack instantiated: ${webSocketStack.stackName}`);
+
+// Wire WebSocket callback URL (https://) to fan-out Lambda for API Gateway Management API push
+eventsStack.messageFanoutFunction.addEnvironment(
+  'WEBSOCKET_API_ENDPOINT',
+  webSocketStack.webSocketCallbackUrl,
+);
 
 // Wire WebSocket endpoint to status webhook Lambda for real-time delivery status push
 apiStack.whatsappStatusWebhookFunction.addEnvironment(

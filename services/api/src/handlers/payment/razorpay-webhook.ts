@@ -1,80 +1,60 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
-import { DynamoDBClient, UpdateItemCommand, GetItemCommand } from '@aws-sdk/client-dynamodb';
-import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
+import { DynamoDBClient, PutItemCommand } from '@aws-sdk/client-dynamodb';
+import { marshall } from '@aws-sdk/util-dynamodb';
 import { logger } from '../../utils/logger';
 import { getConfig } from '../../utils/config';
 import { RazorpayAdapter } from '../../adapters/razorpay-adapter';
-import { TwilioAdapter } from '../../adapters/twilio-adapter';
+import { OrderService } from '../../services/order-service';
 
 const dynamoDBClient = new DynamoDBClient({});
 const razorpayAdapter = new RazorpayAdapter();
-const twilioAdapter = new TwilioAdapter();
+const orderService = new OrderService();
 
 /**
  * Razorpay Webhook Handler
- * 
- * Handles payment events from Razorpay:
- * - payment.captured: Payment successful, update order status
- * - payment.failed: Payment failed, notify customer
- * - payment_link.paid: Payment link completed
- * 
- * Security:
- * - Verifies webhook signature to ensure authenticity
- * - Validates order exists before processing
- * - Idempotent processing to handle duplicate webhooks
+ *
+ * Handles payment events from Razorpay using the new order state machine.
+ * All transitions go through orderService.transitionOrder() for consistency.
+ *
+ * Events handled:
+ * - payment_link.paid  → payment_pending → paid (stock finalization)
+ * - payment_link.expired → payment_pending → expired (stock unreservation)
+ * - payment.failed → payment_pending → payment_failed
+ * - payment.captured → (legacy compat, delegates to payment_link.paid logic)
+ *
+ * Security: Verifies X-Razorpay-Signature via HMAC-SHA256.
+ * Idempotency: EVENT#{eventId} record with attribute_not_exists(PK) conditional write.
+ *
+ * Requirements: 8.1, 8.2, 8.3, 8.6, 8.7, 8.8
  */
 export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
   const requestId = event.requestContext.requestId;
 
-  logger.info('Razorpay webhook received', {
-    requestId,
-    headers: event.headers,
-  });
+  logger.info('Razorpay webhook received', { requestId });
 
   try {
-    // Get webhook signature from headers
+    // Verify signature
     const signature = event.headers['x-razorpay-signature'] || event.headers['X-Razorpay-Signature'];
-    
+
     if (!signature) {
       logger.warn('Missing Razorpay webhook signature', { requestId });
-      return {
-        statusCode: 400,
-        body: JSON.stringify({ error: 'Missing signature' }),
-      };
+      return { statusCode: 400, body: JSON.stringify({ error: 'Missing signature' }) };
     }
 
-    // Verify webhook signature
     const payload = event.body || '';
     const isValid = razorpayAdapter.verifyWebhookSignature(payload, signature);
 
     if (!isValid) {
-      logger.error('Invalid Razorpay webhook signature', { requestId });
-      return {
-        statusCode: 401,
-        body: JSON.stringify({ error: 'Invalid signature' }),
-      };
+      logger.error('Invalid Razorpay webhook signature', undefined, { requestId });
+      return { statusCode: 401, body: JSON.stringify({ error: 'Invalid signature' }) };
     }
 
-    // Parse webhook payload
     const webhookData = JSON.parse(payload);
     const eventType = webhookData.event;
 
-    logger.info('Processing Razorpay webhook event', {
-      requestId,
-      eventType,
-      paymentId: webhookData.payload?.payment?.entity?.id,
-    });
+    logger.info('Processing Razorpay webhook event', { requestId, eventType });
 
-    // Handle different event types
     switch (eventType) {
-      case 'payment.captured':
-        await handlePaymentCaptured(webhookData, requestId);
-        break;
-
-      case 'payment.failed':
-        await handlePaymentFailed(webhookData, requestId);
-        break;
-
       case 'payment_link.paid':
         await handlePaymentLinkPaid(webhookData, requestId);
         break;
@@ -83,155 +63,81 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
         await handlePaymentLinkExpired(webhookData, requestId);
         break;
 
+      case 'payment.failed':
+        await handlePaymentFailed(webhookData, requestId);
+        break;
+
+      case 'payment.captured':
+        // Legacy compat — treat as payment_link.paid if reference_id present
+        await handlePaymentCaptured(webhookData, requestId);
+        break;
+
       default:
         logger.info('Unhandled webhook event type', { requestId, eventType });
     }
 
-    return {
-      statusCode: 200,
-      body: JSON.stringify({ status: 'success' }),
-    };
+    return { statusCode: 200, body: JSON.stringify({ status: 'success' }) };
   } catch (error) {
-    logger.error('Error processing Razorpay webhook', {
-      requestId,
-      error: error instanceof Error ? error.message : String(error),
-      stack: error instanceof Error ? error.stack : undefined,
-    });
-
-    return {
-      statusCode: 500,
-      body: JSON.stringify({ error: 'Internal server error' }),
-    };
+    logger.error('Error processing Razorpay webhook', error, { requestId });
+    return { statusCode: 500, body: JSON.stringify({ error: 'Internal server error' }) };
   }
 }
 
 /**
- * Handle payment.captured event
- * 
- * Updates order status from PENDING_PAYMENT to PAID
- * Notifies customer and seller
+ * Check idempotency by writing EVENT#{eventId} with attribute_not_exists(PK).
+ * Returns true if the event was already processed (duplicate).
  */
-async function handlePaymentCaptured(webhookData: any, requestId: string): Promise<void> {
-  const payment = webhookData.payload.payment.entity;
-  const orderId = payment.notes?.order_id;
-
-  if (!orderId) {
-    logger.error('Order ID not found in payment notes', {
-      requestId,
-      paymentId: payment.id,
-    });
-    return;
-  }
-
-  logger.info('Processing payment captured', {
-    requestId,
-    orderId,
-    paymentId: payment.id,
-    amount: payment.amount,
-  });
-
+async function checkAndRecordEvent(eventId: string): Promise<boolean> {
   const config = await getConfig();
 
-  // Get order details
-  const order = await getOrder(config.tableName, orderId);
-  
-  if (!order) {
-    logger.error('Order not found', { requestId, orderId });
-    return;
+  try {
+    await dynamoDBClient.send(new PutItemCommand({
+      TableName: config.tableName,
+      Item: marshall({
+        PK: `EVENT#${eventId}`,
+        SK: 'WEBHOOK',
+        processedAt: new Date().toISOString(),
+        ttl: Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60, // 7-day TTL
+      }),
+      ConditionExpression: 'attribute_not_exists(PK)',
+    }));
+    return false; // New event, not a duplicate
+  } catch (error: any) {
+    if (error.name === 'ConditionalCheckFailedException') {
+      return true; // Already processed
+    }
+    throw error;
   }
+}
 
-  // Check if already processed (idempotency)
-  if (order.status === 'PAID' || order.status === 'CONFIRMED') {
-    logger.info('Order already processed', {
-      requestId,
+/**
+ * Cancel pending nudge schedules for an order.
+ * Best-effort — failures are logged but don't block processing.
+ */
+async function cancelNudgeSchedules(orderId: string): Promise<void> {
+  try {
+    // Dynamic import to avoid hard dependency if scheduler service isn't deployed yet
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const mod = await import(/* webpackIgnore: true */ '../../services/order-scheduler-service' + '');
+    await mod.cancelOrderSchedules(orderId);
+    logger.info('Cancelled nudge schedules', { orderId });
+  } catch (error) {
+    // Non-fatal — scheduler service may not be deployed yet
+    logger.warn('Failed to cancel nudge schedules (non-fatal)', {
       orderId,
-      currentStatus: order.status,
+      error: error instanceof Error ? error.message : String(error),
     });
-    return;
   }
-
-  // Update order status to PAID
-  await updateOrderStatus(config.tableName, orderId, 'PAID', {
-    paymentId: payment.id,
-    paymentMethod: payment.method,
-    paymentCapturedAt: new Date().toISOString(),
-    razorpayOrderId: payment.order_id,
-  });
-
-  logger.info('Order status updated to PAID', {
-    requestId,
-    orderId,
-    paymentId: payment.id,
-  });
-
-  // Notify customer
-  await notifyCustomerPaymentSuccess(order, requestId);
-
-  // Notify seller
-  await notifySellerNewOrder(order, requestId);
 }
 
 /**
- * Handle payment.failed event
- */
-async function handlePaymentFailed(webhookData: any, requestId: string): Promise<void> {
-  const payment = webhookData.payload.payment.entity;
-  const orderId = payment.notes?.order_id;
-
-  if (!orderId) {
-    logger.error('Order ID not found in payment notes', {
-      requestId,
-      paymentId: payment.id,
-    });
-    return;
-  }
-
-  logger.info('Processing payment failed', {
-    requestId,
-    orderId,
-    paymentId: payment.id,
-    errorCode: payment.error_code,
-    errorDescription: payment.error_description,
-  });
-
-  const config = await getConfig();
-
-  // Get order details
-  const order = await getOrder(config.tableName, orderId);
-  
-  if (!order) {
-    logger.error('Order not found', { requestId, orderId });
-    return;
-  }
-
-  // Update order with payment failure info
-  await updateOrderStatus(config.tableName, orderId, 'PAYMENT_FAILED', {
-    paymentId: payment.id,
-    paymentFailedAt: new Date().toISOString(),
-    paymentErrorCode: payment.error_code,
-    paymentErrorDescription: payment.error_description,
-  });
-
-  // Notify customer about payment failure
-  const message = `❌ Payment failed for order ${orderId}.\n\nReason: ${payment.error_description || 'Payment could not be processed'}\n\nPlease try again or contact support.`;
-
-  await twilioAdapter.sendWhatsAppMessage(order.customerPhone, message);
-
-  logger.info('Customer notified of payment failure', {
-    requestId,
-    orderId,
-    customerPhone: order.customerPhone,
-  });
-}
-
-/**
- * Handle payment_link.paid event
+ * Handle payment_link.paid event.
  *
- * Updates order status to confirmed, deducts inventory (handled by order
- * creation transaction), and sends confirmation notifications to both
- * customer and seller via WhatsApp.
+ * Transitions from payment_pending → paid using orderService.transitionOrder().
+ * Validates payment amount matches order totalAmount.
+ * Cancels pending nudge schedules.
  *
- * Requirements: 20.4
+ * Requirements: 8.1, 8.2, 8.3, 8.8
  */
 async function handlePaymentLinkPaid(webhookData: any, requestId: string): Promise<void> {
   const paymentLink = webhookData.payload.payment_link.entity;
@@ -239,10 +145,18 @@ async function handlePaymentLinkPaid(webhookData: any, requestId: string): Promi
   const paymentLinkId = paymentLink.id;
 
   if (!orderId) {
-    logger.error('Order ID (reference_id) not found in payment_link.paid event', {
+    logger.error('Order ID (reference_id) not found in payment_link.paid event', undefined, {
       requestId,
       paymentLinkId,
     });
+    return;
+  }
+
+  // Idempotency check
+  const eventId = webhookData.payload.payment_link.entity.id + '_paid';
+  const alreadyProcessed = await checkAndRecordEvent(eventId);
+  if (alreadyProcessed) {
+    logger.info('Duplicate payment_link.paid event, skipping', { requestId, orderId, eventId });
     return;
   }
 
@@ -253,19 +167,16 @@ async function handlePaymentLinkPaid(webhookData: any, requestId: string): Promi
     amount: paymentLink.amount,
   });
 
-  const config = await getConfig();
-
-  // Get order details
-  const order = await getOrder(config.tableName, orderId);
-
+  // Fetch order
+  const order = await orderService.getOrder(orderId);
   if (!order) {
-    logger.error('Order not found for payment_link.paid', { requestId, orderId });
+    logger.error('Order not found for payment_link.paid', undefined, { requestId, orderId });
     return;
   }
 
-  // Idempotency: skip if already confirmed
-  if (order.status === 'PAID' || order.status === 'CONFIRMED' || order.status === 'PROCESSING') {
-    logger.info('Order already confirmed, skipping duplicate payment_link.paid', {
+  // Only process if order is in payment_pending
+  if (order.status !== 'payment_pending') {
+    logger.info('Order not in payment_pending, skipping', {
       requestId,
       orderId,
       currentStatus: order.status,
@@ -273,133 +184,65 @@ async function handlePaymentLinkPaid(webhookData: any, requestId: string): Promi
     return;
   }
 
-  // Update order status to PAID / confirmed
-  await updateOrderStatus(config.tableName, orderId, 'PAID', {
-    paymentLinkId,
-    paymentMethod: 'payment_link',
-    paymentCapturedAt: new Date().toISOString(),
-  });
-
-  logger.info('Order confirmed via payment link', {
-    requestId,
-    orderId,
-    paymentLinkId,
-  });
-
-  // Send confirmation to customer
-  await notifyCustomerPaymentSuccess(order, requestId);
-
-  // Send notification to seller
-  await notifySellerNewOrder(order, requestId);
-}
-
-/**
- * Get order from DynamoDB
- */
-async function getOrder(tableName: string, orderId: string): Promise<any> {
-  const command = new GetItemCommand({
-    TableName: tableName,
-    Key: marshall({
-      PK: `ORDER#${orderId}`,
-      SK: 'METADATA',
-    }),
-  });
-
-  const response = await dynamoDBClient.send(command);
-  
-  if (!response.Item) {
-    return null;
+  // Validate payment amount matches order total
+  const paidAmountRupees = paymentLink.amount_paid / 100;
+  if (paidAmountRupees !== order.totalAmount) {
+    logger.error('Payment amount mismatch', undefined, {
+      requestId,
+      orderId,
+      expected: order.totalAmount,
+      received: paidAmountRupees,
+    });
+    return;
   }
 
-  return unmarshall(response.Item);
-}
-
-/**
- * Update order status in DynamoDB
- */
-async function updateOrderStatus(
-  tableName: string,
-  orderId: string,
-  status: string,
-  additionalFields: Record<string, any> = {}
-): Promise<void> {
-  // Build update expression dynamically
-  const updateExpressions: string[] = ['#status = :status', 'updatedAt = :updatedAt'];
-  const expressionAttributeNames: Record<string, string> = { '#status': 'status' };
-  const expressionAttributeValues: Record<string, any> = {
-    ':status': status,
-    ':updatedAt': new Date().toISOString(),
-  };
-
-  // Add additional fields to update
-  Object.entries(additionalFields).forEach(([key, value], index) => {
-    const placeholder = `:field${index}`;
-    const namePlaceholder = `#field${index}`;
-    updateExpressions.push(`${namePlaceholder} = ${placeholder}`);
-    expressionAttributeNames[namePlaceholder] = key;
-    expressionAttributeValues[placeholder] = value;
+  // Transition to paid (handles stock finalization via transitionOrder)
+  const result = await orderService.transitionOrder({
+    orderId: order.id,
+    targetStatus: 'paid',
+    actor: 'webhook',
+    actorId: `razorpay:${paymentLinkId}`,
+    reason: `Payment captured via payment link ${paymentLinkId}`,
   });
 
-  const command = new UpdateItemCommand({
-    TableName: tableName,
-    Key: marshall({
-      PK: `ORDER#${orderId}`,
-      SK: 'METADATA',
-    }),
-    UpdateExpression: `SET ${updateExpressions.join(', ')}`,
-    ExpressionAttributeNames: expressionAttributeNames,
-    ExpressionAttributeValues: marshall(expressionAttributeValues),
-  });
-
-  await dynamoDBClient.send(command);
-}
-
-/**
- * Notify customer of successful payment
- */
-async function notifyCustomerPaymentSuccess(order: any, requestId: string): Promise<void> {
-  const message = [
-    '✅ *Payment Received!*',
-    '',
-    `📦 Order ID: *${order.orderId}*`,
-    `💰 Amount Paid: *₹${order.totalAmount}*`,
-    '',
-    'Your order is confirmed! The seller will pack and ship your order soon.',
-    '',
-    'Thank you for shopping with VyaparGyan! 🎉',
-  ].join('\n');
-
-  try {
-    await twilioAdapter.sendWhatsAppMessage(order.customerPhone, message);
-    
-    logger.info('Customer notified of payment success', {
+  if (!result.success) {
+    logger.error('Failed to transition order to paid', undefined, {
       requestId,
-      orderId: order.orderId,
-      customerPhone: order.customerPhone,
+      orderId,
+      error: result.error,
     });
-  } catch (error) {
-    logger.error('Failed to notify customer', {
-      requestId,
-      orderId: order.orderId,
-      error: error instanceof Error ? error.message : String(error),
-    });
+    return;
   }
+
+  logger.info('Order transitioned to paid', { requestId, orderId, paymentLinkId });
+
+  // Cancel pending nudge schedules
+  await cancelNudgeSchedules(orderId);
 }
 
 /**
- * Handle payment_link.expired event
+ * Handle payment_link.expired event.
  *
- * Notifies the customer that their payment link has expired and offers
- * to generate a new one.
+ * Transitions from payment_pending → expired using orderService.transitionOrder().
+ * Stock unreservation is handled by transitionOrder for expired status.
+ * Cancels pending nudge schedules.
  *
- * Requirement: 20.3, 20.5
+ * Requirements: 8.7
  */
 async function handlePaymentLinkExpired(webhookData: any, requestId: string): Promise<void> {
   const paymentLink = webhookData.payload.payment_link.entity;
   const orderId = paymentLink.reference_id;
 
   if (!orderId) {
-    logger.error('Order ID not found in payment_link.expired event', { requestId });
+    logger.error('Order ID not found in payment_link.expired event', undefined, { requestId });
+    return;
+  }
+
+  // Idempotency check
+  const eventId = paymentLink.id + '_expired';
+  const alreadyProcessed = await checkAndRecordEvent(eventId);
+  if (alreadyProcessed) {
+    logger.info('Duplicate payment_link.expired event, skipping', { requestId, orderId, eventId });
     return;
   }
 
@@ -409,17 +252,15 @@ async function handlePaymentLinkExpired(webhookData: any, requestId: string): Pr
     paymentLinkId: paymentLink.id,
   });
 
-  const config = await getConfig();
-  const order = await getOrder(config.tableName, orderId);
-
+  const order = await orderService.getOrder(orderId);
   if (!order) {
-    logger.error('Order not found for expired payment link', { requestId, orderId });
+    logger.error('Order not found for expired payment link', undefined, { requestId, orderId });
     return;
   }
 
-  // Only send reminder if order is still pending payment
-  if (order.status !== 'PENDING_PAYMENT') {
-    logger.info('Order no longer pending, skipping expiry notification', {
+  // Only process if order is in payment_pending
+  if (order.status !== 'payment_pending') {
+    logger.info('Order not in payment_pending, skipping expiry', {
       requestId,
       orderId,
       currentStatus: order.status,
@@ -427,71 +268,181 @@ async function handlePaymentLinkExpired(webhookData: any, requestId: string): Pr
     return;
   }
 
-  const message = [
-    '⏰ *Payment Link Expired*',
-    '',
-    `Your payment link for order *${order.orderId}* (₹${order.totalAmount}) has expired.`,
-    '',
-    'Reply *PAY* to receive a new payment link, or *CANCEL* to cancel the order.',
-  ].join('\n');
+  // Transition to expired (handles stock unreservation via transitionOrder)
+  const result = await orderService.transitionOrder({
+    orderId: order.id,
+    targetStatus: 'expired',
+    actor: 'webhook',
+    actorId: `razorpay:${paymentLink.id}`,
+    reason: 'Payment link expired',
+  });
 
-  try {
-    await twilioAdapter.sendWhatsAppMessage(order.customerPhone, message);
-    logger.info('Customer notified of payment link expiry', {
+  if (!result.success) {
+    logger.error('Failed to transition order to expired', undefined, {
       requestId,
       orderId,
-      customerPhone: order.customerPhone,
-    });
-  } catch (error) {
-    logger.error('Failed to notify customer of payment link expiry', {
-      requestId,
-      orderId,
-      error: error instanceof Error ? error.message : String(error),
-    });
-  }
-}
-
-/**
- * Notify seller of new paid order
- */
-async function notifySellerNewOrder(order: any, requestId: string): Promise<void> {
-  // Get seller phone from order items
-  // Note: In multi-seller orders, we'd need to notify each seller separately
-  const sellerPhone = order.sellerPhone || order.items?.[0]?.sellerPhone;
-
-  if (!sellerPhone) {
-    logger.warn('Seller phone not found in order', {
-      requestId,
-      orderId: order.orderId,
+      error: result.error,
     });
     return;
   }
 
-  const message = [
-    '🔔 *New Paid Order!*',
-    '',
-    `📦 Order ID: *${order.orderId}*`,
-    `💰 Amount: *₹${order.totalAmount}*`,
-    `👤 Customer: ${order.customerPhone}`,
-    '',
-    'Please pack and prepare this order for delivery.',
-    '',
-    'Login to your dashboard to view order details and update status.',
-  ].join('\n');
+  logger.info('Order transitioned to expired', { requestId, orderId });
 
-  try {
-    await twilioAdapter.sendWhatsAppMessage(sellerPhone, message);
-    
-    logger.info('Seller notified of new order', {
+  // Cancel pending nudge schedules
+  await cancelNudgeSchedules(orderId);
+}
+
+/**
+ * Handle payment.failed event.
+ *
+ * Transitions from payment_pending → payment_failed.
+ * Stock stays reserved for retry (no unreservation on payment_failed).
+ *
+ * Requirements: 8.6
+ */
+async function handlePaymentFailed(webhookData: any, requestId: string): Promise<void> {
+  const payment = webhookData.payload.payment.entity;
+  const orderId = payment.notes?.order_id;
+
+  if (!orderId) {
+    logger.error('Order ID not found in payment.failed event', undefined, {
       requestId,
-      orderId: order.orderId,
-      sellerPhone,
+      paymentId: payment.id,
     });
-  } catch (error) {
-    logger.error('Failed to notify seller', {
-      requestId,
-      orderId: order.orderId,
-      error: error instanceof Error ? error.message : String(error),
-    });
+    return;
   }
+
+  // Idempotency check
+  const eventId = payment.id + '_failed';
+  const alreadyProcessed = await checkAndRecordEvent(eventId);
+  if (alreadyProcessed) {
+    logger.info('Duplicate payment.failed event, skipping', { requestId, orderId, eventId });
+    return;
+  }
+
+  logger.info('Processing payment failed', {
+    requestId,
+    orderId,
+    paymentId: payment.id,
+    errorCode: payment.error_code,
+  });
+
+  const order = await orderService.getOrder(orderId);
+  if (!order) {
+    logger.error('Order not found for payment.failed', undefined, { requestId, orderId });
+    return;
+  }
+
+  if (order.status !== 'payment_pending') {
+    logger.info('Order not in payment_pending, skipping failure', {
+      requestId,
+      orderId,
+      currentStatus: order.status,
+    });
+    return;
+  }
+
+  const result = await orderService.transitionOrder({
+    orderId: order.id,
+    targetStatus: 'payment_failed',
+    actor: 'webhook',
+    actorId: `razorpay:${payment.id}`,
+    reason: payment.error_description || 'Payment failed',
+  });
+
+  if (!result.success) {
+    logger.error('Failed to transition order to payment_failed', undefined, {
+      requestId,
+      orderId,
+      error: result.error,
+    });
+    return;
+  }
+
+  logger.info('Order transitioned to payment_failed', { requestId, orderId });
+
+  // Cancel pending nudge schedules on payment failure
+  await cancelNudgeSchedules(orderId);
+}
+
+/**
+ * Handle payment.captured event (legacy compatibility).
+ *
+ * For orders using the new flow, the reference_id in notes maps to orderId.
+ * Delegates to the same paid transition logic.
+ */
+async function handlePaymentCaptured(webhookData: any, requestId: string): Promise<void> {
+  const payment = webhookData.payload.payment.entity;
+  const orderId = payment.notes?.order_id;
+
+  if (!orderId) {
+    logger.error('Order ID not found in payment.captured notes', undefined, {
+      requestId,
+      paymentId: payment.id,
+    });
+    return;
+  }
+
+  // Idempotency check
+  const eventId = payment.id + '_captured';
+  const alreadyProcessed = await checkAndRecordEvent(eventId);
+  if (alreadyProcessed) {
+    logger.info('Duplicate payment.captured event, skipping', { requestId, orderId, eventId });
+    return;
+  }
+
+  logger.info('Processing payment captured (legacy)', {
+    requestId,
+    orderId,
+    paymentId: payment.id,
+    amount: payment.amount,
+  });
+
+  const order = await orderService.getOrder(orderId);
+  if (!order) {
+    logger.error('Order not found for payment.captured', undefined, { requestId, orderId });
+    return;
+  }
+
+  if (order.status !== 'payment_pending') {
+    logger.info('Order not in payment_pending, skipping captured event', {
+      requestId,
+      orderId,
+      currentStatus: order.status,
+    });
+    return;
+  }
+
+  // Validate amount
+  const paidAmountRupees = payment.amount / 100;
+  if (paidAmountRupees !== order.totalAmount) {
+    logger.error('Payment amount mismatch on captured', undefined, {
+      requestId,
+      orderId,
+      expected: order.totalAmount,
+      received: paidAmountRupees,
+    });
+    return;
+  }
+
+  const result = await orderService.transitionOrder({
+    orderId: order.id,
+    targetStatus: 'paid',
+    actor: 'webhook',
+    actorId: `razorpay:${payment.id}`,
+    reason: `Payment captured ${payment.id}`,
+  });
+
+  if (!result.success) {
+    logger.error('Failed to transition order to paid (captured)', undefined, {
+      requestId,
+      orderId,
+      error: result.error,
+    });
+    return;
+  }
+
+  logger.info('Order transitioned to paid via payment.captured', { requestId, orderId });
+
+  await cancelNudgeSchedules(orderId);
 }

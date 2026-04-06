@@ -16,7 +16,7 @@
  */
 
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, BatchWriteCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, BatchWriteCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
 
 const client = new DynamoDBClient({ region: 'ap-south-1' });
 const docClient = DynamoDBDocumentClient.from(client);
@@ -374,7 +374,74 @@ const auditEntries = [
 }));
 
 // ============================================
-// COMBINE ALL DATA
+// DRAGON STORE DEMO DATA (Order Confirmation Flow)
+// ============================================
+
+// Dragon Store products for order flow demo
+const dragonStoreProducts = [
+  {
+    PK: 'PRODUCT#demo-amul-butter', SK: 'METADATA',
+    id: 'demo-amul-butter', sellerId: 'seller-dragon', categoryId: 'cat-groceries',
+    name: 'Amul Butter 500g', description: 'Amul Butter 500g',
+    price: 280, originalPrice: 280, stockQuantity: 45, reserved_stock: 0,
+    stockAddedDate: d(7), isActive: true, isDeadStock: false, imageUrls: [],
+    createdAt: d(7), updatedAt: d(0),
+  },
+  {
+    PK: 'PRODUCT#demo-surf-excel', SK: 'METADATA',
+    id: 'demo-surf-excel', sellerId: 'seller-dragon', categoryId: 'cat-groceries',
+    name: 'Surf Excel 1kg', description: 'Surf Excel 1kg',
+    price: 199, originalPrice: 199, stockQuantity: 30, reserved_stock: 0,
+    stockAddedDate: d(7), isActive: true, isDeadStock: false, imageUrls: [],
+    createdAt: d(7), updatedAt: d(0),
+  },
+  {
+    PK: 'PRODUCT#demo-usbc-cable', SK: 'METADATA',
+    id: 'demo-usbc-cable', sellerId: 'seller-dragon', categoryId: 'cat-electronics',
+    name: 'USB-C Cable 1m', description: 'USB-C Cable 1m',
+    price: 149, originalPrice: 149, stockQuantity: 100, reserved_stock: 0,
+    stockAddedDate: d(7), isActive: true, isDeadStock: false, imageUrls: [],
+    createdAt: d(7), updatedAt: d(0),
+  },
+];
+
+// Seller index entries for Dragon Store products
+const dragonStoreProductIndex = dragonStoreProducts.map(p => ({
+  PK: 'SELLER#seller-dragon', SK: `PRODUCT#${p.id}`,
+  productId: p.id, name: p.name, price: p.price,
+  stockQuantity: p.stockQuantity, isActive: true,
+}));
+
+// Dragon Store seller profile
+const dragonSeller = {
+  PK: 'USER#seller-dragon', SK: 'PROFILE',
+  id: 'seller-dragon', userId: 'seller-dragon', role: 'seller', status: 'active',
+  businessName: 'Dragon Store', ownerName: 'Dragon Store Owner',
+  phone: '+918927049085', razorpayAccountId: 'acc_test_dragon',
+  businessAddress: { addressLine1: '42 Market Road', city: 'Mumbai', state: 'Maharashtra', pincode: '400001' },
+  gstNumber: 'GSTDRAGON', totalRevenue: 0,
+  createdAt: d(30), updatedAt: d(0),
+};
+
+// Enigma customer profile
+const enigmaCustomer = {
+  PK: 'CUSTOMER#+917001124396', SK: 'PROFILE',
+  id: 'cust-enigma', phoneNumber: '+917001124396',
+  profileName: 'Enigma', displayName: 'Enigma', whatsappId: '+917001124396',
+  phoneVerificationStatus: 'verified', preferredChannel: 'both',
+  createdAt: d(14), updatedAt: d(0),
+};
+
+// All Dragon Store items that need conditional (idempotent) writes
+const dragonStoreItems = [
+  ...dragonStoreProducts,
+  ...dragonStoreProductIndex,
+  dragonSeller,
+  enigmaCustomer,
+];
+
+// ============================================
+// COMBINE ALL DATA (batch-written, existing data)
 // ============================================
 const allItems = [
   ...categories,
@@ -390,10 +457,32 @@ const allItems = [
   ...auditEntries,
 ];
 
+/**
+ * Seed a single item with conditional write for idempotency.
+ * Uses attribute_not_exists(PK) to skip if already present.
+ */
+async function seedItemIdempotent(item: Record<string, unknown>): Promise<'created' | 'already_exists'> {
+  try {
+    await docClient.send(new PutCommand({
+      TableName: TABLE_NAME,
+      Item: item,
+      ConditionExpression: 'attribute_not_exists(PK)',
+    }));
+    return 'created';
+  } catch (err: unknown) {
+    if (err && typeof err === 'object' && 'name' in err && (err as { name: string }).name === 'ConditionalCheckFailedException') {
+      return 'already_exists';
+    }
+    throw err;
+  }
+}
+
 async function seedDatabase() {
   console.log('🌱 Starting comprehensive demo data seeding...');
-  console.log(`📊 Total items to seed: ${allItems.length}`);
+  console.log(`📊 Total batch items to seed: ${allItems.length}`);
+  console.log(`📊 Total Dragon Store items (idempotent): ${dragonStoreItems.length}`);
 
+  // --- Phase 1: Batch write existing demo data ---
   const batchSize = 25;
   const batches: typeof allItems[] = [];
   for (let i = 0; i < allItems.length; i += batchSize) {
@@ -425,16 +514,25 @@ async function seedDatabase() {
     }
   }
 
+  // --- Phase 2: Idempotent Dragon Store demo data ---
+  console.log('\n🐉 Seeding Dragon Store demo data (idempotent)...');
+  for (const item of dragonStoreItems) {
+    const pk = item.PK as string;
+    const sk = item.SK as string;
+    const status = await seedItemIdempotent(item);
+    console.log(`  ${status === 'created' ? '✅' : '⏭️'} PK=${pk}, SK=${sk} — ${status}`);
+  }
+
   console.log('\n🎉 Demo data seeding complete!');
   console.log(`\n📋 Summary:`);
   console.log(`  - ${categories.length} Categories`);
-  console.log(`  - ${sellers.length} Sellers (4 active, 3 pending, 1 suspended)`);
-  console.log(`  - ${productDefs.length} Products across 6 categories`);
+  console.log(`  - ${sellers.length + 1} Sellers (4 active, 3 pending, 1 suspended) + Dragon Store`);
+  console.log(`  - ${productDefs.length + dragonStoreProducts.length} Products across 6 categories (incl. Dragon Store)`);
   console.log(`  - ${orderDefs.length} Orders across multiple statuses`);
   console.log(`  - ${insights.length} AI Insights (3 pending, 1 approved, 1 executed)`);
   console.log(`  - ${approvals.length} Approval Items`);
   console.log(`  - ${campaigns.length} Completed Campaigns`);
-  console.log(`  - ${customers.length} Customers`);
+  console.log(`  - ${customers.length + 1} Customers (incl. Enigma)`);
   console.log(`  - ${sessions.length} WhatsApp Sessions`);
   console.log(`  - ${auditEntries.length} Audit Log Entries`);
 }

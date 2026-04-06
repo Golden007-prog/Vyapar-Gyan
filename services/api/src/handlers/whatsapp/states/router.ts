@@ -2,6 +2,8 @@ import { logger } from '../../../utils/logger';
 import { greetingHandler } from './greeting-handler';
 import { browsingHandler } from './browsing-handler';
 import { checkoutHandler } from './checkout-handler';
+import { trackingHandler } from './tracking-handler';
+import { sellerOrderHandler } from './seller-order-handler';
 import { onboardingHandler } from './onboarding-handler';
 import {
   resolveOrCreateOnboardingSession,
@@ -116,6 +118,14 @@ export async function routeMessage(context: MessageContext): Promise<void> {
         await checkoutHandler(context);
         break;
       
+      case 'tracking':
+        await trackingHandler(context);
+        break;
+
+      case 'seller_orders':
+        await sellerOrderHandler(context);
+        break;
+
       case 'support':
         await handleSupport(context);
         break;

@@ -119,7 +119,7 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
       }
     }
 
-    // Publish SellerReplySent event for notification router
+    // Publish SellerReplySent event for notification router (backward compat)
     const config = await getConfig();
     await ebClient.send(
       new PutEventsCommand({
@@ -139,6 +139,39 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
         ],
       }),
     );
+
+    // Publish message.created for omnichannel fan-out (skip /ai handoff command)
+    if (trimmedContent !== '/ai') {
+      try {
+        await ebClient.send(
+          new PutEventsCommand({
+            Entries: [
+              {
+                Source: 'vyapargyan.messaging',
+                DetailType: 'message.created',
+                Detail: JSON.stringify({
+                  messageId,
+                  threadId: `THREAD#${customerUserId}`,
+                  senderUserId: sellerId,
+                  senderType: 'seller',
+                  recipientUserId: customerUserId,
+                  channel: 'web',
+                  content: body.content.trim(),
+                }),
+                EventBusName: config.eventBusName,
+              },
+            ],
+          }),
+        );
+      } catch (err) {
+        // Fire-and-forget — don't fail the reply if fan-out publish fails
+        logger.error('Failed to publish message.created event', err, {
+          messageId,
+          sellerId,
+          customerUserId,
+        });
+      }
+    }
 
     logger.info('Seller reply sent', {
       sellerId,

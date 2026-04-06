@@ -1,0 +1,131 @@
+# Implementation Plan
+
+- [x] 1. Write bug condition exploration test
+  - **Property 1: Bug Condition** - Cross-Channel Message Delivery Broken
+  - **CRITICAL**: This test MUST FAIL on unfixed code — failure confirms the bugs exist
+  - **DO NOT attempt to fix the test or the code when it fails**
+  - **NOTE**: This test encodes the expected behavior — it will validate the fix when it passes after implementation
+  - **GOAL**: Surface counterexamples that demonstrate all 5 defects in the sync chain
+  - **Scoped PBT Approach**: Use fast-check to generate message payloads and verify EventBridge publication and DynamoDB query patterns
+  - Test file: `services/api/src/handlers/messaging/__tests__/omnichannel-sync.property.test.ts`
+  - **Defect 1 — seller-reply-handler**: Mock EventBridge and call handler with a valid seller reply. Assert that a `message.created` event (source: `vyapargyan.messaging`) is published. On UNFIXED code, only `SellerReplySent` (source: `vyapargyan.chat`) is published — test FAILS.
+  - **Defect 2 — WebSocket sendMessage**: Mock EventBridge and call `send-message.handler` with a valid message payload. Assert that `PutEventsCommand` is called with `message.created`. On UNFIXED code, no EventBridge call is made — test FAILS.
+  - **Defect 3 — WhatsApp worker**: Mock EventBridge and simulate `handleCustomerMessage` flow via `putMessage()`. Assert that a `message.created` event is published after storage. On UNFIXED code, no EventBridge event — test FAILS.
+  - **Defect 4 — fanout GSI1 query**: Call `getActiveChannels()` with a userId that has connections stored as `CONN#{connId}` with `GSI1PK = USER_CONN#{userId}`. Assert the query uses `IndexName: 'GSI1'` and `GSI1PK = USER_CONN#{userId}`. On UNFIXED code, queries `PK = CONNECTION#{userId}` (wrong key) — test FAILS.
+  - **Defect 5 — fanout missing env var**: Call `pushToWebSocket` without `WEBSOCKET_API_ENDPOINT` env var. Assert it logs warning and skips. On UNFIXED code, this defect is confirmed — test FAILS (or passes trivially confirming the skip behavior).
+  - Run test on UNFIXED code
+  - **EXPECTED OUTCOME**: Test FAILS (this is correct — it proves the bugs exist)
+  - Document counterexamples found to understand root cause
+  - Mark task complete when test is written, run, and failure is documented
+  - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5_
+
+- [x] 2. Write preservation property tests (BEFORE implementing fix)
+  - **Property 2: Preservation** - Existing Behavior Unchanged
+  - **IMPORTANT**: Follow observation-first methodology
+  - Test file: `services/api/src/handlers/messaging/__tests__/omnichannel-sync-preservation.property.test.ts`
+  - **Observe on UNFIXED code, then write property-based tests capturing observed behavior:**
+  - Observe: WebSocket `sendMessage` stores messages in dual threads (`THREAD#{senderId}` and `THREAD#{recipientId}`) and pushes to recipient WebSocket connections — verify this continues to work identically
+  - Observe: WhatsApp worker stores inbound messages in `THREAD#{userId}` via `putMessage()` with correct fields (direction: 'inbound', channel: 'whatsapp', senderRole: 'customer') — verify storage is preserved
+  - Observe: seller-reply-handler manages handoff state correctly (`/ai` → endHandoff, normal reply → startHandoff/extendHandoff) — verify handoff logic is unchanged
+  - Observe: seller-reply-handler publishes `SellerReplySent` event (source: `vyapargyan.chat`) — verify this event is STILL published (backward compat)
+  - Observe: `filterOriginatingChannel()` in fanout.ts correctly filters out the originating channel — verify no-echo behavior preserved
+  - Observe: Connection Registry schema (`PK = CONN#{connectionId}`, `GSI1PK = USER_CONN#{userId}`) is unchanged by connect/disconnect handlers
+  - Use fast-check to generate random message payloads, userIds, and connection states
+  - Verify tests PASS on UNFIXED code
+  - **EXPECTED OUTCOME**: Tests PASS (this confirms baseline behavior to preserve)
+  - Mark task complete when tests are written, run, and passing on unfixed code
+  - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7_
+
+- [x] 3. Fix omnichannel sync — wire EventBridge events and correct fan-out queries
+
+  - [x] 3.1 Add `message.created` EventBridge publication to seller-reply-handler
+    - File: `services/api/src/handlers/seller/seller-reply-handler.ts`
+    - After dual-thread writes and handoff logic, publish a `message.created` event via EventBridge with `Source: 'vyapargyan.messaging'`, `DetailType: 'message.created'`
+    - Event detail must include: `messageId`, `threadId: THREAD#{customerUserId}`, `senderUserId: sellerId`, `senderType: 'seller'`, `recipientUserId: customerUserId`, `channel: 'web'`, `content: body.content.trim()`
+    - Skip `message.created` publish when content is `/ai` (handoff command, not a real message)
+    - Keep existing `SellerReplySent` event publication for backward compatibility with notification-router
+    - Do NOT use `routeMessage()` to avoid a third DynamoDB write (message is already stored in dual threads)
+    - _Bug_Condition: isBugCondition(input) where handler == 'seller-reply-handler' AND no message.created event published_
+    - _Expected_Behavior: message.created event published to EventBridge for every non-command seller reply_
+    - _Preservation: SellerReplySent event still published, handoff logic unchanged_
+    - _Requirements: 2.1, 3.5_
+
+  - [x] 3.2 Add EventBridge publication to WebSocket sendMessage handler
+    - File: `services/api/src/handlers/websocket/send-message.ts`
+    - Import `EventBridgeClient` and `PutEventsCommand` from `@aws-sdk/client-eventbridge`
+    - After step 5 (dual-thread store succeeds), publish `{ Source: 'vyapargyan.messaging', DetailType: 'message.created' }` with `recipientUserId: recipientId`, `channel: 'web'`, `senderType` mapped from `senderRole`
+    - EventBridge publish is fire-and-forget (wrapped in try/catch, don't block WebSocket response)
+    - Read `EVENT_BUS_NAME` from `process.env.EVENT_BUS_NAME`
+    - _Bug_Condition: isBugCondition(input) where handler == 'ws-send-message' AND NOT publishes('message.created')_
+    - _Expected_Behavior: message.created event published after dual-thread store_
+    - _Preservation: Dual-thread store and WebSocket push unchanged_
+    - _Requirements: 2.2, 3.3_
+
+  - [x] 3.3 Add EventBridge publication to WhatsApp worker after putMessage()
+    - File: `services/api/src/handlers/whatsapp/worker.ts`
+    - Import `EventBridgeClient` and `PutEventsCommand` from `@aws-sdk/client-eventbridge`
+    - In `handleCustomerMessage()`, after the `putMessage()` call, publish `{ Source: 'vyapargyan.messaging', DetailType: 'message.created' }` with `recipientUserId` set to the seller's userId
+    - Determine `recipientUserId` (seller): use `session.handoffSellerId` if in handoff mode, or look up the seller from the customer's session/thread context. If no seller can be determined, skip the EventBridge publish (message is still stored for polling)
+    - The WhatsApp worker already has `EVENT_BUS_NAME` env var and EventBridge permissions in CDK
+    - EventBridge publish is fire-and-forget (wrapped in try/catch)
+    - _Bug_Condition: isBugCondition(input) where handler == 'whatsapp-worker' AND NOT publishes('message.created')_
+    - _Expected_Behavior: message.created event published after putMessage() for real-time WebSocket push_
+    - _Preservation: putMessage() call and message storage unchanged_
+    - _Requirements: 2.3, 3.2_
+
+  - [x] 3.4 Fix fan-out Lambda DynamoDB query to use GSI1 with USER_CONN#{userId}
+    - File: `services/api/src/handlers/messaging/fanout.ts`
+    - In `getActiveChannels()`, change WebSocket connection query from `PK = CONNECTION#{recipientUserId}` to `IndexName: 'GSI1'`, `GSI1PK = USER_CONN#{recipientUserId}`
+    - In `pushToWebSocket()`, apply the same GSI1 query fix for full connection list retrieval
+    - Extract `connectionId` from GSI1 query results (items have a `connectionId` field, as seen in `send-message.ts` `getConnectionsForUser()`)
+    - _Bug_Condition: isBugCondition(input) where handler == 'fanout' AND queriesKey('CONNECTION#{userId}')_
+    - _Expected_Behavior: fan-out queries GSI1 with USER_CONN#{userId} and finds active connections_
+    - _Preservation: Connection Registry schema unchanged, filterOriginatingChannel logic unchanged_
+    - _Requirements: 2.4, 3.6_
+
+  - [x] 3.5 Pass WEBSOCKET_API_ENDPOINT env var to fan-out Lambda in events-stack
+    - File: `infra/cdk/lib/stacks/events-stack.ts`
+    - Add `webSocketEndpoint?: string` to `EventsStackProps` interface
+    - Add `WEBSOCKET_API_ENDPOINT: props.webSocketEndpoint || ''` to the `messageFanoutFunction` environment block
+    - In the CDK app entry point (where stacks are instantiated), pass `webSocketStack.webSocketEndpoint` (the `https://` callback URL) to the events stack as `webSocketEndpoint`
+    - Note: The callback URL format is `https://{apiId}.execute-api.{region}.amazonaws.com/{stage}` (already constructed in websocket-stack.ts as `webSocketCallbackUrl`)
+    - Expose `webSocketCallbackUrl` as a public property on `WebSocketStack` if not already available (currently `webSocketEndpoint` is `wss://...` — need the `https://` variant for API Gateway Management API)
+    - _Bug_Condition: isBugCondition(input) where handler == 'fanout' AND NOT hasEnvVar('WEBSOCKET_API_ENDPOINT')_
+    - _Expected_Behavior: fan-out Lambda has WEBSOCKET_API_ENDPOINT set to the https:// callback URL_
+    - _Preservation: All other events-stack Lambda configurations unchanged_
+    - _Requirements: 2.5_
+
+  - [x] 3.6 Add EventBridge integration for sendMessage Lambda in websocket-stack
+    - File: `infra/cdk/lib/stacks/websocket-stack.ts`
+    - Add `eventBus` as an optional prop in `WebSocketStackProps` (import `EventBus` from `aws-cdk-lib/aws-events`)
+    - Add `EVENT_BUS_NAME: eventBus.eventBusName` to the `sendMessageFunction` environment (add to `envWithEndpoint` or directly)
+    - Grant `eventBus.grantPutEventsTo(sendMessageFunction)` for IAM permissions
+    - Update the CDK app entry point to pass `eventBus` from events-stack to websocket-stack
+    - _Bug_Condition: sendMessage Lambda has no EVENT_BUS_NAME env var and no EventBridge permissions_
+    - _Expected_Behavior: sendMessage Lambda can publish events to EventBridge_
+    - _Preservation: All other WebSocket stack configurations unchanged_
+    - _Requirements: 2.2_
+
+  - [x] 3.7 Verify bug condition exploration test now passes
+    - **Property 1: Expected Behavior** - Cross-Channel Message Delivery Fixed
+    - **IMPORTANT**: Re-run the SAME test from task 1 — do NOT write a new test
+    - The test from task 1 encodes the expected behavior for all 5 defects
+    - When this test passes, it confirms: seller-reply-handler publishes `message.created`, sendMessage publishes `message.created`, WhatsApp worker publishes `message.created`, fan-out queries GSI1 correctly, fan-out has WEBSOCKET_API_ENDPOINT
+    - Run bug condition exploration test from step 1
+    - **EXPECTED OUTCOME**: Test PASSES (confirms all 5 bugs are fixed)
+    - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5_
+
+  - [x] 3.8 Verify preservation tests still pass
+    - **Property 2: Preservation** - Existing Behavior Unchanged
+    - **IMPORTANT**: Re-run the SAME tests from task 2 — do NOT write new tests
+    - Run preservation property tests from step 2
+    - **EXPECTED OUTCOME**: Tests PASS (confirms no regressions)
+    - Confirm: dual-thread store works, putMessage storage works, handoff logic works, SellerReplySent still published, no-echo filtering works, Connection Registry schema unchanged
+    - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7_
+
+- [x] 4. Checkpoint — Ensure all tests pass
+  - Run full test suite: `pnpm --filter @vyapargyan/api test`
+  - Verify all property-based tests pass (bug condition + preservation)
+  - Verify no existing tests are broken by the changes
+  - Run CDK synth to verify infrastructure changes compile: `cd infra/cdk && pnpm cdk synth`
+  - Ask the user if questions arise

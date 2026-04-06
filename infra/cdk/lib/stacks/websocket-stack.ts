@@ -34,6 +34,10 @@ export interface WebSocketStackProps extends cdk.StackProps {
   table: Table;
   /** Cognito User Pool from AuthStack */
   userPool: UserPool;
+  /** EventBridge event bus name for cross-channel message delivery (string to avoid cyclic cross-stack refs) */
+  eventBusName?: string;
+  /** EventBridge event bus ARN for granting putEvents permission */
+  eventBusArn?: string;
 }
 
 /**
@@ -49,6 +53,9 @@ export class WebSocketStack extends cdk.Stack {
 
   /** WebSocket endpoint URL */
   public readonly webSocketEndpoint: string;
+
+  /** WebSocket callback URL (https://) for API Gateway Management API */
+  public readonly webSocketCallbackUrl: string;
 
   constructor(scope: Construct, id: string, props: WebSocketStackProps) {
     super(scope, id, props);
@@ -142,6 +149,19 @@ export class WebSocketStack extends cdk.Stack {
       tracing: Tracing.ACTIVE,
       environment: envWithEndpoint,
     });
+
+    // ========================================================================
+    // EventBridge — sendMessage publishes message.created for cross-channel fan-out
+    // ========================================================================
+
+    if (props.eventBusName && props.eventBusArn) {
+      sendMessageFunction.addEnvironment('EVENT_BUS_NAME', props.eventBusName);
+      sendMessageFunction.addToRolePolicy(new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['events:PutEvents'],
+        resources: [props.eventBusArn],
+      }));
+    }
 
     // ========================================================================
     // DynamoDB Permissions — all 4 Lambdas get read/write
@@ -277,6 +297,8 @@ export class WebSocketStack extends cdk.Stack {
     // ========================================================================
 
     this.webSocketEndpoint = `wss://${this.webSocketApi.ref}.execute-api.${this.region}.amazonaws.com/${stageName}`;
+
+    this.webSocketCallbackUrl = webSocketCallbackUrl;
 
     new cdk.CfnOutput(this, 'WebSocketEndpoint', {
       value: this.webSocketEndpoint,

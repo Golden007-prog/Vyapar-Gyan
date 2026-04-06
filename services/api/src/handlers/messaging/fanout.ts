@@ -6,7 +6,7 @@
  * to every active channel EXCEPT the originating channel (avoids echo).
  *
  * Active channel detection:
- *   - WebSocket: query CONNECTION#{userId} records in DynamoDB
+ *   - WebSocket: query GSI1 with USER_CONN#{userId} in DynamoDB
  *   - WhatsApp:  recipient has a phone number AND an active session
  *
  * Lambda config: timeout 30s, memory 256MB
@@ -57,7 +57,7 @@ const docClient = DynamoDBDocumentClient.from(rawClient, {
 /**
  * Determine which channels the recipient is currently active on.
  *
- * - WebSocket: look for CONNECTION#{userId} items in DynamoDB
+ * - WebSocket: query GSI1 with USER_CONN#{userId} for Connection Registry items
  * - WhatsApp: recipient has a phone number and an active session
  */
 export async function getActiveChannels(
@@ -66,12 +66,14 @@ export async function getActiveChannels(
 ): Promise<ActiveChannel[]> {
   const channels: ActiveChannel[] = [];
 
-  // Check WebSocket connections
+  // Check WebSocket connections via GSI1 (Connection Registry uses CONN#{connId} as PK,
+  // USER_CONN#{userId} as GSI1PK — see send-message.ts getConnectionsForUser())
   const wsResult = await docClient.send(
     new QueryCommand({
       TableName: tableName,
-      KeyConditionExpression: 'PK = :pk',
-      ExpressionAttributeValues: { ':pk': `CONNECTION#${recipientUserId}` },
+      IndexName: 'GSI1',
+      KeyConditionExpression: 'GSI1PK = :pk',
+      ExpressionAttributeValues: { ':pk': `USER_CONN#${recipientUserId}` },
       Limit: 1, // we only need to know if at least one exists
     }),
   );
@@ -123,12 +125,14 @@ async function pushToWebSocket(
     return;
   }
 
-  // Query all active connections for this user
+  // Query all active connections for this user via GSI1
   const result = await docClient.send(
     new QueryCommand({
       TableName: tableName,
-      KeyConditionExpression: 'PK = :pk',
-      ExpressionAttributeValues: { ':pk': `CONNECTION#${recipientUserId}` },
+      IndexName: 'GSI1',
+      KeyConditionExpression: 'GSI1PK = :pk',
+      ExpressionAttributeValues: { ':pk': `USER_CONN#${recipientUserId}` },
+      ProjectionExpression: 'connectionId',
     }),
   );
 
@@ -141,7 +145,7 @@ async function pushToWebSocket(
   const message = JSON.stringify(payload);
 
   for (const item of result.Items) {
-    const connectionId = item.SK as string;
+    const connectionId = item.connectionId as string;
     try {
       await apiClient.send(
         new PostToConnectionCommand({

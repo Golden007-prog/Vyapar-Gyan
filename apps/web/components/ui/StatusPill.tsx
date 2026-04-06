@@ -3,6 +3,20 @@ import type { ReactNode } from 'react';
 // --- Status color configs by domain ---
 
 const ORDER_STATUS: Record<string, { label: string; bg: string; text: string }> = {
+  // New order confirmation flow statuses
+  pending_seller_confirmation: { label: 'Awaiting Seller', bg: 'bg-yellow-100', text: 'text-yellow-800' },
+  confirmed: { label: 'Confirmed', bg: 'bg-blue-100', text: 'text-blue-800' },
+  payment_pending: { label: 'Payment Pending', bg: 'bg-amber-100', text: 'text-amber-800' },
+  paid: { label: 'Paid', bg: 'bg-blue-100', text: 'text-blue-800' },
+  preparing: { label: 'Preparing', bg: 'bg-cyan-100', text: 'text-cyan-800' },
+  shipped: { label: 'Shipped', bg: 'bg-purple-100', text: 'text-purple-800' },
+  delivered: { label: 'Delivered', bg: 'bg-green-100', text: 'text-green-800' },
+  completed: { label: 'Completed', bg: 'bg-green-100', text: 'text-green-800' },
+  rejected: { label: 'Rejected', bg: 'bg-red-100', text: 'text-red-800' },
+  cancelled: { label: 'Cancelled', bg: 'bg-red-100', text: 'text-red-800' },
+  payment_failed: { label: 'Payment Failed', bg: 'bg-red-100', text: 'text-red-800' },
+  expired: { label: 'Expired', bg: 'bg-gray-100', text: 'text-gray-800' },
+  // Legacy statuses for backward compatibility
   PENDING_PAYMENT: { label: 'Pending', bg: 'bg-yellow-100', text: 'text-yellow-800' },
   PAID: { label: 'Paid', bg: 'bg-blue-100', text: 'text-blue-800' },
   PROCESSING: { label: 'Confirmed', bg: 'bg-blue-100', text: 'text-blue-800' },

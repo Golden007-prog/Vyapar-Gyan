@@ -74,6 +74,9 @@ export class RazorpayAdapter {
     const amountInPaise = Math.round(amount * 100);
     const sellerAmountInPaise = Math.round(sellerAmount * 100);
 
+    // Payment link expires 30 minutes from now (Unix timestamp in seconds)
+    const expireBy = Math.floor(Date.now() / 1000) + 30 * 60;
+
     const payload = {
       amount: amountInPaise,
       currency: 'INR',
@@ -84,10 +87,11 @@ export class RazorpayAdapter {
         name: customerName || 'Customer',
       },
       notify: {
-        sms: true,
-        whatsapp: true,
+        sms: false,
+        whatsapp: false,
       },
-      reminder_enable: true,
+      reminder_enable: false,
+      expire_by: expireBy,
       callback_url: `${process.env.API_BASE_URL}/api/webhooks/razorpay/callback`,
       callback_method: 'get',
       reference_id: orderId,
