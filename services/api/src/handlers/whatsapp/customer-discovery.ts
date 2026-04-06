@@ -348,10 +348,11 @@ async function enterStore(ctx: CustomerDiscoveryContext, store: StoreResult): Pr
     currentStoreName: store.storeName,
   });
 
-  // Count products for this seller
+  // Count products for this seller — try SELLER#{sellerId} PK pattern
   let productCount = 0;
   try {
     const table = await tableName();
+    // Try the primary PK pattern
     const res = await docClient.send(
       new QueryCommand({
         TableName: table,
@@ -364,6 +365,23 @@ async function enterStore(ctx: CustomerDiscoveryContext, store: StoreResult): Pr
       }),
     );
     productCount = res.Count ?? 0;
+
+    // If no products found, also try scanning PRODUCT# items with sellerId attribute
+    if (productCount === 0) {
+      const scanRes = await docClient.send(
+        new ScanCommand({
+          TableName: table,
+          FilterExpression: 'begins_with(PK, :prodPrefix) AND sellerId = :sid',
+          ExpressionAttributeValues: {
+            ':prodPrefix': 'PRODUCT#',
+            ':sid': store.sellerId,
+          },
+          Select: 'COUNT',
+          Limit: 100,
+        }),
+      );
+      productCount = scanRes.Count ?? 0;
+    }
   } catch { /* ignore — show 0 */ }
 
   const msg = [
@@ -594,7 +612,7 @@ async function searchByStoreName(query: string): Promise<StoreResult[]> {
     });
 
     if (matches.length > 0) {
-      return matches.map(item => ({
+      const results = matches.map(item => ({
         sellerId: (item.userId || item.PK?.toString().replace('USER#', '')) as string,
         storeName: (item.storeName || item.businessName || 'Unknown Store') as string,
         ...(item.city != null ? { city: item.city as string } : {}),
@@ -603,15 +621,24 @@ async function searchByStoreName(query: string): Promise<StoreResult[]> {
           ? { city: (item.businessAddress as any).city as string, pincode: (item.businessAddress as any).pincode as string }
           : {}),
       }));
+      // Deduplicate by storeName — prefer sellerIds that end with digits (e.g. seller-dragon-001 over seller-dragon)
+      const seen = new Map<string, StoreResult>();
+      for (const r of results) {
+        const key = r.storeName.toLowerCase();
+        const existing = seen.get(key);
+        if (!existing || r.sellerId.length > existing.sellerId.length) {
+          seen.set(key, r);
+        }
+      }
+      return Array.from(seen.values());
     }
   } catch (err) {
     logger.error('Store name scan failed', { query, error: err instanceof Error ? err.message : String(err) });
   }
 
-  // Hardcoded fallback
+  // Hardcoded fallback — only seller-dragon-001 has products
   const KNOWN_STORES: StoreResult[] = [
     { sellerId: 'seller-dragon-001', storeName: 'Dragon Store', city: 'Mumbai', pincode: '400001' },
-    { sellerId: 'seller-dragon', storeName: 'Dragon Store', city: 'Mumbai', pincode: '400001' },
   ];
   const hardcoded = KNOWN_STORES.filter(s =>
     s.storeName.toLowerCase().includes(lowerQuery) || lowerQuery.includes(s.storeName.toLowerCase()),
