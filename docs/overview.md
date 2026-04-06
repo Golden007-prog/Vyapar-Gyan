@@ -269,9 +269,9 @@ Systematic fix of 7 interconnected bugs that broke the end-to-end omnichannel me
 - CI: `.github/workflows/deploy-gh-pages.yml`
 
 **Backend:** AWS CDK (8 stacks) → CloudFormation → ap-south-1
-- Account: 257656107715
+- Account: 856888988795
 - Region: ap-south-1
-- Deploy: `cd infra/cdk && npx cdk deploy --all --context env=dev --context account=257656107715 --context region=ap-south-1`
+- Deploy: `cd infra/cdk && npx cdk deploy --all --context env=dev --context account=856888988795 --context region=ap-south-1`
 
 **MCP Servers:** 3 local servers for developer/operator tooling
 - commerce-ops: orders, payments, inventory, WhatsApp sessions, CloudWatch logs

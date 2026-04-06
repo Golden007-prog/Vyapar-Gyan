@@ -405,9 +405,9 @@ If GitHub Pages build fails or API is unreachable:
 
 ### Demo-Safe Fallback
 - Pre-create 3 demo accounts before presentation:
-  - Admin: `+91 9000000001` / `DemoAdmin@123`
-  - Seller: `+91 9000000002` / `DemoSeller@123`
-  - Customer: `+91 9000000003` / `DemoCustomer@123`
+  - Seller: `+91 8927049085` / `DemoSeller@123`
+  - Customer: `+91 7001124396` / `DemoCustomer@123`
+  - Admin: `9000000001` / `DemoAdmin@123`
 - If OTP delivery is delayed (>10s), switch to pre-seeded account
 - Add a visible "Demo Accounts" card on login page (removable via env flag)
 

@@ -8,9 +8,9 @@
 
 | Role | Phone | Password |
 |------|-------|----------|
+| **Seller** (Dragon Store Owner) | +91 8927049085 | DemoSeller@123 |
+| **Customer** (Enigma) | +91 7001124396 | DemoCustomer@123 |
 | **Admin** | 9000000001 | DemoAdmin@123 |
-| **Seller** | 9000000002 | DemoSeller@123 |
-| **Customer** | 9000000003 | DemoCustomer@123 |
 
 ---
 

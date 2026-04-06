@@ -55,12 +55,12 @@ India's 12 million local retailers (kirana stores, street vendors, small shops) 
 - **5% commission** model with break-even at ₹75K GMV/month
 
 ### Implementation Status
-- ✅ 55+ Lambda handlers across 10 domains
-- ✅ 22 Next.js pages, 14 React components
-- ✅ 95.2% requirement coverage (31/34 PASS, 3 PARTIAL)
-- ✅ 14 test suites with property-based testing
-- ✅ Complete AWS infrastructure deployed
+- ✅ 65+ Lambda handlers across 12 domains
+- ✅ 30+ Next.js pages, 20+ React components
+- ✅ 881 tests across 76 test suites (property-based testing with fast-check)
+- ✅ Complete AWS infrastructure deployed (8 CDK stacks)
 - ✅ 3 MCP servers for developer tooling
+- ✅ Live at https://golden007-prog.github.io/Vyapar-Gyan/
 
 ### Performance Metrics
 - API latency: 95-250ms (p95)
@@ -85,8 +85,9 @@ India's 12 million local retailers (kirana stores, street vendors, small shops) 
 
 ### Prototype Assets
 - **GitHub:** https://github.com/Golden007-prog/Vyapar-Gyan.git
-- **Demo Video:** [DEMO_VIDEO_LINK] (3 minutes)
-- **Live Demo:** Available via local setup with demo accounts
+- **Live Demo:** https://golden007-prog.github.io/Vyapar-Gyan/
+- **WhatsApp Bot:** +1 (947) 234-9399
+- **Demo Accounts:** Seller (+91 8927049085 / DemoSeller@123), Customer (+91 7001124396 / DemoCustomer@123), Admin (9000000001 / DemoAdmin@123)
 - **Documentation:** Complete architecture, API specs, deployment guides
 
 ### Team
