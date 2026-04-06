@@ -288,10 +288,19 @@ export async function getUserByPhone(phoneNumber: string): Promise<UserProfile |
       IndexName: 'GSI1',
       KeyConditionExpression: 'GSI1PK = :pk',
       ExpressionAttributeValues: { ':pk': `PHONE#${phoneNumber}` },
-      Limit: 1,
+      Limit: 10,
     }),
   );
-  return (res.Items?.[0] as UserProfile) ?? null;
+  // Prioritize USER PROFILE records over SESSION records
+  // USER profiles have PK starting with "USER#" and SK = "PROFILE"
+  const items = res.Items ?? [];
+  const profileItem = items.find(
+    (item: any) => typeof item.PK === 'string' && item.PK.startsWith('USER#') && item.SK === 'PROFILE',
+  );
+  if (profileItem) return profileItem as UserProfile;
+  // Fallback: return first item with a role field (legacy compat)
+  const withRole = items.find((item: any) => item.role);
+  return (withRole as UserProfile) ?? null;
 }
 
 export async function updateUserProfile(
