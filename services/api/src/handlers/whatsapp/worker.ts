@@ -673,17 +673,22 @@ async function handleCustomerMessage(context: {
   // Customer discovery handles store search, favorites, pincode/city lookup
   const messageText = message.text?.body?.trim() || '';
   // Route to customer discovery for greetings, new sessions, menu commands, and store selection
+  // Customer discovery has its own state machine (home → search_results → store_browsing)
+  // that handles store search, product search, favorites, etc.
+  // ONLY ordering/payment/checkout states bypass discovery.
   const GREETING_RE = /^(hi|hello|hey|namaste|namaskar|hola|good\s*(morning|afternoon|evening)|howdy|sup|yo|menu|home|back)$/i;
   const isGreeting = GREETING_RE.test(messageText);
   const isDiscoveryTrigger = sessionResult.isNew
     || session.state === 'greeting'
+    || session.state === 'browsing'
+    || session.state === 'idle'
     || isGreeting
     || /^(menu|home|discover|stores|1|2|3|4)$/i.test(messageText)
     || /^store\s+\d+$/i.test(messageText)
     || /^add to fav/i.test(messageText);
 
-  // Greetings and menu commands ALWAYS go to discovery, even from browsing state
-  // Only ordering/payment states are protected from interruption
+  // Route to discovery for all non-checkout states
+  // Discovery handler manages its own state: home → search_results → store_browsing
   if (isDiscoveryTrigger && session.state !== 'ordering' && session.state !== 'payment') {
     logger.info('Routing to customer discovery', { userId, sessionState: session.state, isNew: sessionResult.isNew });
     await handleCustomerDiscovery({
@@ -1371,7 +1376,7 @@ async function _executeVoicePipeline(context: VoiceContext, pipelineStart: numbe
   // ── Step 9: Store outbound audio in S3 and generate pre-signed URL ──
   let presignedUrl: string;
   const outboundTs = Date.now();
-  const outboundKey = `${VOICE_CONFIG.s3OutboundPrefix}/${userId}/${outboundTs}.wav`;
+  const outboundKey = `${VOICE_CONFIG.s3OutboundPrefix}/${userId}/${outboundTs}.ogg`;
   try {
     await s3Client.send(new PutObjectCommand({
       Bucket: voiceConfig.productImagesBucket,

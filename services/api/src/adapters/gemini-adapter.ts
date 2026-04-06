@@ -28,7 +28,9 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
  * Gemini TTS returns raw L16 PCM — adding this 44-byte header makes
  * the audio playable by Twilio/WhatsApp without any encoding library.
  */
-function wrapPcmAsWav(pcm: Buffer, sampleRate: number, channels: number, bitsPerSample: number): Buffer {
+// @ts-ignore — kept for future use when Gemini returns raw PCM
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function _wrapPcmAsWav(pcm: Buffer, sampleRate: number, channels: number, bitsPerSample: number): Buffer {
   const byteRate = sampleRate * channels * (bitsPerSample / 8);
   const blockAlign = channels * (bitsPerSample / 8);
   const dataSize = pcm.length;
@@ -518,15 +520,18 @@ Return JSON in this exact format:
   }
 
   /**
-   * Convert text to speech audio via Gemini TTS
+   * Convert text to speech audio via AWS Polly
    *
-   * Uses the Gemini 2.5 Flash TTS model with multimodal generation to produce
-   * spoken audio from text input. Returns raw audio bytes as a Buffer.
+   * Uses AWS Polly neural voices to produce spoken audio in OGG/Opus format,
+   * which is natively supported by WhatsApp via Twilio.
+   *
+   * Note: Gemini TTS (gemini-2.5-flash-preview-tts) returns raw PCM L16 which
+   * Twilio cannot deliver to WhatsApp. Polly outputs OGG/Opus directly.
    *
    * @param text - Text to convert to speech
    * @param language - Language of the text (e.g. 'Hindi', 'English')
-   * @param voiceStyle - Voice style hint (default: 'conversational')
-   * @returns Buffer containing audio data (caller wraps as OGG/Opus for WhatsApp)
+   * @param voiceStyle - Voice style hint (unused, kept for API compat)
+   * @returns Buffer containing OGG/Opus audio data
    * @throws Error if TTS generation fails (caller handles fallback)
    */
   async textToSpeech(
@@ -535,60 +540,56 @@ Return JSON in this exact format:
     voiceStyle: 'conversational' = 'conversational',
   ): Promise<Buffer> {
     try {
-      const client = await this.getClient();
+      const { PollyClient, SynthesizeSpeechCommand } = await import('@aws-sdk/client-polly');
+      const polly = new PollyClient({ region: process.env.AWS_REGION || 'ap-south-1' });
 
-      // Use the TTS-specific model with speech generation config.
-      // The @google/generative-ai SDK v0.21 doesn't have typed TTS support,
-      // so we pass the TTS config fields via generationConfig cast.
-      //
-      // Gemini TTS returns raw PCM L16 at 24kHz. We wrap it in a WAV header
-      // so Twilio can transcode and deliver it to WhatsApp.
-      const model = client.getGenerativeModel({
-        model: 'gemini-2.5-flash-preview-tts',
-        generationConfig: {
-          responseModalities: ['AUDIO'],
-          speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: {
-                voiceName: 'Kore',
-              },
-            },
-          },
-        } as any,
+      // Map language names to Polly voice IDs (neural where available)
+      const voiceMap: Record<string, { voiceId: string; langCode: string; engine: string }> = {
+        'hindi':    { voiceId: 'Kajal', langCode: 'hi-IN', engine: 'neural' },
+        'english':  { voiceId: 'Kajal', langCode: 'en-IN', engine: 'neural' },
+        'tamil':    { voiceId: 'Kajal', langCode: 'en-IN', engine: 'neural' },
+        'telugu':   { voiceId: 'Kajal', langCode: 'en-IN', engine: 'neural' },
+        'marathi':  { voiceId: 'Kajal', langCode: 'hi-IN', engine: 'neural' },
+        'bengali':  { voiceId: 'Kajal', langCode: 'hi-IN', engine: 'neural' },
+        'gujarati': { voiceId: 'Kajal', langCode: 'hi-IN', engine: 'neural' },
+        'kannada':  { voiceId: 'Kajal', langCode: 'en-IN', engine: 'neural' },
+      };
+
+      const langKey = language.toLowerCase();
+      const voice = voiceMap[langKey] ?? voiceMap['hindi']!;
+
+      const command = new SynthesizeSpeechCommand({
+        Text: text,
+        OutputFormat: 'ogg_vorbis',
+        VoiceId: voice.voiceId as any,
+        LanguageCode: voice.langCode as any,
+        Engine: voice.engine as any,
       });
 
-      const prompt = `Say in a ${voiceStyle} tone in ${language}:\n${text}`;
-
       const result = await withTimeout(
-        model.generateContent(prompt),
+        polly.send(command),
         GEMINI_TIMEOUT_MS,
-        'Gemini TTS generation',
+        'Polly TTS generation',
       );
-      const response = result.response;
 
-      // Extract audio data from the response inline data
-      const candidate = response.candidates?.[0];
-      const part = candidate?.content?.parts?.[0];
-      const inlineData = (part as any)?.inlineData;
-
-      if (!inlineData?.data) {
-        throw new Error('No audio data in Gemini TTS response');
+      if (!result.AudioStream) {
+        throw new Error('No audio data in Polly TTS response');
       }
 
-      const pcmBuffer = Buffer.from(inlineData.data, 'base64');
-      const returnedMimeType = inlineData.mimeType || 'unknown';
-
-      // Wrap raw PCM in a WAV header so Twilio/WhatsApp can play it.
-      // Gemini returns: audio/L16;codec=pcm;rate=24000 (16-bit mono PCM at 24kHz)
-      const audioBuffer = wrapPcmAsWav(pcmBuffer, 24000, 1, 16);
+      // Convert the readable stream to a Buffer
+      const chunks: Uint8Array[] = [];
+      for await (const chunk of result.AudioStream as any) {
+        chunks.push(chunk);
+      }
+      const audioBuffer = Buffer.concat(chunks);
 
       logger.info('TTS audio generated successfully', {
         language,
         voiceStyle,
         textLength: text.length,
-        pcmSizeBytes: pcmBuffer.length,
-        wavSizeBytes: audioBuffer.length,
-        mimeType: returnedMimeType,
+        audioSizeBytes: audioBuffer.length,
+        voiceId: voice.voiceId,
+        engine: voice.engine,
       });
 
       return audioBuffer;
