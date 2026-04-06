@@ -185,10 +185,9 @@ export default function InboxPage() {
     // PRIMARY: Send via HTTP API to backend
     try {
       const { fetchWithAuth } = await import('@/lib/api-client');
-      await fetchWithAuth('/api/v1/seller/reply', {
+      await fetchWithAuth(`/api/v1/seller/inbox/${selectedId}/reply`, {
         method: 'POST',
         body: JSON.stringify({
-          customerId: selectedId,
           content: text,
           channel: selectedSession?.channel || 'web',
         }),
