@@ -22,9 +22,9 @@ pnpm --filter @vyapargyan/web dev
 
 | Role | Phone | Password | What You'll See |
 |------|-------|----------|-----------------|
+| Seller (Dragon Store Owner) | +91 8927049085 | DemoSeller@123 | AI insights, approval inbox, inventory upload (CSV + OCR), customer inbox, orders, campaigns |
+| Customer (Enigma) | +91 7001124396 | DemoCustomer@123 | Product catalog, real-time chat with seller, order tracking, account settings |
 | Admin (Platform) | 9000000001 | DemoAdmin@123 | Platform metrics, seller moderation, system health, audit logs |
-| Seller (Dragon Store Owner) | 8927049085 | DemoSeller@123 | AI insights, approval inbox, inventory upload (CSV + OCR), customer inbox, orders, campaigns |
-| Customer (Enigma) | 7001124396 | DemoCustomer@123 | Product catalog, real-time chat with seller, order tracking, account settings |
 
 **WhatsApp Bot:** +1 (947) 234-9399 — Send any message to start the omnichannel experience (role-based routing auto-detects seller/customer/new user).
 

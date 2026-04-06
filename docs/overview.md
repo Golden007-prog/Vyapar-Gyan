@@ -6,6 +6,16 @@ VyaparGyan is an AI-powered multi-seller marketplace aggregator built for local 
 
 **Live Demo:** https://golden007-prog.github.io/Vyapar-Gyan/
 
+### Demo Accounts
+
+| Role | Phone | Password |
+|------|-------|----------|
+| Seller (Dragon Store Owner) | +91 8927049085 | DemoSeller@123 |
+| Customer (Enigma) | +91 7001124396 | DemoCustomer@123 |
+| Admin (Platform) | 9000000001 | DemoAdmin@123 |
+
+**WhatsApp Bot:** +1 (947) 234-9399
+
 ## Architecture
 
 ```
