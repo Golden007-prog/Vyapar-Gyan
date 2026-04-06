@@ -420,6 +420,38 @@ export async function updateSessionIntent(
   );
 }
 
+/**
+ * Store customer discovery context (search results, selected store) in the session.
+ * Used by customer-discovery.ts to track state across messages.
+ */
+export async function updateDiscoveryContext(
+  userId: string,
+  discoveryContext: Record<string, unknown>,
+): Promise<void> {
+  const table = await tableName();
+  const now = new Date().toISOString();
+  await docClient.send(
+    new UpdateCommand({
+      TableName: table,
+      Key: { PK: `SESSION#${userId}`, SK: 'ACTIVE' },
+      UpdateExpression: 'SET discoveryContext = :ctx, lastActivityAt = :now',
+      ExpressionAttributeValues: { ':ctx': discoveryContext, ':now': now },
+    }),
+  );
+}
+
+/**
+ * Read the raw session record for a user (SESSION#{userId} ACTIVE).
+ * Returns the full DynamoDB item including any extra attributes like discoveryContext.
+ */
+export async function getSessionRaw(userId: string): Promise<Record<string, unknown> | null> {
+  const table = await tableName();
+  const res = await docClient.send(
+    new GetCommand({ TableName: table, Key: { PK: `SESSION#${userId}`, SK: 'ACTIVE' } }),
+  );
+  return (res.Item as Record<string, unknown>) ?? null;
+}
+
 // ============================================================================
 // 3. Cart — PK: CART#{userId}  SK: ACTIVE  (version-based conditional writes)
 // ============================================================================

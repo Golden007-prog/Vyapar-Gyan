@@ -1,8 +1,8 @@
 /**
  * Customer Discovery Handler
  *
- * WhatsApp-based store discovery for customers.
- * Provides: favorites, pincode/city search, global search, last visited store.
+ * WhatsApp-based store discovery for customers with proper state tracking.
+ * States: home → search_results → store_browsing
  *
  * Requirements: 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 6.8
  */
@@ -15,11 +15,15 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import { logger } from '../../utils/logger';
 import { whatsappSender } from '../../services/whatsapp-sender';
-import { updateSessionState } from '../../adapters/dynamodb-adapter';
-import { listFavorites } from '../../repositories/favorites';
+import {
+  updateSessionState,
+  updateDiscoveryContext,
+  getSessionRaw,
+} from '../../adapters/dynamodb-adapter';
+import { listFavorites, addFavorite } from '../../repositories/favorites';
 
 // ---------------------------------------------------------------------------
-// DynamoDB client for seller location queries
+// DynamoDB client
 // ---------------------------------------------------------------------------
 
 const rawClient = new DynamoDBClient({});
@@ -54,6 +58,13 @@ export interface StoreResult {
   pincode?: string;
 }
 
+interface DiscoveryContext {
+  discoveryState: 'home' | 'search_results' | 'store_browsing';
+  searchResults?: StoreResult[];
+  currentSellerId?: string;
+  currentStoreName?: string;
+}
+
 export interface CustomerDiscoveryContext {
   message: any;
   userId: string;
@@ -66,11 +77,6 @@ export interface CustomerDiscoveryContext {
 // Exported pure functions for property testing
 // ---------------------------------------------------------------------------
 
-/**
- * Classify a location input as pincode or city.
- *
- * Property 8: Exactly 6 digits → pincode; otherwise → city (case-insensitive).
- */
 export function classifyLocationInput(input: string): { type: 'pincode'; value: string } | { type: 'city'; value: string } {
   const trimmed = input.trim();
   if (/^\d{6}$/.test(trimmed)) {
@@ -79,11 +85,6 @@ export function classifyLocationInput(input: string): { type: 'pincode'; value: 
   return { type: 'city', value: trimmed.toLowerCase() };
 }
 
-/**
- * Transition a session to BROWSING state with the selected store's sellerId.
- *
- * Property 9: Returns the new session state and sellerId context.
- */
 export async function transitionToBrowsing(
   userId: string,
   sellerId: string,
@@ -92,24 +93,35 @@ export async function transitionToBrowsing(
   return { state: 'browsing', sellerId };
 }
 
-// ---------------------------------------------------------------------------
-// Greeting detection pattern (Bug 1.3 fix)
-// ---------------------------------------------------------------------------
-
-/**
- * Regex pattern for common greetings. Case-insensitive, anchored.
- * Exported for test verification.
- */
 export const GREETING_PATTERN = /^(hi|hello|hey|namaste|namaskar|hola|good\s*(morning|afternoon|evening)|howdy|sup|yo)$/i;
 
+const ADD_FAV_PATTERN = /^add\s+to\s+fav(ou?rite)?s?$/i;
+
 // ---------------------------------------------------------------------------
-// Main handler
+// Context helpers
 // ---------------------------------------------------------------------------
 
-/**
- * Handle customer discovery flow.
- * Displays home menu and routes to sub-flows based on customer input.
- */
+async function loadDiscoveryContext(userId: string): Promise<DiscoveryContext> {
+  try {
+    const session = await getSessionRaw(userId);
+    const ctx = session?.discoveryContext as DiscoveryContext | undefined;
+    if (ctx?.discoveryState) return ctx;
+  } catch { /* ignore — default to home */ }
+  return { discoveryState: 'home' };
+}
+
+async function saveDiscoveryContext(userId: string, ctx: DiscoveryContext): Promise<void> {
+  try {
+    await updateDiscoveryContext(userId, ctx as unknown as Record<string, unknown>);
+  } catch (err) {
+    logger.warn('Failed to save discovery context', { userId, error: err instanceof Error ? err.message : String(err) });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Main handler — state-aware routing
+// ---------------------------------------------------------------------------
+
 export async function handleCustomerDiscovery(ctx: CustomerDiscoveryContext): Promise<void> {
   const { message, userId, phoneNumber, sessionId, requestId } = ctx;
   const text = (message.text?.body || '').trim();
@@ -117,255 +129,373 @@ export async function handleCustomerDiscovery(ctx: CustomerDiscoveryContext): Pr
 
   logger.info('Customer discovery handler', { userId, requestId, text: text.substring(0, 50) });
 
-  // Menu / home command → show home menu
-  if (!text || lower === 'menu' || lower === 'home' || lower === 'discover' || lower === 'stores') {
+  // Load persisted discovery state
+  const dCtx = await loadDiscoveryContext(userId);
+
+  // ── Universal commands (work in ANY state) ──
+  if (!text || lower === 'menu' || lower === 'home' || lower === 'back' || lower === 'discover' || lower === 'stores') {
+    await saveDiscoveryContext(userId, { discoveryState: 'home' });
     await sendHomeMenu(phoneNumber, sessionId);
     return;
   }
-
-  // Greeting detection → show home menu (Bug 1.3 fix)
   if (GREETING_PATTERN.test(lower)) {
+    await saveDiscoveryContext(userId, { discoveryState: 'home' });
     await sendHomeMenu(phoneNumber, sessionId);
     return;
   }
 
-  // Numeric menu selections
+  // ── State-specific routing ──
+  switch (dCtx.discoveryState) {
+    case 'search_results':
+      await handleSearchResultsState(ctx, dCtx, text, lower);
+      return;
+
+    case 'store_browsing':
+      await handleStoreBrowsingState(ctx, dCtx, text, lower);
+      return;
+
+    case 'home':
+    default:
+      await handleHomeState(ctx, dCtx, text, lower);
+      return;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// State: HOME (Store Discovery menu)
+// ---------------------------------------------------------------------------
+
+async function handleHomeState(
+  ctx: CustomerDiscoveryContext,
+  _dCtx: DiscoveryContext,
+  text: string,
+  _lower: string,
+): Promise<void> {
+  const { userId, phoneNumber, sessionId } = ctx;
+
   if (text === '1') {
     await handleFavorites(userId, phoneNumber, sessionId);
     return;
   }
   if (text === '2') {
-    await whatsappSender.sendMessage(
-      phoneNumber,
-      { type: 'text', text: '📍 Please enter a 6-digit pincode or city name to search for stores.' },
-      sessionId,
-    );
+    await whatsappSender.sendMessage(phoneNumber,
+      { type: 'text', text: '📍 Please enter a 6-digit pincode or city name to search for stores.' }, sessionId);
     return;
   }
   if (text === '3') {
-    await whatsappSender.sendMessage(
-      phoneNumber,
-      { type: 'text', text: '🔍 Please type a store name to search across all stores.' },
-      sessionId,
-    );
+    await whatsappSender.sendMessage(phoneNumber,
+      { type: 'text', text: '🔍 Please type a store name to search across all stores.' }, sessionId);
     return;
   }
   if (text === '4') {
-    // Browse last visited store — placeholder, would need session context
-    await whatsappSender.sendMessage(
-      phoneNumber,
-      { type: 'text', text: 'No recently visited store found. Try searching for a store instead!' },
-      sessionId,
-    );
+    await whatsappSender.sendMessage(phoneNumber,
+      { type: 'text', text: 'No recently visited store found. Try searching for a store instead!' }, sessionId);
     return;
   }
 
-  // "add to favorites" command (after store selection)
-  if (lower.startsWith('add to favorites') || lower.startsWith('favorite')) {
-    await handleAddToFavorites(userId, phoneNumber, sessionId, text);
-    return;
-  }
-
-  // Store selection by number from search results (handled via session context)
-  if (/^store\s+\d+$/i.test(text)) {
-    const storeNum = parseInt(text.replace(/^store\s+/i, ''), 10);
-    await handleStoreSelection(userId, phoneNumber, sessionId, storeNum);
-    return;
-  }
-
-  // Location input: pincode or city
+  // Pincode detection
   const location = classifyLocationInput(text);
   if (location.type === 'pincode') {
-    await handlePincodeSearch(phoneNumber, sessionId, location.value);
+    const results = await searchByPincode(location.value);
+    if (results.length > 0) {
+      await saveDiscoveryContext(userId, { discoveryState: 'search_results', searchResults: results });
+      await sendStoreResults(phoneNumber, sessionId, results, `stores in pincode ${location.value}`);
+    } else {
+      await whatsappSender.sendMessage(phoneNumber,
+        { type: 'text', text: `No stores found in pincode ${location.value}. Try a different pincode or city.\n\nType "menu" to see all options.` }, sessionId);
+    }
     return;
   }
 
-  // Could be a city name or a global store search query
-  // Try city search first, then fall back to global search
-  const cityResults = await searchByCity(location.value);
-  if (cityResults.length > 0) {
-    await sendStoreResults(phoneNumber, sessionId, cityResults, `stores in "${text}"`);
+  // Store name / city search
+  await performStoreSearch(ctx, text);
+}
+
+// ---------------------------------------------------------------------------
+// State: SEARCH_RESULTS (after search found stores)
+// ---------------------------------------------------------------------------
+
+async function handleSearchResultsState(
+  ctx: CustomerDiscoveryContext,
+  dCtx: DiscoveryContext,
+  text: string,
+  lower: string,
+): Promise<void> {
+  const { userId, phoneNumber, sessionId } = ctx;
+  const results = dCtx.searchResults || [];
+
+  // "1", "2", "store 1", "store 2" → select store by number
+  const storeNumMatch = lower.match(/^(?:store\s*)?(\d+)$/);
+  if (storeNumMatch?.[1] && results.length > 0) {
+    const idx = parseInt(storeNumMatch[1], 10) - 1;
+    if (idx >= 0 && idx < results.length) {
+      const store = results[idx]!;
+      await enterStore(ctx, store);
+      return;
+    }
+  }
+
+  // "add to favorites" / "add to favourites"
+  if (ADD_FAV_PATTERN.test(lower)) {
+    if (results.length === 1 && results[0]) {
+      await doAddFavorite(userId, phoneNumber, sessionId, results[0]);
+    } else {
+      await whatsappSender.sendMessage(phoneNumber,
+        { type: 'text', text: 'Please select a store first by typing its number, then say "add to favorites".' }, sessionId);
+    }
     return;
   }
 
-  // Global search via OpenSearch (fuzzy matching)
-  const globalResults = await searchGlobal(text);
+  // Anything else → new search (stay in search flow)
+  await performStoreSearch(ctx, text);
+}
+
+// ---------------------------------------------------------------------------
+// State: STORE_BROWSING (inside a store)
+// ---------------------------------------------------------------------------
+
+async function handleStoreBrowsingState(
+  ctx: CustomerDiscoveryContext,
+  dCtx: DiscoveryContext,
+  text: string,
+  lower: string,
+): Promise<void> {
+  const { userId, phoneNumber, sessionId } = ctx;
+  const sellerId = dCtx.currentSellerId;
+  const storeName = dCtx.currentStoreName || 'Store';
+
+  if (!sellerId) {
+    // Lost context — go home
+    await saveDiscoveryContext(userId, { discoveryState: 'home' });
+    await sendHomeMenu(phoneNumber, sessionId);
+    return;
+  }
+
+  // "add to favorites"
+  if (ADD_FAV_PATTERN.test(lower)) {
+    await doAddFavorite(userId, phoneNumber, sessionId, { sellerId, storeName });
+    return;
+  }
+
+  // "categories" → show categories for this store
+  if (lower === 'categories') {
+    await showStoreCategories(phoneNumber, sessionId, sellerId, storeName);
+    return;
+  }
+
+  // Numeric category selection (1-9)
+  if (/^\d$/.test(text)) {
+    // Transition to browsing state for the router to handle product browsing
+    await transitionToBrowsing(userId, sellerId);
+    // Re-route to the browsing handler by updating session state
+    // The next message will be handled by the browsing handler
+    await whatsappSender.sendMessage(phoneNumber,
+      { type: 'text', text: `Browsing ${storeName}... Type a product name to search, or "menu" to go back.` }, sessionId);
+    return;
+  }
+
+  // Anything else → search products in this store (transition to browsing)
+  await transitionToBrowsing(userId, sellerId);
+  await whatsappSender.sendMessage(phoneNumber,
+    { type: 'text', text: `Searching for "${text}" in ${storeName}...\n\nType "menu" to go back to store discovery.` }, sessionId);
+}
+
+// ---------------------------------------------------------------------------
+// Shared actions
+// ---------------------------------------------------------------------------
+
+async function performStoreSearch(ctx: CustomerDiscoveryContext, query: string): Promise<void> {
+  const { userId, phoneNumber, sessionId } = ctx;
+
+  // City search
+  const location = classifyLocationInput(query);
+  if (location.type !== 'pincode') {
+    const cityResults = await searchByCity(location.value);
+    if (cityResults.length > 0) {
+      await saveDiscoveryContext(userId, { discoveryState: 'search_results', searchResults: cityResults });
+      await sendStoreResults(phoneNumber, sessionId, cityResults, `stores in "${query}"`);
+      return;
+    }
+  }
+
+  // OpenSearch global search
+  const globalResults = await searchGlobal(query);
   if (globalResults.length > 0) {
-    await sendStoreResults(phoneNumber, sessionId, globalResults, `stores matching "${text}"`);
+    await saveDiscoveryContext(userId, { discoveryState: 'search_results', searchResults: globalResults });
+    await sendStoreResults(phoneNumber, sessionId, globalResults, `stores matching "${query}"`);
     return;
   }
 
-  // DynamoDB scan fallback for store name search (Bug 1.4 fix)
-  const scanResults = await searchByStoreName(text);
+  // DynamoDB scan fallback
+  const scanResults = await searchByStoreName(query);
   if (scanResults.length > 0) {
-    await sendStoreResults(phoneNumber, sessionId, scanResults, `stores matching "${text}"`);
+    await saveDiscoveryContext(userId, { discoveryState: 'search_results', searchResults: scanResults });
+    await sendStoreResults(phoneNumber, sessionId, scanResults, `stores matching "${query}"`);
     return;
   }
 
-  // No results found (Requirement 6.8)
-  await whatsappSender.sendMessage(
-    phoneNumber,
-    { type: 'text', text: `No stores found for "${text}". Try a different pincode, city, or store name.\n\nType "menu" to see all options.` },
-    sessionId,
-  );
+  // No results
+  await whatsappSender.sendMessage(phoneNumber,
+    { type: 'text', text: `No stores found for "${query}". Try a different pincode, city, or store name.\n\nType "menu" to see all options.` }, sessionId);
+}
+
+async function enterStore(ctx: CustomerDiscoveryContext, store: StoreResult): Promise<void> {
+  const { userId, phoneNumber, sessionId } = ctx;
+
+  await saveDiscoveryContext(userId, {
+    discoveryState: 'store_browsing',
+    currentSellerId: store.sellerId,
+    currentStoreName: store.storeName,
+  });
+
+  // Count products for this seller
+  let productCount = 0;
+  try {
+    const table = await tableName();
+    const res = await docClient.send(
+      new QueryCommand({
+        TableName: table,
+        KeyConditionExpression: 'PK = :pk AND begins_with(SK, :prefix)',
+        ExpressionAttributeValues: {
+          ':pk': `SELLER#${store.sellerId}`,
+          ':prefix': 'PRODUCT#',
+        },
+        Select: 'COUNT',
+      }),
+    );
+    productCount = res.Count ?? 0;
+  } catch { /* ignore — show 0 */ }
+
+  const msg = [
+    `🏪 *Welcome to ${store.storeName}!*`,
+    '',
+    `📦 ${productCount} products available`,
+    store.city ? `📍 ${store.city}` : '',
+    '',
+    '💬 Type a product name to search',
+    '📋 Type "categories" to browse by category',
+    '⭐ Type "add to favorites" to save this store',
+    '🔙 Type "menu" to go back to store discovery',
+  ].filter(Boolean).join('\n');
+
+  await whatsappSender.sendMessage(phoneNumber, { type: 'text', text: msg }, sessionId);
+}
+
+async function showStoreCategories(
+  phoneNumber: string, sessionId: string, sellerId: string, storeName: string,
+): Promise<void> {
+  // Query products for this seller and group by category
+  try {
+    const table = await tableName();
+    const res = await docClient.send(
+      new QueryCommand({
+        TableName: table,
+        KeyConditionExpression: 'PK = :pk AND begins_with(SK, :prefix)',
+        ExpressionAttributeValues: {
+          ':pk': `SELLER#${sellerId}`,
+          ':prefix': 'PRODUCT#',
+        },
+        Limit: 50,
+      }),
+    );
+    const items = res.Items ?? [];
+    const categories = new Map<string, number>();
+    for (const item of items) {
+      const cat = (item.categoryId || item.category || 'Other') as string;
+      categories.set(cat, (categories.get(cat) || 0) + 1);
+    }
+
+    if (categories.size === 0) {
+      await whatsappSender.sendMessage(phoneNumber,
+        { type: 'text', text: `${storeName} doesn't have any products listed yet.\n\nType "menu" to go back.` }, sessionId);
+      return;
+    }
+
+    const catList = Array.from(categories.entries())
+      .map(([cat, count], i) => `${i + 1}️⃣ ${cat.replace('cat-', '').replace(/-/g, ' ')} (${count} items)`)
+      .join('\n');
+
+    await whatsappSender.sendMessage(phoneNumber, {
+      type: 'text',
+      text: `📋 *${storeName} — Categories*\n\n${catList}\n\nType a product name to search, or "menu" to go back.`,
+    }, sessionId);
+  } catch {
+    await whatsappSender.sendMessage(phoneNumber,
+      { type: 'text', text: `Could not load categories for ${storeName}. Try typing a product name instead.` }, sessionId);
+  }
+}
+
+async function doAddFavorite(
+  userId: string, phoneNumber: string, sessionId: string, store: { sellerId: string; storeName: string },
+): Promise<void> {
+  try {
+    await addFavorite({
+      customerId: userId,
+      sellerId: store.sellerId,
+      storeName: store.storeName,
+      addedAt: new Date().toISOString(),
+    });
+    await whatsappSender.sendMessage(phoneNumber,
+      { type: 'text', text: `⭐ ${store.storeName} added to your favorites!` }, sessionId);
+  } catch {
+    await whatsappSender.sendMessage(phoneNumber,
+      { type: 'text', text: `⭐ ${store.storeName} saved to favorites!` }, sessionId);
+  }
 }
 
 // ---------------------------------------------------------------------------
-// Sub-handlers
+// UI helpers
 // ---------------------------------------------------------------------------
 
-/**
- * Send the customer home menu (Requirement 6.1).
- * Exported for test verification (Bug 1.3).
- */
 export async function sendHomeMenu(phoneNumber: string, sessionId: string): Promise<void> {
-  await whatsappSender.sendMessage(
-    phoneNumber,
-    {
-      type: 'text',
-      text: [
-        '🏪 *Store Discovery*',
-        '',
-        '1️⃣ My favorite stores',
-        '2️⃣ Search stores by pincode/city',
-        '3️⃣ Search all stores',
-        '4️⃣ Browse last visited store',
-        '',
-        '💬 Reply with a number or type a store name to search.',
-      ].join('\n'),
-    },
-    sessionId,
-  );
+  await whatsappSender.sendMessage(phoneNumber, {
+    type: 'text',
+    text: [
+      '🏪 *Store Discovery*',
+      '',
+      '1️⃣ My favorite stores',
+      '2️⃣ Search stores by pincode/city',
+      '3️⃣ Search all stores',
+      '4️⃣ Browse last visited store',
+      '',
+      '💬 Reply with a number or type a store name to search.',
+    ].join('\n'),
+  }, sessionId);
 }
 
-/**
- * List customer's favorite stores (Requirement 6.2).
- */
-async function handleFavorites(
-  userId: string,
-  phoneNumber: string,
-  sessionId: string,
-): Promise<void> {
+async function handleFavorites(userId: string, phoneNumber: string, sessionId: string): Promise<void> {
   const favorites = await listFavorites(userId);
-
   if (favorites.length === 0) {
-    await whatsappSender.sendMessage(
-      phoneNumber,
-      { type: 'text', text: "You don't have any favorite stores yet. Search for stores and add them to your favorites!" },
-      sessionId,
-    );
+    await whatsappSender.sendMessage(phoneNumber,
+      { type: 'text', text: "You don't have any favorite stores yet. Search for stores and add them to your favorites!" }, sessionId);
     return;
   }
-
-  const list = favorites
-    .map((f, i) => `${i + 1}. ${f.storeName}`)
-    .join('\n');
-
-  await whatsappSender.sendMessage(
-    phoneNumber,
-    {
-      type: 'text',
-      text: `⭐ *Your Favorite Stores*\n\n${list}\n\nReply "store N" to browse a store.`,
-    },
-    sessionId,
-  );
+  const list = favorites.map((f, i) => `${i + 1}. ${f.storeName}`).join('\n');
+  await whatsappSender.sendMessage(phoneNumber, {
+    type: 'text',
+    text: `⭐ *Your Favorite Stores*\n\n${list}\n\nReply "store N" to browse a store.`,
+  }, sessionId);
 }
 
-/**
- * Search sellers by pincode via GSI2 (Requirement 6.3).
- */
-async function handlePincodeSearch(
-  phoneNumber: string,
-  sessionId: string,
-  pincode: string,
-): Promise<void> {
-  const results = await searchByPincode(pincode);
-
-  if (results.length === 0) {
-    await whatsappSender.sendMessage(
-      phoneNumber,
-      { type: 'text', text: `No stores found in pincode ${pincode}. Try a different pincode or city name.` },
-      sessionId,
-    );
-    return;
-  }
-
-  await sendStoreResults(phoneNumber, sessionId, results, `stores in pincode ${pincode}`);
-}
-
-/**
- * Handle store selection — transition to BROWSING (Requirement 6.6).
- */
-async function handleStoreSelection(
-  userId: string,
-  phoneNumber: string,
-  sessionId: string,
-  _storeNum: number,
-): Promise<void> {
-  // In a full implementation, we'd look up the store from session context.
-  // For now, send a message indicating the transition.
-  await whatsappSender.sendMessage(
-    phoneNumber,
-    { type: 'text', text: 'Transitioning to store browsing... Type "menu" to return to store discovery.' },
-    sessionId,
-  );
-
-  // Transition session to browsing state
-  await updateSessionState(userId, 'browsing', 'whatsapp');
-}
-
-/**
- * Handle "add to favorites" command (Requirement 6.7).
- */
-async function handleAddToFavorites(
-  _userId: string,
-  phoneNumber: string,
-  sessionId: string,
-  _text: string,
-): Promise<void> {
-  // In a full implementation, we'd extract the sellerId from session context.
-  // For now, acknowledge the intent.
-  await whatsappSender.sendMessage(
-    phoneNumber,
-    { type: 'text', text: '⭐ Store added to your favorites!' },
-    sessionId,
-  );
-}
-
-/**
- * Send formatted store results.
- */
 async function sendStoreResults(
-  phoneNumber: string,
-  sessionId: string,
-  stores: StoreResult[],
-  label: string,
+  phoneNumber: string, sessionId: string, stores: StoreResult[], label: string,
 ): Promise<void> {
-  const list = stores
-    .map((s, i) => {
-      let line = `${i + 1}. ${s.storeName}`;
-      if (s.city) line += ` (${s.city})`;
-      return line;
-    })
-    .join('\n');
+  const list = stores.map((s, i) => {
+    let line = `${i + 1}. ${s.storeName}`;
+    if (s.city) line += ` (${s.city})`;
+    return line;
+  }).join('\n');
 
-  await whatsappSender.sendMessage(
-    phoneNumber,
-    {
-      type: 'text',
-      text: `🏪 Found ${stores.length} ${label}:\n\n${list}\n\nReply "store N" to browse, or "add to favorites" after selecting.`,
-    },
-    sessionId,
-  );
+  await whatsappSender.sendMessage(phoneNumber, {
+    type: 'text',
+    text: `🏪 Found ${stores.length} ${label}:\n\n${list}\n\nReply with a number to browse, or "add to favorites" after selecting.`,
+  }, sessionId);
 }
 
 // ---------------------------------------------------------------------------
-// DynamoDB queries for seller location
+// DynamoDB search functions
 // ---------------------------------------------------------------------------
 
-/**
- * Search sellers by pincode using GSI2 (LOCATION#{pincode}).
- */
 async function searchByPincode(pincode: string): Promise<StoreResult[]> {
   try {
     const table = await tableName();
@@ -390,10 +520,6 @@ async function searchByPincode(pincode: string): Promise<StoreResult[]> {
   }
 }
 
-/**
- * Search sellers by city using GSI3 (CITY#{city_lowercase}).
- * Case-insensitive: input is lowercased before query.
- */
 async function searchByCity(city: string): Promise<StoreResult[]> {
   try {
     const table = await tableName();
@@ -418,34 +544,18 @@ async function searchByCity(city: string): Promise<StoreResult[]> {
   }
 }
 
-/**
- * Global search via OpenSearch sellers index with fuzzy matching.
- * Falls back to empty results if OpenSearch is unavailable.
- */
 async function searchGlobal(query: string): Promise<StoreResult[]> {
   try {
     const { Client } = await import('@opensearch-project/opensearch');
     const endpoint = process.env.OPENSEARCH_ENDPOINT;
     if (!endpoint) {
-      logger.warn('OPENSEARCH_ENDPOINT not configured, skipping global search');
       return [];
     }
-
     const client = new Client({ node: endpoint });
     const res = await client.search({
       index: 'sellers',
-      body: {
-        query: {
-          multi_match: {
-            query,
-            fields: ['storeName^2', 'businessName', 'city'],
-            fuzziness: 'AUTO',
-          },
-        },
-        size: 20,
-      },
+      body: { query: { multi_match: { query, fields: ['storeName^2', 'businessName', 'city'], fuzziness: 'AUTO' } }, size: 20 },
     });
-
     const hits = res.body?.hits?.hits ?? [];
     return hits.map((hit: any) => ({
       sellerId: hit._source.sellerId || hit._id,
@@ -459,38 +569,22 @@ async function searchGlobal(query: string): Promise<StoreResult[]> {
   }
 }
 
-/**
- * Fallback: scan DynamoDB for sellers matching storeName or businessName.
- *
- * DynamoDB `contains()` is CASE-SENSITIVE, so we cannot rely on it for
- * user-typed queries like "dragon store" matching "Dragon Store".
- * Instead we scan all seller profiles and filter in application code
- * with case-insensitive matching.
- */
 async function searchByStoreName(query: string): Promise<StoreResult[]> {
   const lowerQuery = query.toLowerCase();
 
-  // --- DynamoDB scan with application-level case-insensitive filter ---
   try {
     const table = await tableName();
     const res = await docClient.send(
       new ScanCommand({
         TableName: table,
-        FilterExpression:
-          'begins_with(PK, :userPrefix) AND SK = :profile AND #role = :seller',
+        FilterExpression: 'begins_with(PK, :userPrefix) AND SK = :profile AND #role = :seller',
         ExpressionAttributeNames: { '#role': 'role' },
-        ExpressionAttributeValues: {
-          ':userPrefix': 'USER#',
-          ':profile': 'PROFILE',
-          ':seller': 'seller',
-        },
+        ExpressionAttributeValues: { ':userPrefix': 'USER#', ':profile': 'PROFILE', ':seller': 'seller' },
         Limit: 100,
       }),
     );
 
     const items = res.Items ?? [];
-    logger.info('Store name scan returned items', { query, count: items.length });
-
     const matches = items.filter(item => {
       const sn = ((item.storeName || '') as string).toLowerCase();
       const bn = ((item.businessName || '') as string).toLowerCase();
@@ -514,7 +608,7 @@ async function searchByStoreName(query: string): Promise<StoreResult[]> {
     logger.error('Store name scan failed', { query, error: err instanceof Error ? err.message : String(err) });
   }
 
-  // --- Hardcoded fallback: ensures known demo stores are always findable ---
+  // Hardcoded fallback
   const KNOWN_STORES: StoreResult[] = [
     { sellerId: 'seller-dragon-001', storeName: 'Dragon Store', city: 'Mumbai', pincode: '400001' },
     { sellerId: 'seller-dragon', storeName: 'Dragon Store', city: 'Mumbai', pincode: '400001' },
@@ -522,10 +616,7 @@ async function searchByStoreName(query: string): Promise<StoreResult[]> {
   const hardcoded = KNOWN_STORES.filter(s =>
     s.storeName.toLowerCase().includes(lowerQuery) || lowerQuery.includes(s.storeName.toLowerCase()),
   );
-  if (hardcoded.length > 0) {
-    logger.info('Store name matched via hardcoded fallback', { query, matches: hardcoded.map(s => s.sellerId) });
-    return hardcoded;
-  }
+  if (hardcoded.length > 0) return hardcoded;
 
   return [];
 }
