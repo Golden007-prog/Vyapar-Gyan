@@ -520,7 +520,13 @@ describe('2.5 Message storage independent of EventBridge', () => {
       isNew: false,
     });
 
-    mockGetUserByPhone.mockResolvedValue(null);
+    // Return a registered customer so the message reaches handleCustomerMessage
+    mockGetUserByPhone.mockResolvedValue({
+      userId: 'customer-1',
+      role: 'customer',
+      phoneNumber: '+919999999999',
+      displayName: 'Test',
+    });
 
     const sqsEvent = {
       Records: [{
@@ -573,7 +579,13 @@ describe('2.5 Message storage independent of EventBridge', () => {
       isNew: false,
     });
 
-    mockGetUserByPhone.mockResolvedValue(null);
+    // Return a registered customer so the message reaches handleCustomerMessage
+    mockGetUserByPhone.mockResolvedValue({
+      userId: 'customer-2',
+      role: 'customer',
+      phoneNumber: '+919999999998',
+      displayName: 'Test2',
+    });
 
     const sqsEvent = {
       Records: [{

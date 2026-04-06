@@ -28,6 +28,8 @@ export interface ChatMessage {
   failedAt?: string;
   errorCode?: string;
   createdAt: string;
+  /** Correlation ID for bridge↔backend message deduplication */
+  correlationId?: string;
 }
 
 export interface TypingEvent {
@@ -57,6 +59,8 @@ export interface SendMessagePayload {
   messageType?: 'text' | 'image' | 'product_card';
   sellerId?: string;
   productContext?: { productId: string; name: string; price: number };
+  /** Correlation ID for bridge↔backend message deduplication */
+  correlationId?: string;
 }
 
 export interface SendMessageResponse {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, Suspense } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { AlertCircle, ArrowLeftRight } from 'lucide-react';
 import { signIn, signOut, fetchAuthSession, getCurrentUser } from 'aws-amplify/auth';
@@ -36,9 +36,9 @@ function LoginContent() {
   const isDemoMode = process.env.NEXT_PUBLIC_DEMO_MODE === 'true';
 
   // Check for existing session on mount
-  useState(() => {
+  useEffect(() => {
     getCurrentUser().then(() => setExistingSession(true)).catch(() => {});
-  });
+  }, []);
 
   const demoAccounts = [
     { role: 'Admin (Platform)', phone: '9000000001', password: 'DemoAdmin@123' },

@@ -1581,6 +1581,58 @@ export class APIStack extends cdk.Stack {
     });
 
     // ========================================================================
+    // Seller Dashboard Lambda Function — JWT-protected (seller role)
+    // ========================================================================
+
+    const sellerDashboardFunction = new Function(this, 'SellerDashboardFunction', {
+      functionName: `${config.resourcePrefix}-seller-dashboard`,
+      runtime: Runtime.NODEJS_20_X,
+      architecture: Architecture.ARM_64,
+      handler: 'handlers/seller/seller-dashboard-handler.handler',
+      code: Code.fromAsset('../../services/api/dist'),
+      timeout: Duration.seconds(15),
+      memorySize: 256,
+      environment: {
+        ENVIRONMENT: config.environment,
+        TABLE_NAME: table.tableName,
+        LOG_LEVEL: 'info',
+      },
+    });
+    table.grantReadData(sellerDashboardFunction);
+
+    // Grant Secrets Manager + SSM for getConfig() fallback
+    sellerDashboardFunction.addToRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['secretsmanager:GetSecretValue'],
+        resources: [
+          `arn:aws:secretsmanager:${config.region}:${config.account}:secret:/${config.environment}/twilio/*`,
+          `arn:aws:secretsmanager:${config.region}:${config.account}:secret:/${config.environment}/razorpay/*`,
+          `arn:aws:secretsmanager:${config.region}:${config.account}:secret:GEMINI_API_KEY-*`,
+          `arn:aws:secretsmanager:${config.region}:${config.account}:secret:GROK_API_KEY-*`,
+        ],
+      }),
+    );
+    sellerDashboardFunction.addToRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['ssm:GetParameter', 'ssm:GetParameters'],
+        resources: [`arn:aws:ssm:${config.region}:${config.account}:parameter/${config.environment}/*`],
+      }),
+    );
+
+    const sellerDashboardIntegration = new HttpLambdaIntegration('SellerDashboardIntegration', sellerDashboardFunction, {
+      payloadFormatVersion: PayloadFormatVersion.VERSION_2_0,
+    });
+
+    this.httpApi.addRoutes({
+      path: '/api/v1/seller/dashboard',
+      methods: [HttpMethod.GET],
+      integration: sellerDashboardIntegration,
+      authorizer: this.jwtAuthorizer,
+    });
+
+    // ========================================================================
     // Seller Inbox Lambda Functions — JWT-protected (seller role)
     // ========================================================================
 
@@ -1644,6 +1696,18 @@ export class APIStack extends cdk.Stack {
     });
     table.grantReadData(sellerContextFunction);
 
+    const sellerReadReceiptFunction = new Function(this, 'SellerReadReceiptFunction', {
+      functionName: `${config.resourcePrefix}-seller-read-receipt`,
+      runtime: Runtime.NODEJS_20_X,
+      architecture: Architecture.ARM_64,
+      handler: 'handlers/seller/seller-read-receipt-handler.handler',
+      code: Code.fromAsset('../../services/api/dist'),
+      timeout: Duration.seconds(10),
+      memorySize: 256,
+      environment: commonSellerInboxEnv,
+    });
+    table.grantReadWriteData(sellerReadReceiptFunction);
+
     // Grant Secrets Manager + SSM to seller reply handler (needs config for EventBridge)
     for (const fn of [sellerReplyFunction]) {
       fn.addToRolePolicy(
@@ -1680,6 +1744,9 @@ export class APIStack extends cdk.Stack {
     const sellerContextIntegration = new HttpLambdaIntegration('SellerContextIntegration', sellerContextFunction, {
       payloadFormatVersion: PayloadFormatVersion.VERSION_2_0,
     });
+    const sellerReadReceiptIntegration = new HttpLambdaIntegration('SellerReadReceiptIntegration', sellerReadReceiptFunction, {
+      payloadFormatVersion: PayloadFormatVersion.VERSION_2_0,
+    });
 
     this.httpApi.addRoutes({
       path: '/api/v1/seller/inbox',
@@ -1703,6 +1770,12 @@ export class APIStack extends cdk.Stack {
       path: '/api/v1/seller/inbox/{userId}/context',
       methods: [HttpMethod.GET],
       integration: sellerContextIntegration,
+      authorizer: this.jwtAuthorizer,
+    });
+    this.httpApi.addRoutes({
+      path: '/api/v1/seller/inbox/{userId}/read',
+      methods: [HttpMethod.POST],
+      integration: sellerReadReceiptIntegration,
       authorizer: this.jwtAuthorizer,
     });
 

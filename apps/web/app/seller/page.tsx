@@ -1,6 +1,8 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import { TrendingUp, Package, Sparkles, IndianRupee } from 'lucide-react';
+import { fetchSellerDashboard, type DashboardMetrics } from '../../lib/api-dashboard';
 
 interface MetricCardProps {
   title: string;
@@ -8,23 +10,32 @@ interface MetricCardProps {
   change?: string;
   icon: React.ComponentType<{ className?: string }>;
   trend?: 'up' | 'down';
+  loading?: boolean;
 }
 
-function MetricCard({ title, value, change, icon: Icon, trend }: MetricCardProps) {
+function MetricCard({ title, value, change, icon: Icon, trend, loading }: MetricCardProps) {
   return (
     <div className="min-h-[80px] rounded-lg border bg-white p-6 shadow-sm">
       <div className="flex items-center justify-between">
         <div>
           <p className="text-sm font-medium text-gray-600">{title}</p>
-          <p className="mt-2 text-3xl font-bold text-gray-900">{value}</p>
-          {change && (
-            <p
-              className={`mt-2 text-sm ${
-                trend === 'up' ? 'text-green-600' : 'text-red-600'
-              }`}
-            >
-              {change}
-            </p>
+          {loading ? (
+            <div className="mt-2 h-9 w-24 animate-pulse rounded bg-gray-200" />
+          ) : (
+            <p className="mt-2 text-3xl font-bold text-gray-900">{value}</p>
+          )}
+          {loading ? (
+            <div className="mt-2 h-4 w-32 animate-pulse rounded bg-gray-100" />
+          ) : (
+            change && (
+              <p
+                className={`mt-2 text-sm ${
+                  trend === 'up' ? 'text-green-600' : 'text-red-600'
+                }`}
+              >
+                {change}
+              </p>
+            )
           )}
         </div>
         <div className="rounded-full bg-indigo-50 p-3">
@@ -35,7 +46,46 @@ function MetricCard({ title, value, change, icon: Icon, trend }: MetricCardProps
   );
 }
 
+/** Hardcoded demo values used as fallback when the API is unavailable */
+const DEMO_METRICS: DashboardMetrics = {
+  totalSales: '₹45,231',
+  totalSalesChange: '+12.5% from last month',
+  totalSalesTrend: 'up',
+  activeProducts: '127',
+  activeProductsChange: '3 low stock items',
+  activeCampaigns: '2',
+  activeCampaignsChange: '1 pending approval',
+  monthlyRevenue: '₹1.2L',
+  monthlyRevenueChange: '+8.3% from last month',
+  monthlyRevenueTrend: 'up',
+};
+
 export default function SellerDashboard() {
+  const [metrics, setMetrics] = useState<DashboardMetrics>(DEMO_METRICS);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadMetrics() {
+      try {
+        const data = await fetchSellerDashboard();
+        if (!cancelled) {
+          setMetrics(data);
+        }
+      } catch {
+        // API unavailable — keep demo fallback values
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+
+    loadMetrics();
+    return () => { cancelled = true; };
+  }, []);
+
   return (
     <div className="space-y-6">
       {/* Welcome banner */}
@@ -50,29 +100,33 @@ export default function SellerDashboard() {
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
         <MetricCard
           title="Total Sales"
-          value="₹45,231"
-          change="+12.5% from last month"
+          value={metrics.totalSales}
+          change={metrics.totalSalesChange}
           icon={IndianRupee}
-          trend="up"
+          trend={metrics.totalSalesTrend}
+          loading={loading}
         />
         <MetricCard
           title="Active Products"
-          value="127"
-          change="3 low stock items"
+          value={metrics.activeProducts}
+          change={metrics.activeProductsChange}
           icon={Package}
+          loading={loading}
         />
         <MetricCard
           title="Active AI Campaigns"
-          value="2"
-          change="1 pending approval"
+          value={metrics.activeCampaigns}
+          change={metrics.activeCampaignsChange}
           icon={Sparkles}
+          loading={loading}
         />
         <MetricCard
           title="Monthly Revenue"
-          value="₹1.2L"
-          change="+8.3% from last month"
+          value={metrics.monthlyRevenue}
+          change={metrics.monthlyRevenueChange}
           icon={TrendingUp}
-          trend="up"
+          trend={metrics.monthlyRevenueTrend}
+          loading={loading}
         />
       </div>
 

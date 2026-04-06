@@ -20,6 +20,8 @@ export interface BridgeMessage {
   text: string;
   timestamp: string;
   channel: 'web' | 'whatsapp';
+  /** Optional correlation ID for bridge↔backend message deduplication */
+  correlationId?: string;
 }
 
 function readStore(): Record<string, BridgeMessage[]> {

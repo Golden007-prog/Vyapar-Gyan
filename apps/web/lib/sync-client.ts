@@ -48,8 +48,9 @@ export function createSyncClient(callbacks: SyncCallbacks): SyncClient {
       const result = await syncMessages(lastSyncTimestamp, cartVersion, etag);
 
       if (result.notModified) {
-        // No changes — keep current interval
-        scheduleNext(BASE_INTERVAL_MS);
+        // No changes — reset to base interval
+        currentInterval = BASE_INTERVAL_MS;
+        scheduleNext(currentInterval);
         return;
       }
 

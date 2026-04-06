@@ -123,3 +123,8 @@ export async function sendReply(
 export async function getCustomerContext(customerUserId: string): Promise<CustomerContext> {
   return api.get<CustomerContext>(`/api/v1/seller/inbox/${customerUserId}/context`);
 }
+
+/** Mark all inbound messages in a conversation as read (persists to backend) */
+export async function markConversationRead(customerUserId: string): Promise<void> {
+  await api.post(`/api/v1/seller/inbox/${customerUserId}/read`);
+}

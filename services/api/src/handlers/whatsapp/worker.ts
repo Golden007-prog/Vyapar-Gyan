@@ -247,7 +247,21 @@ async function processMessageChange(
     }
 
     // Route based on resolved user role
-    if (isSeller && userProfile) {
+    if (!userProfile) {
+      // Unregistered phone — route to onboarding, NOT customer discovery
+      logger.info('Unregistered phone, routing to onboarding', { phoneNumber });
+      const { resolveOrCreateOnboardingSession: resolveOnboarding, markOnboardingWelcomeSent: markWelcome } = await import('../../services/session-service.js');
+      const { onboardingHandler } = await import('./states/onboarding-handler.js');
+      const { session: onboardingSession } = await resolveOnboarding(phoneNumber);
+      await onboardingHandler({
+        phoneNumber,
+        welcomeSent: onboardingSession.welcomeSent,
+        sessionId: `onboarding-${phoneNumber}`,
+      });
+      if (!onboardingSession.welcomeSent) {
+        await markWelcome(phoneNumber);
+      }
+    } else if (isSeller) {
       await handleSellerMessage({
         message,
         phoneNumber,

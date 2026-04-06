@@ -40,18 +40,50 @@ export function calculateBackoff(attempt: number): number {
 }
 
 /**
- * Deduplicate messages by messageId, preserving first occurrence order.
+ * Deduplicate messages by messageId, correlationId, and content+timestamp fallback.
+ *
+ * Dedup layers (in order):
+ * 1. Exact messageId match — standard dedup for messages with the same ID
+ * 2. correlationId match — links bridge entries (cust-{ts}) with backend entries (msg-uuid)
+ * 3. Content+timestamp fallback — catches legacy messages without correlationId where
+ *    the same body text was sent within a 5-second window in the same direction
  *
  * Property 16: Message deduplication
- * Validates: Requirements 15.5
+ * Validates: Requirements 15.5, 2.5
  */
 export function deduplicateMessages(
-  messages: Array<{ messageId: string }>,
+  messages: Array<{ messageId: string; correlationId?: string; content?: { body?: string }; createdAt?: string; direction?: string }>,
 ): Array<{ messageId: string }> {
-  const seen = new Set<string>();
+  const seenIds = new Set<string>();
+  const seenCorrelations = new Set<string>();
+  const seenContent = new Set<string>();
+
   return messages.filter((m) => {
-    if (seen.has(m.messageId)) return false;
-    seen.add(m.messageId);
+    // Layer 1: exact messageId dedup
+    if (seenIds.has(m.messageId)) return false;
+
+    // Layer 2: correlationId dedup (bridge ↔ backend matching)
+    if (m.correlationId) {
+      if (seenCorrelations.has(m.correlationId)) {
+        seenIds.add(m.messageId);
+        return false;
+      }
+      seenCorrelations.add(m.correlationId);
+    }
+
+    // Layer 3: content+timestamp fallback for legacy messages without correlationId
+    const body = m.content?.body;
+    if (body && m.createdAt) {
+      const ts = Math.floor(new Date(m.createdAt).getTime() / 5000);
+      const contentKey = `${body}::${ts}::${m.direction ?? ''}`;
+      if (seenContent.has(contentKey)) {
+        seenIds.add(m.messageId);
+        return false;
+      }
+      seenContent.add(contentKey);
+    }
+
+    seenIds.add(m.messageId);
     return true;
   });
 }
@@ -212,6 +244,13 @@ export class WebSocketClient {
   private startHeartbeat(): void {
     this.stopHeartbeat();
     this.heartbeatTimer = setInterval(() => {
+      // Detect zombie state: socket in CLOSING/CLOSED but no close event fired
+      // (browser tab backgrounding, network change). Force-close to trigger
+      // onclose handler and start reconnection.
+      if (this.ws && this.ws.readyState !== WebSocket.OPEN) {
+        this.ws.close();
+        return;
+      }
       this.send('heartbeat', {});
       this.startHeartbeatAckTimer();
     }, HEARTBEAT_INTERVAL_MS);

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { MessageCircle, Send, User, Search, Phone, Globe, Clock } from 'lucide-react';
+import { MessageCircle, Send, User, Search, Phone, Globe, Clock, Cloud, CloudOff } from 'lucide-react';
 import {
   getSessionMessages,
   appendMessage,
@@ -10,6 +10,7 @@ import {
   DEMO_CUSTOMER_NAME,
   type BridgeMessage,
 } from '@/lib/chat-bridge';
+import { listConversations, getMessages, markConversationRead } from '@/lib/api-inbox';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import TypingIndicator from '@/components/Chat/TypingIndicator';
 
@@ -22,11 +23,13 @@ interface InboxSession {
   lastMessageTime: string;
   unread: number;
   messages: BridgeMessage[];
+  synced: boolean;
 }
 
 function buildSeedSessions(): InboxSession[] {
   const now = Date.now();
-  const bridgeMsgs = getSessionMessages(DEMO_SESSION_ID);
+  const seedSessionId = DEMO_SESSION_ID;
+  const bridgeMsgs = getSessionMessages(seedSessionId);
   const demoSession: InboxSession = {
     id: DEMO_SESSION_ID,
     customerName: DEMO_CUSTOMER_NAME,
@@ -36,6 +39,7 @@ function buildSeedSessions(): InboxSession[] {
     lastMessageTime: bridgeMsgs.length > 0 ? bridgeMsgs[bridgeMsgs.length - 1].timestamp : new Date().toISOString(),
     unread: bridgeMsgs.filter(m => m.direction === 'inbound').length,
     messages: bridgeMsgs,
+    synced: false,
   };
   return [
     demoSession,
@@ -47,6 +51,7 @@ function buildSeedSessions(): InboxSession[] {
         { id: 'm2b', direction: 'outbound', text: 'Hi Priya! Your order is out for delivery. Should reach you by 5 PM today.', timestamp: new Date(now - 5400000).toISOString(), channel: 'whatsapp' },
         { id: 'm2c', direction: 'inbound', text: 'Order delivered, thank you!', timestamp: new Date(now - 3600000).toISOString(), channel: 'whatsapp' },
       ],
+      synced: false,
     },
     {
       id: 'sess-wa-003', customerName: 'Rahul Verma', phone: '+918765432100', channel: 'whatsapp',
@@ -54,6 +59,7 @@ function buildSeedSessions(): InboxSession[] {
       messages: [
         { id: 'm3a', direction: 'inbound', text: 'Do you have USB-C cables?', timestamp: new Date(now - 86400000).toISOString(), channel: 'whatsapp' },
       ],
+      synced: false,
     },
   ];
 }
@@ -75,7 +81,7 @@ export default function InboxPage() {
       try {
         const { fetchAuthSession } = await import('aws-amplify/auth');
         const session = await fetchAuthSession();
-        const token = session.tokens?.accessToken?.toString() ?? null;
+        const token = session.tokens?.idToken?.toString() ?? null;
         if (!cancelled) setAuthToken(token);
       } catch {
         // No auth session — WebSocket stays disconnected, bridge polling still works
@@ -93,64 +99,79 @@ export default function InboxPage() {
     presenceMap,
   } = useWebSocket(authToken);
 
+  // API-first conversation loading: fetch from backend FIRST, seed data as fallback only (Req 2.3, 2.7)
   useEffect(() => {
-    // Start with seed data as fallback
-    setSessions(buildSeedSessions());
-
-    // Try to load real conversations from API
+    let cancelled = false;
     (async () => {
       try {
-        const { fetchWithAuth } = await import('@/lib/api-client');
-        const data = await fetchWithAuth('/api/v1/seller/inbox');
-        if (data.conversations && data.conversations.length > 0) {
-          const apiSessions: InboxSession[] = data.conversations.map((c: any) => ({
-            id: c.threadId || c.customerId,
-            customerName: c.customerName || 'Customer',
-            phone: c.phone || '',
+        const data = await listConversations();
+        if (!cancelled && data.conversations && data.conversations.length > 0) {
+          const apiSessions: InboxSession[] = data.conversations.map((c) => ({
+            id: c.userId,
+            customerName: c.displayName || 'Customer',
+            phone: '',
             channel: c.channel || 'web',
-            lastMessage: c.lastMessage || '',
-            lastMessageTime: c.lastMessageTime || new Date().toISOString(),
+            lastMessage: typeof c.lastMessage?.content === 'string' ? c.lastMessage.content : (c.lastMessage?.content as any)?.text || '',
+            lastMessageTime: c.lastActivityAt || new Date().toISOString(),
             unread: c.unreadCount || 0,
             messages: [],
+            synced: true,
           }));
-          setSessions(prev => {
-            const seedIds = new Set(prev.map(s => s.id));
-            const newSessions = apiSessions.filter(s => !seedIds.has(s.id));
-            return [...prev, ...newSessions];
-          });
+          setSessions(apiSessions);
+          return;
         }
       } catch {
-        // API unavailable — seed data is the fallback
+        // API unavailable — fall through to seed data
+      }
+      // Fallback: use seed data when API returns empty or fails (Req 3.4)
+      if (!cancelled) {
+        setSessions(buildSeedSessions());
       }
     })();
+    return () => { cancelled = true; };
   }, []);
 
-  // Poll bridge for new customer messages every 1.5s (suppressed when WebSocket connected)
+  // Poll API for selected conversation's messages (suppressed when WebSocket connected) (Req 2.3, 3.2)
   useEffect(() => {
     if (connectionState === 'connected') return; // Req 15.2: suppress polling when WS connected
-    const interval = setInterval(() => {
-      const bridgeMsgs = getSessionMessages(DEMO_SESSION_ID);
-      setSessions(prev => {
-        const idx = prev.findIndex(s => s.id === DEMO_SESSION_ID);
-        if (idx < 0) return prev;
-        const current = prev[idx];
-        // Compare by length AND last message id for reliable change detection
-        const lastBridge = bridgeMsgs[bridgeMsgs.length - 1];
-        const lastCurrent = current.messages[current.messages.length - 1];
-        if (bridgeMsgs.length === current.messages.length && lastBridge?.id === lastCurrent?.id) return prev;
-        const newInbound = bridgeMsgs.filter(m => m.direction === 'inbound' && !current.messages.some(cm => cm.id === m.id)).length;
-        const updated = [...prev];
-        updated[idx] = {
-          ...current,
-          messages: bridgeMsgs,
-          lastMessage: lastBridge?.text || current.lastMessage,
-          lastMessageTime: lastBridge?.timestamp || current.lastMessageTime,
-          unread: selectedId === DEMO_SESSION_ID ? 0 : current.unread + newInbound,
-        };
-        return updated;
-      });
-    }, 1500);
-    return () => clearInterval(interval);
+    if (!selectedId) return;
+    let active = true;
+    const pollMessages = async () => {
+      try {
+        const data = await getMessages(selectedId, { limit: 50 });
+        if (!active) return;
+        if (data.messages && data.messages.length > 0) {
+          const apiBridgeMsgs: BridgeMessage[] = data.messages.map((m) => ({
+            id: m.messageId,
+            direction: m.direction,
+            text: m.content?.text || m.content?.body || '',
+            timestamp: m.createdAt,
+            channel: m.channel || 'web',
+          }));
+          setSessions(prev => prev.map(s => {
+            if (s.id !== selectedId) return s;
+            // Merge: keep optimistic local messages not yet in API, add API messages
+            const apiIds = new Set(apiBridgeMsgs.map(m => m.id));
+            const localOnly = s.messages.filter(m => !apiIds.has(m.id) && m.id.startsWith('seller-'));
+            const merged = [...apiBridgeMsgs, ...localOnly].sort(
+              (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+            );
+            const last = merged[merged.length - 1];
+            return {
+              ...s,
+              messages: merged,
+              lastMessage: last?.text || s.lastMessage,
+              lastMessageTime: last?.timestamp || s.lastMessageTime,
+            };
+          }));
+        }
+      } catch {
+        // API polling failed — keep existing messages in state
+      }
+    };
+    pollMessages(); // Initial fetch
+    const interval = setInterval(pollMessages, 3000);
+    return () => { active = false; clearInterval(interval); };
   }, [selectedId, connectionState]);
 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [selectedId, sessions]);
@@ -160,6 +181,8 @@ export default function InboxPage() {
   const handleSelectSession = useCallback((id: string) => {
     setSelectedId(id);
     setSessions(prev => prev.map(s => s.id === id ? { ...s, unread: 0 } : s));
+    // Fire-and-forget: persist read receipt to backend (don't block UI)
+    markConversationRead(id).catch(() => {});
   }, []);
 
   const handleSend = useCallback(async () => {
@@ -269,6 +292,11 @@ export default function InboxPage() {
                   <div className="flex items-center gap-1 mt-0.5">
                     {s.channel === 'whatsapp' ? <Phone className="h-3 w-3 text-green-500" /> : <Globe className="h-3 w-3 text-blue-500" />}
                     <span className="text-xs text-gray-500 truncate">{s.lastMessage}</span>
+                    {s.synced ? (
+                      <span title="Synced with backend" className="flex-shrink-0 ml-auto"><Cloud className="h-3 w-3 text-green-400" /></span>
+                    ) : (
+                      <span title="Local only" className="flex-shrink-0 ml-auto"><CloudOff className="h-3 w-3 text-amber-400" /></span>
+                    )}
                   </div>
                 </div>
                 {s.unread > 0 && (

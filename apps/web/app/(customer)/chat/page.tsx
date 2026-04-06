@@ -17,6 +17,7 @@ import {
 } from '@/lib/api-cart';
 import type { ChatMessage } from '@/lib/api-chat';
 import { deduplicateMessages } from '@/lib/websocket-client';
+import { createSyncClient, type SyncClient } from '@/lib/sync-client';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { useStore } from '@/lib/store-context';
 import { getDemoCart, updateDemoItem, removeDemoItem, clearDemoCart } from '@/lib/demo-cart';
@@ -61,7 +62,35 @@ function bridgeToCustomer(msgs: BridgeMessage[]): ChatMessage[] {
     content: { body: m.text },
     deliveryStatus: 'delivered' as const,
     createdAt: m.timestamp,
+    ...(m.correlationId ? { correlationId: m.correlationId } : {}),
   }));
+}
+
+/**
+ * Merge messages using content+timestamp dedup for legacy messages (bridge vs backend).
+ * Two messages are considered duplicates if they have the same body content and
+ * timestamps within 5 seconds of each other.
+ */
+function mergeWithContentDedup(messages: ChatMessage[]): ChatMessage[] {
+  const result: ChatMessage[] = [];
+  const seen = new Set<string>();
+
+  for (const msg of messages) {
+    // First: standard messageId dedup
+    if (seen.has(msg.messageId)) continue;
+
+    // Content+timestamp dedup key: body + rounded timestamp (5s window)
+    const body = msg.content?.body ?? '';
+    const ts = Math.floor(new Date(msg.createdAt).getTime() / 5000);
+    const contentKey = `${body}::${ts}::${msg.direction}`;
+
+    if (body && seen.has(contentKey)) continue;
+
+    seen.add(msg.messageId);
+    if (body) seen.add(contentKey);
+    result.push(msg);
+  }
+  return result;
 }
 
 /** Format ISO timestamp as relative time (e.g. "5 min ago", "2h ago") */
@@ -99,7 +128,7 @@ function ChatContent() {
   const [checkingOut, setCheckingOut] = useState(false);
   const [error, setError] = useState('');
 
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const syncClientRef = useRef<SyncClient | null>(null);
   const storeName = selectedStore?.businessName || 'Dragon Store';
   const sellerId = selectedStore?.sellerId || 'seller-dragon-001';
 
@@ -110,7 +139,7 @@ function ChatContent() {
       try {
         const { fetchAuthSession } = await import('aws-amplify/auth');
         const session = await fetchAuthSession();
-        const token = session.tokens?.accessToken?.toString() ?? null;
+        const token = session.tokens?.idToken?.toString() ?? null;
         if (!cancelled) setAuthToken(token);
       } catch {
         // No auth session — WebSocket will stay disconnected, bridge/polling still works
@@ -130,85 +159,122 @@ function ChatContent() {
     presenceMap,
   } = useWebSocket(authToken);
 
-  // Load initial messages from bridge, seed if empty
+  // Load initial messages: API-first with bridge fallback (Req 2.1, 2.2, 2.3, 3.1)
   useEffect(() => {
+    let cancelled = false;
+
+    // Seed bridge if empty (for fallback)
     let bridgeMsgs = getSessionMessages(DEMO_SESSION_ID);
     if (bridgeMsgs.length === 0) {
       bridgeMsgs = seedBridge(storeName);
       setSessionMessages(DEMO_SESSION_ID, bridgeMsgs);
     }
-    setLocalMessages(bridgeToCustomer(bridgeMsgs));
+    const bridgeConverted = bridgeToCustomer(bridgeMsgs);
 
-    // Load cart — try API, fallback to demo
-    getCart()
-      .then((res) => setCart(res.cart))
-      .catch(() => setCart(getDemoCart(sellerId)));
-  }, [storeName, sellerId]);
-
-  // Try to load message history from backend API
-  useEffect(() => {
-    let cancelled = false;
     (async () => {
+      let apiAvailable = false;
+
+      // PRIMARY: Load history from backend API
       try {
         const { getHistory } = await import('@/lib/api-chat');
         const history = await getHistory();
         if (!cancelled && history.messages.length > 0) {
-          setLocalMessages(prev => {
-            const merged = deduplicateMessages([...history.messages, ...prev]) as ChatMessage[];
-            return merged;
-          });
+          // Merge API messages with bridge messages using content+timestamp dedup
+          const merged = mergeWithContentDedup([...history.messages, ...bridgeConverted]);
+          setLocalMessages(merged);
+          apiAvailable = true;
         }
       } catch {
-        // API unavailable — bridge messages are the fallback
+        // API unavailable — will fall back to bridge
+      }
+
+      // If API returned nothing or failed, use bridge messages as fallback
+      if (!cancelled && !apiAvailable) {
+        setLocalMessages(bridgeConverted);
+      }
+
+      // Start sync client as primary continuous polling source
+      if (!cancelled) {
+        const syncClient = createSyncClient({
+          onMessages: (msgs) => {
+            if (!cancelled) {
+              setLocalMessages(prev => {
+                const merged = deduplicateMessages([...prev, ...msgs]) as ChatMessage[];
+                return merged;
+              });
+            }
+          },
+          onCartUpdate: (cartUpdate) => {
+            if (!cancelled) setCart(cartUpdate);
+          },
+          onTyping: () => {},
+          onError: (err) => {
+            // Sync client error — bridge messages remain as fallback
+            console.warn('Sync client error, bridge fallback active', err);
+          },
+        });
+        syncClientRef.current = syncClient;
+        syncClient.start();
       }
     })();
-    return () => { cancelled = true; };
-  }, []);
 
-  // Poll bridge for seller replies every 1.5s (suppressed when WebSocket connected)
+    // Load cart — try API, fallback to demo
+    getCart()
+      .then((res) => { if (!cancelled) setCart(res.cart); })
+      .catch(() => { if (!cancelled) setCart(getDemoCart(sellerId)); });
+
+    return () => {
+      cancelled = true;
+      if (syncClientRef.current) {
+        syncClientRef.current.stop();
+        syncClientRef.current = null;
+      }
+    };
+  }, [storeName, sellerId]);
+
+  // Suppress sync polling when WebSocket is connected (Req 3.2 / 15.2)
   useEffect(() => {
     if (connectionState === 'connected') {
-      // Req 15.2: suppress polling when WebSocket is connected
-      if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
-      return;
+      if (syncClientRef.current) {
+        syncClientRef.current.stop();
+        syncClientRef.current = null;
+      }
     }
-    pollRef.current = setInterval(() => {
-      const bridgeMsgs = getSessionMessages(DEMO_SESSION_ID);
-      const converted = bridgeToCustomer(bridgeMsgs);
-      setLocalMessages(prev => {
-        if (converted.length !== prev.length || (converted.length > 0 && prev.length > 0 && converted[converted.length - 1].messageId !== prev[prev.length - 1].messageId)) {
-          return converted;
-        }
-        return prev;
-      });
-    }, 1500);
-    return () => { if (pollRef.current) clearInterval(pollRef.current); pollRef.current = null; };
   }, [connectionState]);
 
   // Merge WebSocket messages with local/bridge messages, dedup by messageId (Req 15.5)
   const messages: ChatMessage[] = deduplicateMessages([...localMessages, ...wsMessages]) as ChatMessage[];
 
   const handleSend = useCallback(async (text: string) => {
+    const correlationId = crypto.randomUUID();
     const msgId = `cust-${Date.now()}`;
     const timestamp = new Date().toISOString();
 
-    // Optimistic UI update via bridge
+    // Optimistic UI update via bridge (include correlationId for dedup matching)
     appendMessage(DEMO_SESSION_ID, {
       id: msgId,
       direction: 'inbound',
       text,
       timestamp,
       channel: 'web',
+      correlationId,
     });
 
-    // Update local state immediately
+    // Update local state immediately with correlationId on the ChatMessage
     const bridgeMsgs = getSessionMessages(DEMO_SESSION_ID);
-    setLocalMessages(bridgeToCustomer(bridgeMsgs));
+    const converted = bridgeToCustomer(bridgeMsgs);
+    // Attach correlationId to the optimistic message so dedup can match it
+    const withCorrelation = converted.map(m =>
+      m.messageId === msgId ? { ...m, correlationId } : m,
+    );
+    setLocalMessages(withCorrelation);
 
-    // PRIMARY: Send via HTTP API to backend
+    // PRIMARY: Send via HTTP API to backend (include correlationId for dedup)
     try {
       const { sendMessage } = await import('@/lib/api-chat');
-      await sendMessage({ content: text, messageType: 'text', sellerId });
+      await sendMessage({ content: text, messageType: 'text', sellerId, correlationId });
+      // Trigger immediate sync poll to pick up any bot response
+      syncClientRef.current?.pollNow();
     } catch (err) {
       console.warn('API send failed, message saved locally', err);
     }

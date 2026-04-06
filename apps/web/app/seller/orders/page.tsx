@@ -495,7 +495,7 @@ export default function SellerOrdersPage() {
       try {
         const { fetchAuthSession } = await import('aws-amplify/auth');
         const session = await fetchAuthSession();
-        const token = session.tokens?.accessToken?.toString();
+        const token = session.tokens?.idToken?.toString();
         if (!token || cancelled) return;
 
         const wsUrl = process.env.NEXT_PUBLIC_WEBSOCKET_URL;
@@ -705,12 +705,33 @@ export default function SellerOrdersPage() {
                 <span className="text-sm font-semibold text-gray-900">{formatCurrency(order.totalAmount || order.subtotal)}</span>
                 <span className="text-[11px] text-gray-400">{formatDate(order.createdAt)}</span>
               </div>
-              {/* Quick actions on mobile for pending orders */}
-              {order.status === 'pending_seller_confirmation' && (
-                <div className="mt-2 flex gap-2">
-                  <span className="flex-1 rounded bg-indigo-50 py-1 text-center text-xs font-medium text-indigo-700">
-                    Tap to review
-                  </span>
+              {/* Inline quick actions on mobile cards */}
+              {getActions(order.status).length > 0 && (
+                <div className="mt-2 flex gap-2" onClick={(e) => e.stopPropagation()}>
+                  {getActions(order.status).map((a) => (
+                    <button
+                      key={a.action}
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (a.action === 'reject') {
+                          setSelectedOrder(order);
+                        } else {
+                          handleAction(order.orderId || order.id, a.action);
+                        }
+                      }}
+                      disabled={actionLoading !== null}
+                      className={`flex-1 rounded-md py-1.5 text-xs font-medium transition disabled:opacity-50 ${
+                        a.variant === 'primary'
+                          ? 'bg-indigo-600 text-white hover:bg-indigo-700'
+                          : a.variant === 'danger'
+                          ? 'bg-red-50 text-red-700 hover:bg-red-100'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      {actionLoading === a.action ? '...' : a.label}
+                    </button>
+                  ))}
                 </div>
               )}
             </button>

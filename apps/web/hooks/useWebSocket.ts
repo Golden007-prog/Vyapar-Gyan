@@ -197,7 +197,7 @@ export function useWebSocket(token: string | null): UseWebSocketReturn {
       const prevState = prevStateRef.current;
       setConnectionState(newState);
 
-      // Requirement 15.2: suppress polling when connected
+      // Requirement 15.2 / 3.2: suppress polling only when WS is confirmed connected and healthy
       if (newState === 'connected') {
         stopPolling();
 
@@ -207,8 +207,10 @@ export function useWebSocket(token: string | null): UseWebSocketReturn {
         }
       }
 
-      // Requirement 15.3: activate polling when disconnected
-      if (newState === 'disconnected') {
+      // Requirement 2.4: ensure polling runs for all non-connected states
+      // (connecting, reconnecting, disconnected) so messages flow during
+      // WS setup, reconnection, and any transient failure states
+      if (newState !== 'connected') {
         startPolling();
       }
 
@@ -225,6 +227,11 @@ export function useWebSocket(token: string | null): UseWebSocketReturn {
     const client = new WebSocketClient();
     wsClientRef.current = client;
 
+    // Requirement 2.4: start polling immediately on mount so messages flow
+    // during WebSocket connection setup. Polling will be suppressed once
+    // WS transitions to 'connected' state (confirmed healthy).
+    startPolling();
+
     client.onStateChange(handleStateChange);
     client.onMessage(handleWsEvent);
     client.connect(token);
@@ -240,7 +247,7 @@ export function useWebSocket(token: string | null): UseWebSocketReturn {
       }
       typingTimersRef.current.clear();
     };
-  }, [token, handleStateChange, handleWsEvent, stopPolling]);
+  }, [token, handleStateChange, handleWsEvent, startPolling, stopPolling]);
 
   // --- Public API ---
 
