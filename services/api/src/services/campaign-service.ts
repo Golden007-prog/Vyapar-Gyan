@@ -21,7 +21,6 @@ import {
   updateCampaign,
   putCampaignDelivery,
   type CampaignRecord,
-  type CampaignDeliveryRecord,
   type AudienceFilters,
 } from '../adapters/dynamodb-adapter';
 import { routeMessage } from './message-router';

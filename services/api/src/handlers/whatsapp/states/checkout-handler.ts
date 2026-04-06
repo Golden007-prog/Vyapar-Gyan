@@ -295,7 +295,7 @@ async function handleOrderConfirmation(context: MessageContext): Promise<void> {
  */
 async function resolveSellerName(sellerId: string): Promise<string> {
   try {
-    const { UserRepository } = await import('../../../repositories/user-repository');
+    const { UserRepository } = await import('../../../repositories/user-repository.js');
     const userRepo = new UserRepository();
     const seller = await userRepo.getUserById(sellerId);
     return seller?.email?.split('@')[0] || 'the seller';

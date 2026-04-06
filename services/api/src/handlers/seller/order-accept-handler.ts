@@ -151,7 +151,7 @@ async function generatePaymentLinkWithRetry(order: any, requestId: string): Prom
       // Cancel seller reminder schedules (order has been accepted)
       // and schedule payment nudges (2h + 24h)
       try {
-        const { cancelOrderSchedules, schedulePaymentNudges } = await import('../../services/order-scheduler-service');
+        const { cancelOrderSchedules, schedulePaymentNudges } = await import('../../services/order-scheduler-service.js');
         await cancelOrderSchedules(order.id);
         await schedulePaymentNudges(order.id, order.customerId, link.short_url);
       } catch (schedErr) {

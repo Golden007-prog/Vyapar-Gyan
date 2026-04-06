@@ -360,7 +360,7 @@ async function getCustomerProfile(tableName: string, customerId: string): Promis
     }),
   );
   if (!res.Items || res.Items.length === 0) return null;
-  const rec = unmarshall(res.Items[0]);
+  const rec = unmarshall(res.Items![0]!);
   return {
     userId: rec.userId,
     displayName: rec.displayName || rec.name || '',

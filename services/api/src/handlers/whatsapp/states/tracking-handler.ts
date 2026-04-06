@@ -151,8 +151,8 @@ async function handlePayCommand(context: MessageContext): Promise<void> {
       return;
     }
 
-    if (order.paymentLinkUrl) {
-      const msg = `💳 Pay for order *${order.orderId}* — ₹${order.totalAmount}\n\n${order.paymentLinkUrl}\n\n⏰ Complete payment before the link expires.`;
+    if ((order as any).paymentLinkUrl) {
+      const msg = `💳 Pay for order *${order.orderId}* — ₹${order.totalAmount}\n\n${(order as any).paymentLinkUrl}\n\n⏰ Complete payment before the link expires.`;
       await whatsappSender.sendMessage(
         customer.phoneNumber,
         { type: 'text', text: msg },

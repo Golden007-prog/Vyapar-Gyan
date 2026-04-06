@@ -252,7 +252,7 @@ export async function findSellerByStoreName(
 ): Promise<SellerMatch | null> {
   try {
     // Lazy import to avoid requiring OpenSearch in test environments
-    const { OpenSearchAdapter } = await import('../adapters/opensearch-adapter');
+    const { OpenSearchAdapter } = await import('../adapters/opensearch-adapter.js');
     const osAdapter = new OpenSearchAdapter();
 
     const result = await osAdapter.search<Record<string, unknown>>('sellers', {

@@ -237,7 +237,6 @@ async function processMessageChange(
     if (messageText && userProfile) {
       const wasOptOut = await handleOptOut(userProfile.userId, messageText);
       if (wasOptOut) {
-        const { whatsappSender } = await import('../../services/whatsapp-sender.js');
         await whatsappSender.sendMessage(
           phoneNumber,
           { type: 'text', text: 'You have been unsubscribed from promotional messages. You will still receive order updates.' },
@@ -447,7 +446,6 @@ async function handleSellerMessage(context: {
   });
 
   // Send response back via WhatsApp (with seller audience for sanitization)
-  const { whatsappSender } = await import('../../services/whatsapp-sender.js');
   await whatsappSender.sendMessage(
     phoneNumber,
     { type: 'text', text: response },

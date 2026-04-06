@@ -148,11 +148,11 @@ export function parseInventoryEditCommand(text: string): ParsedEditCommand | nul
 
   if (!match) return null;
 
-  const itemIndex = parseInt(match[1], 10);
+  const itemIndex = parseInt(match[1]!, 10);
   if (itemIndex < 1 || isNaN(itemIndex)) return null;
 
-  const rawField = match[2];
-  const rawValue = match[3].trim();
+  const rawField = match[2]!;
+  const rawValue = match[3]!.trim();
 
   if (!rawValue) return null;
 
@@ -380,7 +380,7 @@ export function applyInventoryEdit(
   }
 
   const updated = [...items];
-  const target = { ...updated[edit.itemIndex - 1] };
+  const target: InventoryItem = { ...updated[edit.itemIndex - 1]! };
 
   if (edit.field === 'price') {
     target.price = edit.value as number;
@@ -441,10 +441,10 @@ async function extractFromCsv(
     throw new Error('CSV file must have at least a header row and one data row');
   }
 
-  const headers = lines[0].split(',').map((h) => h.trim().replace(/^"|"$/g, ''));
+  const headers = lines[0]!.split(',').map((h) => h.trim().replace(/^"|"$/g, ''));
   const sampleRows: string[][] = [];
   for (let i = 1; i < Math.min(4, lines.length); i++) {
-    sampleRows.push(lines[i].split(',').map((v) => v.trim().replace(/^"|"$/g, '')));
+    sampleRows.push(lines[i]!.split(',').map((v) => v.trim().replace(/^"|"$/g, '')));
   }
 
   // Use Gemini for smart column mapping
@@ -457,7 +457,7 @@ async function extractFromCsv(
   const errors: string[] = [];
 
   for (let i = 1; i < lines.length; i++) {
-    const values = lines[i].split(',').map((v) => v.trim().replace(/^"|"$/g, ''));
+    const values = lines[i]!.split(',').map((v) => v.trim().replace(/^"|"$/g, ''));
 
     const name = mapping.name !== null ? values[mapping.name] : undefined;
     const priceStr = mapping.price !== null ? values[mapping.price] : undefined;
@@ -481,7 +481,7 @@ async function extractFromCsv(
       name: name.trim(),
       price,
       quantity: isNaN(quantity) || quantity <= 0 ? 1 : quantity,
-      category: category?.trim() || undefined,
+      ...(category?.trim() ? { category: category.trim() } : {}),
       rowIndex: i + 1,
     });
   }

@@ -100,12 +100,7 @@ function formatItemsList(items: OrderEventItem[]): string {
     .join('\n');
 }
 
-function formatItemsSummary(items: OrderEventItem[]): string {
-  if (items.length === 1) {
-    return `${items[0]!.name} × ${items[0]!.quantity}`;
-  }
-  return `${items.length} items`;
-}
+// formatItemsSummary removed — unused
 
 // ---------------------------------------------------------------------------
 // WhatsApp Formatters (emoji-rich text)

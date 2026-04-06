@@ -51,6 +51,7 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
         name: item.name,
         price: item.price,
         quantity: item.quantity,
+        addedAt: new Date().toISOString(),
       })),
       channel: 'web',
       shippingAddress: body.shippingAddress,
@@ -72,7 +73,7 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
 
     // Schedule seller reminders (30min reminder + 2h customer notify) — non-blocking
     try {
-      const { scheduleSellerReminders } = await import('../../services/order-scheduler-service');
+      const { scheduleSellerReminders } = await import('../../services/order-scheduler-service.js');
       await scheduleSellerReminders(result.order!.id, sellerId);
     } catch (schedErr) {
       // Non-fatal — order was created successfully

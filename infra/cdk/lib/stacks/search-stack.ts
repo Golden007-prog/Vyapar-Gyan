@@ -397,6 +397,9 @@ export class SearchStack extends cdk.Stack {
       '        codec:\n',
       '          json: null\n',
       '        key_path_prefix: "dlq/"\n',
+      '        aws:\n',
+      '          sts_role_arn: "${PipelineRoleArn}"\n',
+      '          region: "${Region}"\n',
     ].join(''), {
       TableArn: table.tableArn,
       ExportBucket: this.exportBucket.bucketName,

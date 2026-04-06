@@ -15,7 +15,7 @@ import {
 import { logger } from '../../utils/logger';
 import { whatsappSender } from '../../services/whatsapp-sender';
 import { updateSessionState } from '../../adapters/dynamodb-adapter';
-import { listFavorites, addFavorite } from '../../repositories/favorites';
+import { listFavorites } from '../../repositories/favorites';
 
 // ---------------------------------------------------------------------------
 // DynamoDB client for seller location queries
@@ -34,7 +34,7 @@ async function tableName(): Promise<string> {
     if (envTable) {
       _tableName = envTable;
     } else {
-      const { getConfig } = await import('../../utils/config');
+      const { getConfig } = await import('../../utils/config.js');
       const cfg = await getConfig();
       _tableName = cfg.tableName;
     }
@@ -293,7 +293,7 @@ async function handleStoreSelection(
  * Handle "add to favorites" command (Requirement 6.7).
  */
 async function handleAddToFavorites(
-  userId: string,
+  _userId: string,
   phoneNumber: string,
   sessionId: string,
   _text: string,
@@ -356,8 +356,8 @@ async function searchByPincode(pincode: string): Promise<StoreResult[]> {
     return (res.Items ?? []).map(item => ({
       sellerId: item.sellerId as string,
       storeName: (item.storeName || item.businessName || 'Unknown Store') as string,
-      city: item.city as string | undefined,
-      pincode: item.pincode as string | undefined,
+      ...(item.city != null ? { city: item.city as string } : {}),
+      ...(item.pincode != null ? { pincode: item.pincode as string } : {}),
     }));
   } catch (err) {
     logger.error('Pincode search failed', { pincode, error: err instanceof Error ? err.message : String(err) });
@@ -384,8 +384,8 @@ async function searchByCity(city: string): Promise<StoreResult[]> {
     return (res.Items ?? []).map(item => ({
       sellerId: item.sellerId as string,
       storeName: (item.storeName || item.businessName || 'Unknown Store') as string,
-      city: item.city as string | undefined,
-      pincode: item.pincode as string | undefined,
+      ...(item.city != null ? { city: item.city as string } : {}),
+      ...(item.pincode != null ? { pincode: item.pincode as string } : {}),
     }));
   } catch (err) {
     logger.error('City search failed', { city, error: err instanceof Error ? err.message : String(err) });

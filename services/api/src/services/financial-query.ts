@@ -441,7 +441,7 @@ export function formatFinancialResponse(
 ): string {
   const templates = RESPONSE_TEMPLATES[intent];
   if (!templates) {
-    return RESPONSE_TEMPLATES.unknown[language] || RESPONSE_TEMPLATES.unknown.en;
+    return RESPONSE_TEMPLATES.unknown![language] || RESPONSE_TEMPLATES.unknown!.en;
   }
 
   const template = templates[language] || templates.en;
@@ -487,14 +487,14 @@ export async function executeFinancialQuery(
 
   // Step 2: Handle unknown intent (Requirement 22.7)
   if (intentResult.intent === 'unknown' || intentResult.confidence < 0.3) {
-    const unknownMsg = RESPONSE_TEMPLATES.unknown[intentResult.language] || RESPONSE_TEMPLATES.unknown.en;
+    const unknownMsg = RESPONSE_TEMPLATES.unknown![intentResult.language] || RESPONSE_TEMPLATES.unknown!.en;
     return { text: unknownMsg, language: intentResult.language, intent: 'unknown' };
   }
 
   // Step 3: Execute DynamoDB query
   const queryFn = QUERY_MAP[intentResult.intent];
   if (!queryFn) {
-    const unknownMsg = RESPONSE_TEMPLATES.unknown[intentResult.language] || RESPONSE_TEMPLATES.unknown.en;
+    const unknownMsg = RESPONSE_TEMPLATES.unknown![intentResult.language] || RESPONSE_TEMPLATES.unknown!.en;
     return { text: unknownMsg, language: intentResult.language, intent: 'unknown' };
   }
 

@@ -55,7 +55,7 @@ import { AuthStack } from '../lib/stacks/auth-stack';
 import { EventsStack } from '../lib/stacks/events-stack';
 import { APIStack } from '../lib/stacks/api-stack';
 import { BedrockStack } from '../lib/stacks/bedrock-stack';
-import { SearchStack } from '../lib/stacks/search-stack';
+// import { SearchStack } from '../lib/stacks/search-stack'; // TEMPORARILY DISABLED
 import { WebSocketStack } from '../lib/stacks/websocket-stack';
 import { PolicyStatement, Effect } from 'aws-cdk-lib/aws-iam';
 
@@ -292,37 +292,39 @@ bedrockStack.addDependency(eventsStack);
 bedrockStack.addDependency(storageStack);
 console.log(`BedrockStack instantiated: ${bedrockStack.stackName}`);
 
-// 7. Search Stack (depends on Database only — routes added below)
-const searchStack = new SearchStack(app, `${config.resourcePrefix}-search`, {
-  config,
-  table: databaseStack.table,
-  env: {
-    account,
-    region,
-  },
-  description: `OpenSearch search infrastructure for VyaparGyan ${environment} environment`,
-});
+// 7. Search Stack — TEMPORARILY DISABLED due to OSIS pipeline config issues
+// const searchStack = new SearchStack(app, `${config.resourcePrefix}-search`, {
+//   config,
+//   table: databaseStack.table,
+//   env: {
+//     account,
+//     region,
+//   },
+//   description: `OpenSearch search infrastructure for VyaparGyan ${environment} environment`,
+// });
 
-searchStack.addDependency(databaseStack);
-console.log(`SearchStack instantiated: ${searchStack.stackName}`);
+// searchStack.addDependency(databaseStack);
+console.log(`SearchStack: SKIPPED (OSIS pipeline fix pending)`);
 
-// 7b. Wire Search Lambda routes into API Gateway (avoids circular dependency)
-import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
-import { HttpMethod } from 'aws-cdk-lib/aws-apigatewayv2';
+// 7b. Wire Search Lambda routes into API Gateway
+// TEMPORARILY DISABLED — search stack has OSIS pipeline config issues
+// Will re-enable once OpenSearch pipeline syntax is fixed
+// import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
+// import { HttpMethod } from 'aws-cdk-lib/aws-apigatewayv2';
 
-apiStack.httpApi.addRoutes({
-  path: '/api/v1/search',
-  methods: [HttpMethod.GET],
-  integration: new HttpLambdaIntegration('SearchIntegration', searchStack.searchFunction),
-  authorizer: apiStack.jwtAuthorizer,
-});
+// apiStack.httpApi.addRoutes({
+//   path: '/api/v1/search',
+//   methods: [HttpMethod.GET],
+//   integration: new HttpLambdaIntegration('SearchIntegration', searchStack.searchFunction),
+//   authorizer: apiStack.jwtAuthorizer,
+// });
 
-apiStack.httpApi.addRoutes({
-  path: '/api/v1/autocomplete',
-  methods: [HttpMethod.GET],
-  integration: new HttpLambdaIntegration('AutocompleteIntegration', searchStack.autocompleteFunction),
-  authorizer: apiStack.jwtAuthorizer,
-});
+// apiStack.httpApi.addRoutes({
+//   path: '/api/v1/autocomplete',
+//   methods: [HttpMethod.GET],
+//   integration: new HttpLambdaIntegration('AutocompleteIntegration', searchStack.autocompleteFunction),
+//   authorizer: apiStack.jwtAuthorizer,
+// });
 
 // API_BASE_URL for Bedrock action group — optional, used for status callbacks
 // Removed cross-stack reference to avoid potential cyclic dependencies

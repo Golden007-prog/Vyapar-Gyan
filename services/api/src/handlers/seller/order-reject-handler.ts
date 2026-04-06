@@ -55,7 +55,7 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
 
     // Cancel any pending seller reminder schedules — non-blocking
     try {
-      const { cancelOrderSchedules } = await import('../../services/order-scheduler-service');
+      const { cancelOrderSchedules } = await import('../../services/order-scheduler-service.js');
       await cancelOrderSchedules(orderId);
     } catch (schedErr) {
       logger.warn('Failed to cancel order schedules (non-fatal)', {

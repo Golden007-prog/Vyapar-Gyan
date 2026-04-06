@@ -32,7 +32,6 @@ import {
   type TrendInterval,
 } from '../../services/trend-scheduler';
 import {
-  getCampaign,
   updateCampaign,
   queryCampaignsBySeller,
   type CampaignRecord,
@@ -620,7 +619,7 @@ export function parseCampaignCommand(text: string): ParsedCampaignCommand | null
   // "approve N" or "approve #N"
   const approveMatch = t.match(/^approve\s+#?(\d+)$/);
   if (approveMatch) {
-    const idx = parseInt(approveMatch[1], 10);
+    const idx = parseInt(approveMatch[1]!, 10);
     if (idx > 0) return { action: 'approve', index: idx };
     return null;
   }
@@ -628,7 +627,7 @@ export function parseCampaignCommand(text: string): ParsedCampaignCommand | null
   // "dismiss N" or "dismiss #N"
   const dismissMatch = t.match(/^dismiss\s+#?(\d+)$/);
   if (dismissMatch) {
-    const idx = parseInt(dismissMatch[1], 10);
+    const idx = parseInt(dismissMatch[1]!, 10);
     if (idx > 0) return { action: 'dismiss', index: idx };
     return null;
   }
@@ -636,7 +635,7 @@ export function parseCampaignCommand(text: string): ParsedCampaignCommand | null
   // Bare number → approve
   const bareMatch = t.match(/^(\d+)$/);
   if (bareMatch) {
-    const idx = parseInt(bareMatch[1], 10);
+    const idx = parseInt(bareMatch[1]!, 10);
     if (idx > 0) return { action: 'approve', index: idx };
     return null;
   }
@@ -744,7 +743,7 @@ async function handleCampaignCommand(
     return `❓ Invalid number. Please choose between 1 and ${cached.length}.`;
   }
 
-  const campaign = cached[cmd.index - 1];
+  const campaign = cached[cmd.index - 1]!;
 
   if (cmd.action === 'approve') {
     return handleCampaignApproval(context, campaign);

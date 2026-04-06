@@ -351,7 +351,7 @@ async function getDispute(tableName: string, disputeId: string): Promise<Dispute
     }),
   );
   if (!res.Items || res.Items.length === 0) return null;
-  return mapToDisputeRecord(unmarshall(res.Items[0]));
+  return mapToDisputeRecord(unmarshall(res.Items![0]!));
 }
 
 function mapToDisputeRecord(rec: Record<string, any>): DisputeRecord {
@@ -409,7 +409,7 @@ async function getUserDisplayName(tableName: string, userId: string): Promise<st
     }),
   );
   if (!res.Items || res.Items.length === 0) return 'Unknown';
-  const rec = unmarshall(res.Items[0]);
+  const rec = unmarshall(res.Items![0]!);
   return rec.displayName || rec.businessName || 'Unknown';
 }
 
@@ -431,7 +431,7 @@ async function getOrderForDispute(
     }),
   );
   if (!res.Items || res.Items.length === 0) return null;
-  return unmarshall(res.Items[0]);
+  return unmarshall(res.Items![0]!);
 }
 
 async function getChatTranscript(tableName: string, customerId: string): Promise<any[]> {

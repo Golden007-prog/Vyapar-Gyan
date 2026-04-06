@@ -339,18 +339,6 @@ export class EventsStack extends cdk.Stack {
     // Requirements: 11.3
     // -----------------------------------------------------------------------
 
-    this.orderSchedulerRole = new cdk.aws_iam.Role(this, 'OrderNudgeSchedulerRole', {
-      roleName: `${config.resourcePrefix}-order-nudge-scheduler-role`,
-      assumedBy: new cdk.aws_iam.ServicePrincipal('scheduler.amazonaws.com'),
-      description: 'Role assumed by EventBridge Scheduler to invoke notification router for order nudges',
-    });
-
-    // Allow the scheduler role to invoke the notification router function
-    this.notificationRouterFunction.grantInvoke(this.orderSchedulerRole);
-
-    cdk.Tags.of(this.orderSchedulerRole).add('Name', `${config.resourcePrefix}-order-nudge-scheduler-role`);
-    cdk.Tags.of(this.orderSchedulerRole).add('Service', 'order-nudges');
-
     // Create Campaign Worker Lambda function for automated WhatsApp campaigns
     this.campaignWorkerFunction = new Function(this, 'CampaignWorkerFunction', {
       functionName: `${config.resourcePrefix}-campaign-worker`,
@@ -488,6 +476,22 @@ export class EventsStack extends cdk.Stack {
     // Add tags to notification router
     cdk.Tags.of(this.notificationRouterFunction).add('Name', `${config.resourcePrefix}-notification-router`);
     cdk.Tags.of(this.notificationRouterFunction).add('Service', 'messaging');
+
+    // -----------------------------------------------------------------------
+    // Order Nudge Scheduler — IAM role for EventBridge Scheduler to invoke
+    // the notification router Lambda for payment nudges and seller reminders.
+    // -----------------------------------------------------------------------
+
+    this.orderSchedulerRole = new cdk.aws_iam.Role(this, 'OrderNudgeSchedulerRole', {
+      roleName: `${config.resourcePrefix}-order-nudge-scheduler-role`,
+      assumedBy: new cdk.aws_iam.ServicePrincipal('scheduler.amazonaws.com'),
+      description: 'Role assumed by EventBridge Scheduler to invoke notification router for order nudges',
+    });
+
+    this.notificationRouterFunction.grantInvoke(this.orderSchedulerRole);
+
+    cdk.Tags.of(this.orderSchedulerRole).add('Name', `${config.resourcePrefix}-order-nudge-scheduler-role`);
+    cdk.Tags.of(this.orderSchedulerRole).add('Service', 'order-nudges');
 
     // -----------------------------------------------------------------------
     // Message Fan-out Lambda — bi-directional message push (WhatsApp ↔ Web)

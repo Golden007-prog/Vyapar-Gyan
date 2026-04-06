@@ -353,7 +353,7 @@ async function getCampaign(tableName: string, campaignId: string): Promise<Admin
     }),
   );
   if (!res.Items || res.Items.length === 0) return null;
-  return mapToCampaignRecord(unmarshall(res.Items[0]));
+  return mapToCampaignRecord(unmarshall(res.Items![0]!));
 }
 
 function mapToCampaignRecord(rec: Record<string, any>): AdminCampaignRecord {
@@ -447,7 +447,7 @@ async function getUserDisplayName(tableName: string, userId: string): Promise<st
     }),
   );
   if (!res.Items || res.Items.length === 0) return 'Unknown';
-  const rec = unmarshall(res.Items[0]);
+  const rec = unmarshall(res.Items![0]!);
   return rec.businessName || rec.displayName || 'Unknown';
 }
 

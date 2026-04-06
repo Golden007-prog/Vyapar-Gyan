@@ -27,7 +27,7 @@ async function tableName(): Promise<string> {
     if (envTable) {
       _tableName = envTable;
     } else {
-      const { getConfig } = await import('../utils/config');
+      const { getConfig } = await import('../utils/config.js');
       const cfg = await getConfig();
       _tableName = cfg.tableName;
     }

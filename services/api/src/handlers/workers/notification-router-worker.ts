@@ -246,7 +246,7 @@ async function handleOrderEvent(
   const enrichedEvent: OrderEventDetail = {
     ...detail,
     sellerName: sellerProfile?.businessName || sellerProfile?.displayName || detail.sellerId,
-    customerName: customerProfile?.profileName || customerProfile?.displayName || detail.customerId,
+    customerName: (customerProfile as any)?.profileName || customerProfile?.displayName || detail.customerId,
   };
 
   // Determine which recipients to notify based on event type

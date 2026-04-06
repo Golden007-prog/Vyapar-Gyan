@@ -43,7 +43,7 @@ jobs:
           NEXT_PUBLIC_AWS_REGION: "ap-south-1"
           NEXT_PUBLIC_BASE_PATH: "/Vyapar-Gyan"
           NEXT_PUBLIC_RAZORPAY_KEY_ID: "rzp_test_SMPtcnanzcaSQb"
-          NEXT_PUBLIC_WEBSOCKET_URL: "wss://ws.vyapargyan.com"
+          NEXT_PUBLIC_WEBSOCKET_URL: "wss://sze21qi00l.execute-api.ap-south-1.amazonaws.com/dev"
         run: pnpm build
 
       - name: Add .nojekyll

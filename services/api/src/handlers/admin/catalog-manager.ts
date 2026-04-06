@@ -26,7 +26,6 @@ import {
   PutItemCommand,
   UpdateItemCommand,
   DeleteItemCommand,
-  BatchWriteItemCommand,
 } from '@aws-sdk/client-dynamodb';
 import { unmarshall, marshall } from '@aws-sdk/util-dynamodb';
 import { logger } from '../../utils/logger';
@@ -97,7 +96,7 @@ export function resolveAlias(
 export function computeMergePreview(
   products: ProductRecord[],
   sourceId: string,
-  targetId: string,
+  _targetId: string,
 ): { affectedProducts: number; affectedSellers: number } {
   const affected = products.filter(p => p.categoryId === sourceId);
   const distinctSellers = new Set(affected.map(p => p.sellerId));
@@ -527,7 +526,7 @@ async function getCategory(tableName: string, categoryId: string): Promise<Categ
   }));
 
   if (!result.Items || result.Items.length === 0) return null;
-  const rec = unmarshall(result.Items[0]);
+  const rec = unmarshall(result.Items![0]!);
   return {
     categoryId: rec.categoryId,
     name: rec.name,

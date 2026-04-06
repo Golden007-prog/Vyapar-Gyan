@@ -390,7 +390,7 @@ async function getTransfer(tableName: string, transferId: string): Promise<Trans
     }),
   );
   if (!res.Items || res.Items.length === 0) return null;
-  return mapToTransferRecord(unmarshall(res.Items[0]));
+  return mapToTransferRecord(unmarshall(res.Items![0]!));
 }
 
 function mapToTransferRecord(rec: Record<string, any>): TransferRecord {
@@ -446,7 +446,7 @@ async function getUserDisplayName(tableName: string, userId: string): Promise<st
     }),
   );
   if (!res.Items || res.Items.length === 0) return 'Unknown';
-  const rec = unmarshall(res.Items[0]);
+  const rec = unmarshall(res.Items![0]!);
   return rec.businessName || rec.displayName || 'Unknown';
 }
 
