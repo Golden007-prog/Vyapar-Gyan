@@ -40,6 +40,8 @@ export interface UserProfile {
   businessAddress?: string;
   gstNumber?: string;
   sellerStatus?: 'pending_approval' | 'approved' | 'rejected' | 'suspended';
+  /** Maps a Cognito user to a seller entity ID (e.g. 'seller-dragon-001') */
+  sellerId?: string;
   cognitoId: string;
   status: 'active' | 'deleted';
   deletedAt?: string;
@@ -289,6 +291,16 @@ export async function getUserProfile(userId: string): Promise<UserProfile | null
     new GetCommand({ TableName: table, Key: { PK: `USER#${userId}`, SK: 'PROFILE' } }),
   );
   return (res.Item as UserProfile) ?? null;
+}
+
+/**
+ * Resolve a Cognito sub to the seller entity ID.
+ * Looks up USER#{cognitoSub}/PROFILE for a `sellerId` field.
+ * Falls back to cognitoSub if no mapping exists.
+ */
+export async function resolveSellerId(cognitoSub: string): Promise<string> {
+  const profile = await getUserProfile(cognitoSub);
+  return profile?.sellerId || cognitoSub;
 }
 
 export async function getUserByPhone(phoneNumber: string): Promise<UserProfile | null> {

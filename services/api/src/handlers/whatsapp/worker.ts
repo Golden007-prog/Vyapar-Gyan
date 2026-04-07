@@ -667,7 +667,7 @@ async function handleCustomerMessage(context: {
   // Always publish so messages appear in seller's web inbox
   const recipientSellerId = sessionResult.session.handoffSellerId
     || sessionResult.session.lastIntent?.store?.sellerId
-    || 'seller-123'; // Default seller fallback for demo
+    || 'seller-dragon-001'; // Default seller fallback for Dragon Store
 
   try {
     const eventBusName = process.env.EVENT_BUS_NAME ?? '';

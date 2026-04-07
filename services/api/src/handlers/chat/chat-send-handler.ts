@@ -86,7 +86,7 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
                 threadId: `THREAD#${userId}`,
                 senderUserId: userId,
                 senderType: 'customer',
-                recipientUserId: sellerId ?? 'seller-123',
+                recipientUserId: sellerId ?? 'seller-dragon-001',
                 channel: 'web',
                 content,
               }),

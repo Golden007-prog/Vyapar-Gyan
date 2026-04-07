@@ -13,7 +13,7 @@ import type { Cart } from './api-cart';
 
 // --- Constants ---
 
-const BASE_INTERVAL_MS = 2_000;
+const BASE_INTERVAL_MS = 5_000;
 const MAX_INTERVAL_MS = 30_000;
 const BACKOFF_FACTOR = 2;
 

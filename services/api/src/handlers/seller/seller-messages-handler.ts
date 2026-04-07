@@ -10,13 +10,14 @@
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
 import { logger } from '../../utils/logger';
 import { extractUserId, UnauthorizedError } from '../../core/auth';
-import { queryMessages } from '../../adapters/dynamodb-adapter';
+import { queryMessages, resolveSellerId } from '../../adapters/dynamodb-adapter';
 
 export async function handler(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResultV2> {
   const requestId = event.requestContext.requestId;
 
   try {
-    const sellerId = extractUserId(event);
+    const cognitoSub = extractUserId(event);
+    const sellerId = await resolveSellerId(cognitoSub);
     const customerUserId = event.pathParameters?.userId;
 
     if (!customerUserId) {

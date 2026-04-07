@@ -12,6 +12,7 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { logger } from '../../utils/logger';
 import { extractUserId, UnauthorizedError } from '../../core/auth';
+import { resolveSellerId } from '../../adapters/dynamodb-adapter';
 import { getBasicConfig } from '../../utils/config';
 
 const ddbClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
@@ -20,7 +21,8 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
   const requestId = event.requestContext.requestId;
 
   try {
-    const sellerId = extractUserId(event);
+    const cognitoSub = extractUserId(event);
+    const sellerId = await resolveSellerId(cognitoSub);
     const customerUserId = event.pathParameters?.userId;
 
     if (!customerUserId) {

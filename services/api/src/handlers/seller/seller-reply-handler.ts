@@ -14,7 +14,7 @@ import { EventBridgeClient, PutEventsCommand } from '@aws-sdk/client-eventbridge
 import { logger } from '../../utils/logger';
 import { extractUserId, UnauthorizedError } from '../../core/auth';
 import { getBasicConfig } from '../../utils/config';
-import { putMessage, getSession, type MessageThread } from '../../adapters/dynamodb-adapter';
+import { putMessage, getSession, resolveSellerId, type MessageThread } from '../../adapters/dynamodb-adapter';
 import { startHandoff, extendHandoff, endHandoff, shouldBypassAI } from '../../services/session-service';
 
 const ebClient = new EventBridgeClient({});
@@ -28,7 +28,8 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
   const requestId = event.requestContext.requestId;
 
   try {
-    const sellerId = extractUserId(event);
+    const cognitoSub = extractUserId(event);
+    const sellerId = await resolveSellerId(cognitoSub);
     const customerUserId = event.pathParameters?.userId;
 
     if (!customerUserId) {
