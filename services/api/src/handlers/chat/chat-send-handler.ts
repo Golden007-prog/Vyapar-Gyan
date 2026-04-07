@@ -98,13 +98,16 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
 
     logger.info('Chat message sent', { userId, messageId, requestId });
 
-    // Trigger async bot processing for web chat messages (omnichannel)
-    // Fire-and-forget: don't block the HTTP response
-    processWebChatBotResponse(userId, content, sellerId ?? undefined).catch(err => {
+    // Generate bot response and push via EventBridge → WebSocket fanout.
+    // Must await — Lambda freezes execution after returning the HTTP response,
+    // so fire-and-forget promises never complete.
+    try {
+      await processWebChatBotResponse(userId, content, sellerId ?? undefined);
+    } catch (err) {
       logger.warn('Web chat bot response processing failed', {
         userId, messageId, error: err instanceof Error ? err.message : String(err),
       });
-    });
+    }
 
     return response(201, { messageId, createdAt });
   } catch (error) {
