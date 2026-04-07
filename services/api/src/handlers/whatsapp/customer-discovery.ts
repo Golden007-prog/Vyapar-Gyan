@@ -294,6 +294,15 @@ async function handleStoreBrowsingState(
     return;
   }
 
+  // Check if input looks like a store name search (contains "store" or matches a known store)
+  const lowerText = text.toLowerCase();
+  if (/\bstore\b/i.test(text) || lowerText.includes('shop') || lowerText.includes('mart') || lowerText.includes('kirana')) {
+    // Re-route to store search instead of product search
+    await saveDiscoveryContext(userId, { discoveryState: 'home' });
+    await performStoreSearch(ctx, text);
+    return;
+  }
+
   // Anything else → search products in this store (transition to browsing)
   await transitionToBrowsing(userId, sellerId);
   await whatsappSender.sendMessage(phoneNumber,
@@ -604,7 +613,7 @@ async function searchByStoreName(query: string): Promise<StoreResult[]> {
         FilterExpression: 'begins_with(PK, :userPrefix) AND SK = :profile AND #role = :seller',
         ExpressionAttributeNames: { '#role': 'role' },
         ExpressionAttributeValues: { ':userPrefix': 'USER#', ':profile': 'PROFILE', ':seller': 'seller' },
-        Limit: 100,
+        Limit: 500,
       }),
     );
 

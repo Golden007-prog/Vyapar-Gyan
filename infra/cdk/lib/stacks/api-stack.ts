@@ -1549,6 +1549,19 @@ export class APIStack extends cdk.Stack {
     table.grantReadWriteData(campaignScheduleFunction);
     eventBus.grantPutEventsTo(campaignScheduleFunction);
 
+    const campaignSendFunction = new Function(this, 'CampaignSendFunction', {
+      functionName: `${config.resourcePrefix}-campaign-send`,
+      runtime: Runtime.NODEJS_20_X,
+      architecture: Architecture.ARM_64,
+      handler: 'handlers/seller/campaign-send-handler.handler',
+      code: Code.fromAsset('../../services/api/dist'),
+      timeout: Duration.seconds(30),
+      memorySize: 512,
+      environment: commonCampaignEnv,
+    });
+    table.grantReadWriteData(campaignSendFunction);
+    eventBus.grantPutEventsTo(campaignSendFunction);
+
     const campaignAnalyticsFunction = new Function(this, 'CampaignAnalyticsFunction', {
       functionName: `${config.resourcePrefix}-campaign-analytics`,
       runtime: Runtime.NODEJS_20_X,
@@ -1574,7 +1587,7 @@ export class APIStack extends cdk.Stack {
     table.grantReadData(campaignReachFunction);
 
     // Grant Secrets Manager + SSM to campaign handlers that need config
-    for (const fn of [campaignCreateFunction, campaignScheduleFunction, campaignAnalyticsFunction, campaignReachFunction]) {
+    for (const fn of [campaignCreateFunction, campaignScheduleFunction, campaignSendFunction, campaignAnalyticsFunction, campaignReachFunction]) {
       fn.addToRolePolicy(
         new PolicyStatement({
           effect: Effect.ALLOW,
@@ -1603,6 +1616,9 @@ export class APIStack extends cdk.Stack {
     const campaignScheduleIntegration = new HttpLambdaIntegration('CampaignScheduleIntegration', campaignScheduleFunction, {
       payloadFormatVersion: PayloadFormatVersion.VERSION_2_0,
     });
+    const campaignSendIntegration = new HttpLambdaIntegration('CampaignSendIntegration', campaignSendFunction, {
+      payloadFormatVersion: PayloadFormatVersion.VERSION_2_0,
+    });
     const campaignAnalyticsIntegration = new HttpLambdaIntegration('CampaignAnalyticsIntegration', campaignAnalyticsFunction, {
       payloadFormatVersion: PayloadFormatVersion.VERSION_2_0,
     });
@@ -1620,6 +1636,12 @@ export class APIStack extends cdk.Stack {
       path: '/api/v1/seller/campaigns/{id}/schedule',
       methods: [HttpMethod.POST],
       integration: campaignScheduleIntegration,
+      authorizer: this.jwtAuthorizer,
+    });
+    this.httpApi.addRoutes({
+      path: '/api/v1/seller/campaigns/send',
+      methods: [HttpMethod.POST],
+      integration: campaignSendIntegration,
       authorizer: this.jwtAuthorizer,
     });
     this.httpApi.addRoutes({

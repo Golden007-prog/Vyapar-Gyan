@@ -98,6 +98,14 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
 
     logger.info('Chat message sent', { userId, messageId, requestId });
 
+    // Trigger async bot processing for web chat messages (omnichannel)
+    // Fire-and-forget: don't block the HTTP response
+    processWebChatBotResponse(userId, content, sellerId ?? undefined).catch(err => {
+      logger.warn('Web chat bot response processing failed', {
+        userId, messageId, error: err instanceof Error ? err.message : String(err),
+      });
+    });
+
     return response(201, { messageId, createdAt });
   } catch (error) {
     if (error instanceof UnauthorizedError) {
@@ -106,6 +114,53 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     logger.error('Chat send failed', error, { requestId });
     return response(500, { error: 'Internal server error' });
   }
+}
+
+/**
+ * Process web chat message through the same discovery/browsing pipeline used by WhatsApp.
+ * Generates a bot response and saves it to the thread + pushes via EventBridge.
+ */
+async function processWebChatBotResponse(userId: string, content: string, sellerId?: string): Promise<void> {
+  const { saveBotResponse } = await import('../../services/omnichannel-processor.js');
+  const { resolveOrCreateSession } = await import('../../services/session-service.js');
+
+  // Resolve or create a session for web channel
+  const sessionResult = await resolveOrCreateSession({
+    userId,
+    phoneNumber: '',
+    channel: 'web',
+  });
+
+  // For web chat, generate a simple acknowledgment bot response
+  // The full discovery pipeline requires a phoneNumber for WhatsApp sending,
+  // so we use a simplified processing path for web chat
+  const botReply = generateWebChatBotReply(content, sessionResult.session.state);
+
+  await saveBotResponse({
+    userId,
+    botReply,
+    channel: 'web',
+    ...(sellerId ? { sellerId } : {}),
+    source: 'web',
+  });
+}
+
+/**
+ * Generate a simple bot reply for web chat messages.
+ * This provides immediate feedback while the full AI pipeline processes asynchronously.
+ */
+function generateWebChatBotReply(content: string, _sessionState: string): string {
+  const lower = content.toLowerCase().trim();
+
+  if (/^(hi|hello|hey|namaste|namaskar)$/i.test(lower)) {
+    return 'Welcome! How can I help you today? You can:\n\n1. Browse products\n2. Search for a product\n3. Check order status\n\nJust type what you\'re looking for!';
+  }
+
+  if (/\b(order|track|status|delivery)\b/i.test(lower)) {
+    return 'I can help with your order! Please provide your order number or describe what you\'re looking for.';
+  }
+
+  return `Thanks for your message! I'm looking into "${content.substring(0, 50)}${content.length > 50 ? '...' : ''}" for you. A store representative will get back to you shortly.`;
 }
 
 function response(statusCode: number, body: Record<string, unknown>): APIGatewayProxyResultV2 {

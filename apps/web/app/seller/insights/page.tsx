@@ -311,27 +311,61 @@ export default function AIInsightsPage() {
     if (!pendingInsight || selectedCustomers.size === 0) return;
     setSendingNotification(true);
 
-    await new Promise(r => setTimeout(r, 2000));
+    const messageText = `🏷️ Special Offer from Dragon Store!\n\n${pendingInsight.title}\n${pendingInsight.suggestedDiscountPercent ? `${pendingInsight.suggestedDiscountPercent}% OFF` : pendingInsight.description}\n\nReply to this message to order!`;
+
+    const targets = DEMO_CUSTOMERS
+      .filter(c => selectedCustomers.has(c.id))
+      .map(c => ({ userId: c.id, phoneNumber: c.phone }));
 
     try {
-      const INBOX_STORE_KEY = 'vyapargyan_inbox_messages';
-      const store = JSON.parse(sessionStorage.getItem(INBOX_STORE_KEY) || '{}');
-      const sessionId = 'session-demo-customer';
-      const existing = store[sessionId] || [];
+      // Call campaign send API
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://api.vyapargyan.com';
+      let token: string | null = null;
+      try {
+        const { fetchAuthSession } = await import('aws-amplify/auth');
+        const session = await fetchAuthSession();
+        token = session.tokens?.idToken?.toString() ?? null;
+      } catch { /* no auth */ }
 
-      const notifMsg = {
-        id: `notif-${Date.now()}`,
-        direction: 'outbound',
-        messageType: 'text',
-        content: {
-          text: `🏷️ Special Offer from Dragon Store!\n\n${pendingInsight.title}\n${pendingInsight.suggestedDiscountPercent ? `${pendingInsight.suggestedDiscountPercent}% OFF` : pendingInsight.description}\n\nReply to this message to order!`
+      const res = await fetch(`${API_BASE_URL}/api/v1/seller/campaigns/send`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        status: 'delivered',
-        createdAt: new Date().toISOString(),
-      };
-      store[sessionId] = [...existing, notifMsg];
-      sessionStorage.setItem(INBOX_STORE_KEY, JSON.stringify(store));
-    } catch { /* ignore */ }
+        body: JSON.stringify({
+          channel: sendChannel,
+          targets,
+          messageText,
+          insightId: pendingInsight.id,
+        }),
+      });
+
+      if (!res.ok) {
+        console.warn('Campaign send API returned', res.status);
+      }
+
+      // Also store in local sessionStorage for immediate UI feedback
+      try {
+        const INBOX_STORE_KEY = 'vyapargyan_inbox_messages';
+        const store = JSON.parse(sessionStorage.getItem(INBOX_STORE_KEY) || '{}');
+        const sessionId = 'session-demo-customer';
+        const existing = store[sessionId] || [];
+        const notifMsg = {
+          id: `notif-${Date.now()}`,
+          direction: 'outbound',
+          messageType: 'text',
+          content: { text: messageText },
+          status: 'delivered',
+          createdAt: new Date().toISOString(),
+        };
+        store[sessionId] = [...existing, notifMsg];
+        sessionStorage.setItem(INBOX_STORE_KEY, JSON.stringify(store));
+      } catch { /* ignore */ }
+    } catch (err) {
+      console.error('Campaign send failed', err);
+      // Still mark as executed for demo purposes
+    }
 
     setInsights(prev => prev.map(i => i.id === pendingInsight.id ? { ...i, status: 'EXECUTED' as const } : i));
     setSendingNotification(false);

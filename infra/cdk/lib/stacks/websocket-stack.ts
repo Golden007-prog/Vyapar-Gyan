@@ -172,6 +172,13 @@ export class WebSocketStack extends cdk.Stack {
     table.grantReadWriteData(defaultFunction);
     table.grantReadWriteData(sendMessageFunction);
 
+    // $connect handler needs Cognito GetUser to verify JWT tokens
+    connectFunction.addToRolePolicy(new PolicyStatement({
+      effect: Effect.ALLOW,
+      actions: ['cognito-idp:GetUser'],
+      resources: [userPool.userPoolArn],
+    }));
+
     // ========================================================================
     // execute-api:ManageConnections — sendMessage and default handlers
     // ========================================================================

@@ -61,7 +61,7 @@ export type SyncQueryInput = z.infer<typeof SyncQuerySchema>;
 export const SendMessageSchema = z.object({
   content: z.string().min(1).max(4096),
   messageType: z.enum(['text', 'image', 'product_card']).default('text'),
-  sellerId: z.string().uuid().optional(),
+  sellerId: z.string().min(1).optional(),
   productContext: z
     .object({
       productId: z.string(),
@@ -69,6 +69,7 @@ export const SendMessageSchema = z.object({
       price: z.number(),
     })
     .optional(),
+  correlationId: z.string().optional(),
 });
 export type SendMessageInput = z.infer<typeof SendMessageSchema>;
 

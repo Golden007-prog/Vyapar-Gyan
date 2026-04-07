@@ -36,8 +36,10 @@ import {
   queryCampaignsBySeller,
   getSession,
   putSession,
+  getUserProfile,
   type CampaignRecord,
 } from '../../adapters/dynamodb-adapter';
+import { generateTrendReport } from '../../services/trend-alerts-service';
 
 // ── DynamoDB client ────────────────────────────────────────────────────
 
@@ -74,7 +76,7 @@ const HOME_MENU = `🏪 *VyaparGyan Seller Copilot*
 Welcome! How can I help you today?
 
 1️⃣ Check stock
-2️⃣ Configure trend alerts
+2️⃣ AI Trend Alerts
 3️⃣ Review pending campaigns
 4️⃣ Quick inventory summary
 
@@ -149,8 +151,8 @@ export async function handleSellerCopilotMessage(
   } else if (/^stop\s*alerts?$/i.test(textLower)) {
     response = await handleStopAlerts(context);
   } else if (/^(trends?|alerts?)$/i.test(textLower)) {
-    sellerStates.set(sellerId, 'trend_interval_select');
-    response = await handleTrendAlertsEntry(context);
+    sellerStates.set(sellerId, 'trend_alerts');
+    response = await handleTrendAlertsGenerate(context);
   } else {
     const currentState = sellerStates.get(sellerId);
     if (!currentState) {
@@ -160,6 +162,8 @@ export async function handleSellerCopilotMessage(
       response = await handleHomeSelection(context, textLower);
     } else if (currentState === 'stock_check') {
       response = await handleStockCheck(context);
+    } else if (currentState === 'trend_alerts') {
+      response = await handleTrendAlertsFollowUp(context, textLower);
     } else if (currentState === 'trend_interval_select') {
       response = await handleTrendIntervalSelection(context, textLower);
     } else if (currentState === 'campaigns') {
@@ -219,9 +223,9 @@ async function handleHomeSelection(
     return '🔍 What product would you like to check stock for?\n\nType the product name (e.g., "Amul Butter" or "Tata Salt 1kg")';
   }
 
-  if (textLower === '2' || /^(configure\s*)?trend\s*alerts?$/i.test(textLower)) {
-    sellerStates.set(sellerId, 'trend_interval_select');
-    return handleTrendAlertsEntry(context);
+  if (textLower === '2' || /^(ai\s*)?trend\s*alerts?$/i.test(textLower)) {
+    sellerStates.set(sellerId, 'trend_alerts');
+    return handleTrendAlertsGenerate(context);
   }
 
   if (textLower === '3' || /^review\s*(pending\s*)?campaigns?$/i.test(textLower)) {
@@ -510,6 +514,76 @@ Type another product name to check or "menu" to go back.`;
 }
 
 // ── Trend alert handlers ───────────────────────────────────────────────
+
+/**
+ * Generate and send an immediate AI trend report when seller types "2".
+ * After showing the report, offer follow-up actions.
+ */
+async function handleTrendAlertsGenerate(
+  context: SellerCopilotContext,
+): Promise<string> {
+  const sellerId = context.user.id;
+
+  try {
+    // Fetch seller's store name from profile
+    let storeName = 'Your Store';
+    try {
+      const profile = await getUserProfile(sellerId);
+      if (profile?.businessName) {
+        storeName = profile.businessName;
+      } else if (profile?.displayName) {
+        storeName = profile.displayName;
+      }
+    } catch {
+      // Use default store name
+    }
+
+    const report = await generateTrendReport(sellerId, storeName);
+    return report;
+  } catch (err) {
+    logger.error('Trend report generation failed in copilot', {
+      sellerId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    sellerStates.set(sellerId, 'home');
+    return 'Sorry, I couldn\'t generate your trend report right now. Please try again.\n\nType "menu" to go back.';
+  }
+}
+
+/**
+ * Handle follow-up actions after trend report is shown.
+ * - "configure" or "schedule" → go to interval selection
+ * - "add [product]" → add a suggested product (future)
+ * - number "4" → inventory summary
+ * - "menu" → home (handled by top-level router)
+ */
+async function handleTrendAlertsFollowUp(
+  context: SellerCopilotContext,
+  textLower: string,
+): Promise<string> {
+  const sellerId = context.user.id;
+
+  // "configure" or "schedule" → interval selection for recurring alerts
+  if (/^(configure|schedule|set\s*up|recurring)/i.test(textLower)) {
+    sellerStates.set(sellerId, 'trend_interval_select');
+    return handleTrendAlertsEntry(context);
+  }
+
+  // "4" → inventory summary
+  if (textLower === '4') {
+    sellerStates.set(sellerId, 'inventory_summary');
+    return handleInventorySummary(context);
+  }
+
+  // "refresh" or "2" → regenerate report
+  if (textLower === '2' || /^(refresh|regenerate|new\s*report)/i.test(textLower)) {
+    return handleTrendAlertsGenerate(context);
+  }
+
+  // Default: go back to home and re-route
+  sellerStates.set(sellerId, 'home');
+  return handleHomeSelection(context, textLower);
+}
 
 const TREND_INTERVAL_MENU = `📊 *Configure Trend Alerts*
 
