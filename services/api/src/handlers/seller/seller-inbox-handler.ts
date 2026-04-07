@@ -67,18 +67,14 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     const conversationMap = new Map<string, ConversationSummary>();
 
     for (const msg of messages) {
-      // In THREAD#{sellerId}, messages from customers have senderRole='customer'
-      // The customer's userId is stored in the message content or as a field
-      // We use the message's userId field — for seller thread, this is the sellerId
-      // We need a customerUserId field. By convention, seller inbox messages
-      // store the customer's userId in a separate field or we derive from direction.
-      // The design stores messages with the thread owner's userId. For cross-reference,
-      // we look at the 'direction' and 'senderRole' to identify the counterpart.
-      // Since messages in THREAD#{sellerId} are copies, we need a way to identify
-      // which customer they belong to. We'll use a 'counterpartUserId' or the
-      // content structure. For now, messages stored via seller-reply-handler will
-      // include a customerUserId field.
-      const customerUserId = (msg as any).customerUserId || (msg as any).counterpartUserId;
+      // Identify which customer this message belongs to.
+      // Sources: customerUserId (notification router), counterpartUserId (legacy),
+      // senderId (web chat inbound), content.fromUserId (WhatsApp routed).
+      const customerUserId = (msg as any).customerUserId
+        || (msg as any).counterpartUserId
+        || (msg.direction === 'inbound' ? (msg as any).senderId : undefined)
+        || (msg.direction === 'inbound' && (msg.content as any)?.fromUserId
+            ? (msg.content as any).fromUserId : undefined);
       if (!customerUserId) continue;
 
       const existing = conversationMap.get(customerUserId);

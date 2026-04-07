@@ -64,10 +64,16 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     }
     const result = await queryMessages(queryOpts);
 
-    // Filter messages belonging to this customer conversation
-    const filtered = result.messages.filter(
-      (msg) => (msg as any).customerUserId === customerUserId,
-    );
+    // Filter messages belonging to this customer conversation.
+    // Match on customerUserId, counterpartUserId, senderId (inbound), or content.fromUserId.
+    const filtered = result.messages.filter((msg) => {
+      const msgCustomerId = (msg as any).customerUserId
+        || (msg as any).counterpartUserId
+        || (msg.direction === 'inbound' ? (msg as any).senderId : undefined)
+        || (msg.direction === 'inbound' && (msg.content as any)?.fromUserId
+            ? (msg.content as any).fromUserId : undefined);
+      return msgCustomerId === customerUserId;
+    });
 
     const messages = filtered.slice(0, limit);
 

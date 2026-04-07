@@ -53,7 +53,11 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
 
     // Update all unread inbound messages from this customer
     for (const msg of messages) {
-      const msgCustomerId = (msg as any).customerUserId || (msg as any).counterpartUserId;
+      const msgCustomerId = (msg as any).customerUserId
+        || (msg as any).counterpartUserId
+        || (msg.direction === 'inbound' ? (msg as any).senderId : undefined)
+        || (msg.direction === 'inbound' && (msg.content as any)?.fromUserId
+            ? (msg.content as any).fromUserId : undefined);
       if (msgCustomerId !== customerUserId) continue;
       if (msg.direction !== 'inbound') continue;
       if (msg.deliveryStatus === 'read') continue;
