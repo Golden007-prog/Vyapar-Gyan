@@ -61,6 +61,10 @@ export interface UnifiedSession {
     store?: { name: string | null; sellerId?: string };
     language?: string;
   };
+  /** Seller copilot sub-state persisted across Lambda invocations */
+  sellerSubState?: string | undefined;
+  /** Pending inventory upload ID for WhatsApp confirmation flow */
+  pendingUploadId?: string | undefined;
   /** Human handoff fields (Req 10.1–10.5) */
   isHumanHandoff?: boolean;
   handoffSellerId?: string;
@@ -1284,6 +1288,125 @@ export async function updateCampaignDeliveryStatus(
         PK: `CAMPAIGN#${campaignId}`,
         SK: `DELIVERY#${customerId}#${channel}`,
       },
+      UpdateExpression: updateExpr,
+      ExpressionAttributeNames: names,
+      ExpressionAttributeValues: values,
+    }),
+  );
+}
+
+// ============================================================================
+// 14. Upload Record — PK: UPLOAD#{uploadId}  SK: METADATA
+//     GSI1PK: SELLER#{sellerId}  GSI1SK: TS#{createdAt}
+//     24-hour TTL for auto-cleanup
+// ============================================================================
+
+export interface UploadRecord {
+  uploadId: string;
+  sellerId: string;
+  phoneNumber: string;
+  mediaType: 'csv' | 'image';
+  s3Key: string;
+  status: 'processing' | 'completed' | 'failed';
+  productCount: number;
+  /** CSV-specific: AI column mapping result */
+  columnMapping?: Record<string, unknown>;
+  /** CSV-specific: header row */
+  headers?: string[];
+  /** CSV-specific: all CSV lines for frontend re-parsing */
+  csvLines?: string[];
+  /** Extracted/mapped products ready for review */
+  products: Array<{
+    name: string;
+    price: number;
+    quantity: number;
+    category?: string;
+    sku?: string;
+    brand?: string;
+    variant?: string;
+    confidence?: number;
+    rowIndex?: number;
+  }>;
+  /** Processing errors */
+  errors?: string[];
+  /** Processing warnings */
+  warnings?: string[];
+  createdAt: string;
+  updatedAt: string;
+  /** DynamoDB TTL — 24 hours from creation */
+  expiresAt: number;
+}
+
+export async function putUpload(record: UploadRecord): Promise<void> {
+  const table = await tableName();
+  await docClient.send(
+    new PutCommand({
+      TableName: table,
+      Item: {
+        PK: `UPLOAD#${record.uploadId}`,
+        SK: 'METADATA',
+        GSI1PK: `SELLER#${record.sellerId}`,
+        GSI1SK: `TS#${record.createdAt}`,
+        ...record,
+      },
+    }),
+  );
+  logger.info('Upload record saved', { uploadId: record.uploadId, sellerId: record.sellerId, status: record.status });
+}
+
+export async function getUpload(uploadId: string): Promise<UploadRecord | null> {
+  const table = await tableName();
+  const res = await docClient.send(
+    new GetCommand({
+      TableName: table,
+      Key: { PK: `UPLOAD#${uploadId}`, SK: 'METADATA' },
+    }),
+  );
+  return (res.Item as UploadRecord) ?? null;
+}
+
+export async function updateUploadStatus(
+  uploadId: string,
+  status: UploadRecord['status'],
+  updates: Partial<Pick<UploadRecord, 'products' | 'productCount' | 'columnMapping' | 'headers' | 'csvLines' | 'errors' | 'warnings'>>,
+): Promise<void> {
+  const table = await tableName();
+  const now = new Date().toISOString();
+
+  let updateExpr = 'SET #status = :s, updatedAt = :now';
+  const names: Record<string, string> = { '#status': 'status' };
+  const values: Record<string, unknown> = { ':s': status, ':now': now };
+
+  if (updates.products !== undefined) {
+    updateExpr += ', products = :products, productCount = :pc';
+    values[':products'] = updates.products;
+    values[':pc'] = updates.products.length;
+  }
+  if (updates.columnMapping !== undefined) {
+    updateExpr += ', columnMapping = :cm';
+    values[':cm'] = updates.columnMapping;
+  }
+  if (updates.headers !== undefined) {
+    updateExpr += ', headers = :headers';
+    values[':headers'] = updates.headers;
+  }
+  if (updates.csvLines !== undefined) {
+    updateExpr += ', csvLines = :csvLines';
+    values[':csvLines'] = updates.csvLines;
+  }
+  if (updates.errors !== undefined) {
+    updateExpr += ', errors = :errors';
+    values[':errors'] = updates.errors;
+  }
+  if (updates.warnings !== undefined) {
+    updateExpr += ', warnings = :warnings';
+    values[':warnings'] = updates.warnings;
+  }
+
+  await docClient.send(
+    new UpdateCommand({
+      TableName: table,
+      Key: { PK: `UPLOAD#${uploadId}`, SK: 'METADATA' },
       UpdateExpression: updateExpr,
       ExpressionAttributeNames: names,
       ExpressionAttributeValues: values,

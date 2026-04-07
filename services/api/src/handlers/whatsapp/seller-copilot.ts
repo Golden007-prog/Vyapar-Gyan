@@ -34,6 +34,8 @@ import {
 import {
   updateCampaign,
   queryCampaignsBySeller,
+  getSession,
+  putSession,
   type CampaignRecord,
 } from '../../adapters/dynamodb-adapter';
 
@@ -118,52 +120,83 @@ export async function handleSellerCopilotMessage(
     messagePreview: text.substring(0, 60),
   });
 
-  // ── Navigation: "menu" or "home" returns to copilot home ──
+  // ── Hydrate sub-state from DynamoDB session (persists across Lambda invocations) ──
+  let session: any;
+  let persistedSubState: SellerSubState | undefined;
+  try {
+    session = await getSession(sellerId);
+    persistedSubState = session?.sellerSubState as SellerSubState | undefined;
+    if (persistedSubState) {
+      sellerStates.set(sellerId, persistedSubState);
+    } else {
+      sellerStates.delete(sellerId);
+    }
+    logger.info('Loaded seller sub-state from session', {
+      sellerId, persistedSubState: persistedSubState || 'none',
+    });
+  } catch (err) {
+    logger.warn('Failed to load seller session', {
+      sellerId, error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  // ── Route message ──
+  let response: string;
+
   if (isMenuCommand(textLower)) {
     sellerStates.set(sellerId, 'home');
-    return HOME_MENU;
-  }
-
-  // ── "stop alerts" from any state ──
-  if (/^stop\s*alerts?$/i.test(textLower)) {
-    return handleStopAlerts(context);
-  }
-
-  // ── "trends" or "alerts" from any state → trend config ──
-  if (/^(trends?|alerts?)$/i.test(textLower)) {
+    response = HOME_MENU;
+  } else if (/^stop\s*alerts?$/i.test(textLower)) {
+    response = await handleStopAlerts(context);
+  } else if (/^(trends?|alerts?)$/i.test(textLower)) {
     sellerStates.set(sellerId, 'trend_interval_select');
-    return handleTrendAlertsEntry(context);
+    response = await handleTrendAlertsEntry(context);
+  } else {
+    const currentState = sellerStates.get(sellerId);
+    if (!currentState) {
+      sellerStates.set(sellerId, 'home');
+      response = HOME_MENU;
+    } else if (currentState === 'home') {
+      response = await handleHomeSelection(context, textLower);
+    } else if (currentState === 'stock_check') {
+      response = await handleStockCheck(context);
+    } else if (currentState === 'trend_interval_select') {
+      response = await handleTrendIntervalSelection(context, textLower);
+    } else if (currentState === 'campaigns') {
+      response = await handleCampaignCommand(context, textLower);
+    } else {
+      response = await delegateToBedrock(context);
+    }
   }
 
-  // ── First message or no state → show home menu ──
-  const currentState = sellerStates.get(sellerId);
-  if (!currentState) {
-    sellerStates.set(sellerId, 'home');
-    return HOME_MENU;
+  // ── Persist sub-state back to DynamoDB session ──
+  const newSubState = sellerStates.get(sellerId);
+  if (newSubState !== persistedSubState) {
+    try {
+      if (!session) {
+        session = {
+          userId: sellerId,
+          state: 'idle',
+          lastActiveChannel: 'whatsapp',
+          lastActivityAt: new Date().toISOString(),
+          phoneNumber,
+          createdAt: new Date().toISOString(),
+          expiresAt: Math.floor(Date.now() / 1000) + 24 * 60 * 60,
+        };
+      }
+      session.sellerSubState = newSubState || 'home';
+      session.lastActivityAt = new Date().toISOString();
+      await putSession(session);
+      logger.info('Persisted seller sub-state', { sellerId, newSubState });
+    } catch (err) {
+      logger.warn('Failed to persist sellerSubState', {
+        sellerId, newSubState,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
-  // ── Home state: route based on menu selection or natural language ──
-  if (currentState === 'home') {
-    return handleHomeSelection(context, textLower);
-  }
-
-  // ── Stock check sub-state ──
-  if (currentState === 'stock_check') {
-    return handleStockCheck(context);
-  }
-
-  // ── Trend interval selection sub-state ──
-  if (currentState === 'trend_interval_select') {
-    return handleTrendIntervalSelection(context, textLower);
-  }
-
-  // ── Campaign review sub-state ──
-  if (currentState === 'campaigns') {
-    return handleCampaignCommand(context, textLower);
-  }
-
-  // ── Other sub-states: delegate to Bedrock copilot ──
-  return delegateToBedrock(context);
+  return response;
 }
 
 // ── Menu command detection ─────────────────────────────────────────────
@@ -369,7 +402,7 @@ async function querySellerProducts(sellerId: string): Promise<ProductCandidate[]
     }),
   );
 
-  return (result.Items || []).map(item => ({
+  const products = (result.Items || []).map(item => ({
     id: (item.id as string) || '',
     name: (item.name as string) || '',
     price: (item.price as number) || 0,
@@ -377,6 +410,16 @@ async function querySellerProducts(sellerId: string): Promise<ProductCandidate[]
     categoryId: (item.categoryId as string) ?? '',
     stockAddedDate: item.stockAddedDate as string | undefined,
   }));
+
+  logger.info('SellerStockIndex query result', {
+    sellerId,
+    tableName,
+    productCount: products.length,
+    scannedCount: result.ScannedCount,
+    firstProduct: products[0]?.name || 'none',
+  });
+
+  return products;
 }
 
 // ── Quick inventory summary ────────────────────────────────────────────

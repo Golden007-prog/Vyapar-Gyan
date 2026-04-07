@@ -22,7 +22,7 @@ import { executeFinancialQuery, isLikelyFinancialQuery, LANGUAGE_NAMES } from '.
 import { extractAndRouteIntent } from '../../services/intent-extraction';
 import {
   detectMediaType,
-  handleInventoryUpload,
+  handleInventoryUploadWithDashboard,
   commitInventory,
   applyInventoryEdit,
   parseInventoryEditCommand,
@@ -348,11 +348,12 @@ async function handleSellerMessage(context: {
   if (mediaContentType && mediaUrl) {
     const mediaCategory = detectMediaType(mediaContentType);
     if (mediaCategory !== 'unknown') {
-      logger.info('Routing seller media to inventory upload', {
+      logger.info('Routing seller media to dashboard inventory upload', {
         requestId, userId, phoneNumber, mediaCategory, mediaContentType,
       });
 
-      const items = await handleInventoryUpload({
+      // Use new dashboard-link flow: process → save UPLOAD# → send review link
+      const uploadId = await handleInventoryUploadWithDashboard({
         sellerId: userId,
         phoneNumber,
         mediaUrl,
@@ -360,18 +361,29 @@ async function handleSellerMessage(context: {
         requestId,
       });
 
-      // Store pending inventory in session context for confirmation/edit flow
-      if (items.length > 0) {
+      // Store the uploadId in session so "looks good" reply can commit products
+      if (uploadId) {
         try {
           const { getSession, putSession } = await import('../../adapters/dynamodb-adapter.js');
-          const session = await getSession(userId);
-          if (session) {
-            (session as any).pendingInventory = items;
-            await putSession(session);
+          let session = await getSession(userId);
+          if (!session) {
+            // Create a minimal session if none exists (e.g., first interaction or expired)
+            session = {
+              userId,
+              state: 'idle',
+              lastActiveChannel: 'whatsapp',
+              lastActivityAt: new Date().toISOString(),
+              phoneNumber,
+              createdAt: new Date().toISOString(),
+              expiresAt: Math.floor(Date.now() / 1000) + 24 * 60 * 60,
+            };
           }
+          session.pendingUploadId = uploadId;
+          await putSession(session);
+          logger.info('Stored pendingUploadId in session', { requestId, userId, uploadId });
         } catch (err) {
-          logger.warn('Failed to store pending inventory in session', {
-            requestId, userId, error: err instanceof Error ? err.message : String(err),
+          logger.warn('Failed to store pendingUploadId in session', {
+            requestId, userId, uploadId, error: err instanceof Error ? err.message : String(err),
           });
         }
       }
@@ -403,24 +415,131 @@ async function handleSellerMessage(context: {
   const messageText = message.text?.body || '';
 
   // Check for pending inventory confirmation/edit flow
+  // Supports both: (a) new UPLOAD#-backed flow (pendingUploadId) and
+  //                 (b) legacy session-based flow (pendingInventory)
   try {
-    const { getSession, putSession } = await import('../../adapters/dynamodb-adapter.js');
+    const { getSession, putSession, getUpload, updateUploadStatus } = await import('../../adapters/dynamodb-adapter.js');
     const session = await getSession(userId);
+    const pendingUploadId = session?.pendingUploadId as string | undefined;
     const pendingItems = (session as any)?.pendingInventory as InventoryItem[] | undefined;
 
+    logger.info('Pending inventory check', {
+      requestId, userId, hasPendingUploadId: !!pendingUploadId,
+      pendingUploadId: pendingUploadId || 'none',
+      hasPendingItems: !!(pendingItems && pendingItems.length > 0),
+      messageText: messageText.substring(0, 40),
+    });
+
+    // --- New UPLOAD#-backed flow ---
+    if (pendingUploadId) {
+      const textLower = messageText.trim().toLowerCase();
+
+      if (textLower === 'looks good' || textLower === 'confirm' || textLower === 'yes' || textLower === 'ok') {
+        // Read the UPLOAD# record to get pre-processed products
+        const uploadRecord = await getUpload(pendingUploadId);
+
+        if (!uploadRecord || uploadRecord.status !== 'completed') {
+          await whatsappSender.sendMessage(
+            phoneNumber,
+            { type: 'text', text: '⚠️ Upload data not found or still processing. Please try again.' },
+            `inv-upload-missing-${userId}`,
+            'seller',
+          );
+          session!.pendingUploadId = undefined;
+          await putSession(session!);
+          return;
+        }
+
+        // Convert UPLOAD# products to InventoryItem[] for commitInventory
+        const itemsToCommit: InventoryItem[] = uploadRecord.products.map((p: any) => ({
+          name: p.name,
+          price: p.price,
+          quantity: p.quantity,
+          category: p.category,
+        }));
+
+        // Write PRODUCT# entities to DynamoDB
+        await commitInventory(userId, phoneNumber, itemsToCommit);
+
+        // Update UPLOAD# status to confirmed
+        await updateUploadStatus(pendingUploadId, 'completed' as any, {});
+
+        // Clear pending upload from session
+        session!.pendingUploadId = undefined;
+        await putSession(session!);
+
+        logger.info('Inventory confirmed via WhatsApp from UPLOAD# record', {
+          requestId, userId, uploadId: pendingUploadId, productCount: itemsToCommit.length,
+        });
+        return;
+      }
+
+      if (textLower === 'cancel' || textLower === 'discard') {
+        session!.pendingUploadId = undefined;
+        await putSession(session!);
+        await whatsappSender.sendMessage(
+          phoneNumber,
+          { type: 'text', text: '❌ Inventory upload cancelled.\n\nType "menu" to go back.' },
+          `inv-cancel-${userId}`,
+          'seller',
+        );
+        return;
+      }
+
+      // For edits, read products from UPLOAD# and allow inline editing
+      const editCmd = parseInventoryEditCommand(messageText);
+      if (editCmd) {
+        const uploadRecord = await getUpload(pendingUploadId);
+        if (uploadRecord && uploadRecord.products.length > 0) {
+          const currentItems: InventoryItem[] = uploadRecord.products.map((p: any) => ({
+            name: p.name,
+            price: p.price,
+            quantity: p.quantity,
+            category: p.category,
+          }));
+          const result = applyInventoryEdit(currentItems, editCmd);
+          if (result.error) {
+            await whatsappSender.sendMessage(
+              phoneNumber,
+              { type: 'text', text: `⚠️ ${result.error}` },
+              `inv-edit-err-${userId}`,
+              'seller',
+            );
+          } else {
+            // Persist edited products back to UPLOAD# record
+            const updatedProducts = result.items.map(item => ({
+              name: item.name,
+              price: item.price,
+              quantity: item.quantity,
+              ...(item.category ? { category: item.category } : {}),
+            }));
+            await updateUploadStatus(pendingUploadId, 'completed' as any, {
+              products: updatedProducts,
+            });
+            const updatedList = formatInventoryList(result.items);
+            await whatsappSender.sendMessage(
+              phoneNumber,
+              { type: 'text', text: `✏️ Updated!\n\n${updatedList}` },
+              `inv-edit-${userId}`,
+              'seller',
+            );
+          }
+          return;
+        }
+      }
+    }
+
+    // --- Legacy session-based flow (pendingInventory) ---
     if (pendingItems && pendingItems.length > 0) {
       const textLower = messageText.trim().toLowerCase();
 
-      // Requirement 11.5: Seller confirms
       if (textLower === 'looks good' || textLower === 'confirm' || textLower === 'yes' || textLower === 'ok') {
         await commitInventory(userId, phoneNumber, pendingItems);
-        // Clear pending inventory from session
         (session as any).pendingInventory = undefined;
         await putSession(session!);
         return;
       }
 
-      // Cancel
       if (textLower === 'cancel' || textLower === 'discard') {
         (session as any).pendingInventory = undefined;
         await putSession(session!);
@@ -433,7 +552,6 @@ async function handleSellerMessage(context: {
         return;
       }
 
-      // Requirement 11.6: Seller edits
       const editCmd = parseInventoryEditCommand(messageText);
       if (editCmd) {
         const result = applyInventoryEdit(pendingItems, editCmd);

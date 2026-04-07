@@ -99,6 +99,9 @@ export class APIStack extends cdk.Stack {
   
   /** Generate upload URL Lambda function */
   public readonly generateUploadUrlFunction: Function;
+
+  /** Get upload Lambda function (WhatsApp upload retrieval) */
+  public readonly getUploadFunction: Function;
   
   /** Get sellers Lambda function */
   public readonly getSellersFunction: Function;
@@ -460,6 +463,25 @@ export class APIStack extends cdk.Stack {
 
     // Grant S3 PutObject permissions for presigned URL generation
     documentsBucket.grantPut(this.generateUploadUrlFunction);
+
+    // Create Get Upload Lambda (retrieves WhatsApp pre-processed uploads)
+    this.getUploadFunction = new Function(this, 'GetUploadFunction', {
+      functionName: `${config.resourcePrefix}-get-upload`,
+      runtime: Runtime.NODEJS_20_X,
+      architecture: Architecture.ARM_64,
+      handler: 'handlers/seller/get-upload.handler',
+      code: Code.fromAsset('../../services/api/dist'),
+      timeout: Duration.seconds(10),
+      memorySize: 256,
+      environment: {
+        ENVIRONMENT: config.environment,
+        TABLE_NAME: table.tableName,
+        LOG_LEVEL: 'info',
+      },
+    });
+
+    // Grant DynamoDB read permissions for UPLOAD# entities
+    table.grantReadData(this.getUploadFunction);
 
     // Create Admin Lambda functions
     
@@ -889,6 +911,21 @@ export class APIStack extends cdk.Stack {
       path: '/api/seller/upload-url',
       methods: [HttpMethod.POST],
       integration: generateUploadUrlIntegration,
+    });
+
+    // Get Upload route (WhatsApp pre-processed upload retrieval)
+    const getUploadIntegration = new HttpLambdaIntegration(
+      'GetUploadIntegration',
+      this.getUploadFunction,
+      {
+        payloadFormatVersion: PayloadFormatVersion.VERSION_2_0,
+      }
+    );
+
+    this.httpApi.addRoutes({
+      path: '/api/v1/seller/uploads/{uploadId}',
+      methods: [HttpMethod.GET],
+      integration: getUploadIntegration,
     });
 
     // Create Lambda integrations for Admin API

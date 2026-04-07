@@ -315,6 +315,59 @@ KeyConditionExpression: 'PK = :pk AND begins_with(SK, :sk)'
 // Get all metrics for a seller or filter by year
 ```
 
+### Inventory Uploads (WhatsApp One-Step Upload)
+
+#### Get Upload by ID
+```typescript
+PK: UPLOAD#{uploadId}
+SK: METADATA
+```
+
+**Item Structure**:
+```json
+{
+  "PK": "UPLOAD#a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "SK": "METADATA",
+  "GSI1PK": "SELLER#seller-456",
+  "GSI1SK": "TS#2024-01-15T10:30:00.000Z",
+  "uploadId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "sellerId": "seller-456",
+  "phoneNumber": "+919876543210",
+  "mediaType": "csv",
+  "s3Key": "uploads/seller-456/csv/a1b2c3d4.csv",
+  "status": "completed",
+  "productCount": 15,
+  "columnMapping": {
+    "name": 0,
+    "price": 2,
+    "quantity": 1,
+    "category": 3,
+    "confidence": 0.92,
+    "reasoning": "AI identified 4 of 5 columns"
+  },
+  "headers": ["Product Name", "Stock", "Price", "Category", "SKU"],
+  "csvLines": ["Product Name,Stock,Price,...", "Toor Dal 1kg,10,160,..."],
+  "products": [
+    { "name": "Toor Dal 1kg", "price": 160, "quantity": 10, "category": "Groceries" }
+  ],
+  "errors": [],
+  "warnings": ["Row 5: skipped — invalid price"],
+  "createdAt": "2024-01-15T10:30:00.000Z",
+  "updatedAt": "2024-01-15T10:30:05.000Z",
+  "expiresAt": 1705402200
+}
+```
+
+**GSI1 Query — Get Seller's Uploads (most recent first)**:
+```typescript
+IndexName: 'GSI1'
+KeyConditionExpression: 'GSI1PK = :pk AND begins_with(GSI1SK, :prefix)'
+ExpressionAttributeValues: { ':pk': 'SELLER#seller-456', ':prefix': 'TS#' }
+ScanIndexForward: false
+```
+
+**TTL**: 24 hours (`expiresAt` attribute)
+
 ### Idempotency Records
 
 #### Check Message Already Processed
@@ -395,6 +448,12 @@ ConditionExpression: 'attribute_not_exists(PK)'
 - **Attribute**: `expiresAt`
 - **Retention**: 24 hours after last activity
 - **Calculation**: `Math.floor(Date.now() / 1000) + (24 * 60 * 60)`
+
+### Upload Records
+- **Attribute**: `expiresAt`
+- **Retention**: 24 hours
+- **Calculation**: `Math.floor(Date.now() / 1000) + (24 * 60 * 60)`
+- **Purpose**: Auto-cleanup of WhatsApp inventory upload data after review window
 
 ## Capacity Planning
 

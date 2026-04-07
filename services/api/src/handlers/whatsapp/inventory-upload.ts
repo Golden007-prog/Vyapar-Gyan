@@ -15,10 +15,13 @@
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { DynamoDBClient, BatchWriteItemCommand } from '@aws-sdk/client-dynamodb';
 import { marshall } from '@aws-sdk/util-dynamodb';
+import { randomUUID } from 'crypto';
 import { logger } from '../../utils/logger';
 import { getConfig } from '../../utils/config';
 import { GeminiAdapter, type KhataBookProduct } from '../../adapters/gemini-adapter';
 import { whatsappSender } from '../../services/whatsapp-sender';
+import { putUpload, updateUploadStatus, type UploadRecord } from '../../adapters/dynamodb-adapter';
+import { processCsv, processKhataImage } from '../../services/inventory-processing-service';
 
 const s3Client = new S3Client({});
 const dynamoDBClient = new DynamoDBClient({});
@@ -392,6 +395,219 @@ export function applyInventoryEdit(
 
   updated[edit.itemIndex - 1] = target;
   return { items: updated };
+}
+
+// ---------------------------------------------------------------------------
+// One-Step Dashboard Upload Flow
+// ---------------------------------------------------------------------------
+
+const DASHBOARD_BASE_URL = 'https://golden007-prog.github.io/Vyapar-Gyan/seller/inventory/';
+
+export interface DashboardUploadContext {
+  sellerId: string;
+  phoneNumber: string;
+  mediaUrl: string;
+  mediaContentType: string;
+  requestId: string;
+}
+
+/**
+ * Handle a media attachment from a seller via the dashboard-link flow.
+ *
+ * 1. Send progress message
+ * 2. Download media from Twilio
+ * 3. Store in S3 (uploads/{sellerId}/csv/ or uploads/{sellerId}/khata/)
+ * 4. Create UPLOAD# record in DynamoDB (status: processing)
+ * 5. Process via shared service (Gemini CSV mapping or Khata OCR)
+ * 6. Update UPLOAD# with results (status: completed)
+ * 7. Send WhatsApp message with dashboard review link
+ */
+export async function handleInventoryUploadWithDashboard(
+  context: DashboardUploadContext,
+): Promise<string | null> {
+  const { sellerId, phoneNumber, mediaContentType, mediaUrl, requestId } = context;
+  const mediaType = detectMediaType(mediaContentType);
+  const uploadId = randomUUID();
+  const now = new Date().toISOString();
+  const ttl24h = Math.floor(Date.now() / 1000) + 24 * 60 * 60;
+
+  logger.info('Dashboard inventory upload started', {
+    requestId, sellerId, mediaContentType, mediaType, uploadId,
+  });
+
+  // Progress message
+  await whatsappSender.sendMessage(
+    phoneNumber,
+    { type: 'text', text: '📄 Processing your file with AI...' },
+    `inv-dash-progress-${sellerId}`,
+    'seller',
+  );
+
+  try {
+    // Download media from Twilio
+    const fileBuffer = await downloadTwilioMediaForInventory(mediaUrl);
+
+    // Determine S3 path
+    const ext = getExtensionForType(mediaType, mediaContentType);
+    const s3Folder = (mediaType === 'csv' || mediaType === 'excel') ? 'csv' : 'khata';
+    const s3Key = `uploads/${sellerId}/${s3Folder}/${uploadId}.${ext}`;
+    const config = await getConfig();
+
+    // Upload to S3
+    await s3Client.send(
+      new PutObjectCommand({
+        Bucket: config.productImagesBucket,
+        Key: s3Key,
+        Body: fileBuffer,
+        ContentType: mediaContentType,
+      }),
+    );
+
+    logger.info('File uploaded to S3', { requestId, sellerId, s3Key });
+
+    // Create initial UPLOAD# record (processing state)
+    const initialRecord: UploadRecord = {
+      uploadId,
+      sellerId,
+      phoneNumber,
+      mediaType: (mediaType === 'csv' || mediaType === 'excel') ? 'csv' : 'image',
+      s3Key,
+      status: 'processing',
+      productCount: 0,
+      products: [],
+      createdAt: now,
+      updatedAt: now,
+      expiresAt: ttl24h,
+    };
+    await putUpload(initialRecord);
+
+    // Process with shared service
+    if (mediaType === 'csv' || mediaType === 'excel') {
+      const result = await processCsv(fileBuffer, requestId);
+
+      if (result.errors.length > 0 && result.products.length === 0) {
+        await updateUploadStatus(uploadId, 'failed', {
+          errors: result.errors,
+          warnings: result.warnings,
+        });
+
+        await whatsappSender.sendMessage(
+          phoneNumber,
+          {
+            type: 'text',
+            text: `❌ Could not process your CSV: ${result.errors.join(', ')}\n\nPlease check the format and try again.`,
+          },
+          `inv-dash-fail-${sellerId}`,
+          'seller',
+        );
+        return null;
+      }
+
+      await updateUploadStatus(uploadId, 'completed', {
+        products: result.products,
+        productCount: result.products.length,
+        columnMapping: result.columnMapping as unknown as Record<string, unknown>,
+        headers: result.headers,
+        csvLines: result.csvLines,
+        errors: result.errors,
+        warnings: result.warnings,
+      });
+
+      const dashboardUrl = `${DASHBOARD_BASE_URL}?uploadId=${uploadId}`;
+      await whatsappSender.sendMessage(
+        phoneNumber,
+        {
+          type: 'text',
+          text: `✅ AI processed your CSV — ${result.products.length} products found.\n\nReview and confirm:\n${dashboardUrl}`,
+        },
+        `inv-dash-link-${sellerId}`,
+        'seller',
+      );
+
+      logger.info('Dashboard upload completed (CSV)', {
+        requestId, sellerId, uploadId, productCount: result.products.length,
+      });
+      return uploadId;
+
+    } else if (mediaType === 'image') {
+      const result = await processKhataImage(fileBuffer, mediaContentType, requestId);
+
+      if (result.errors.length > 0 && result.products.length === 0) {
+        await updateUploadStatus(uploadId, 'failed', {
+          errors: result.errors,
+          warnings: result.warnings,
+        });
+
+        await whatsappSender.sendMessage(
+          phoneNumber,
+          {
+            type: 'text',
+            text: `❌ Could not extract items from your image: ${result.errors.join(', ')}\n\nPlease try a clearer photo.`,
+          },
+          `inv-dash-fail-${sellerId}`,
+          'seller',
+        );
+        return null;
+      }
+
+      await updateUploadStatus(uploadId, 'completed', {
+        products: result.products,
+        productCount: result.products.length,
+        errors: result.errors,
+        warnings: result.warnings,
+      });
+
+      const dashboardUrl = `${DASHBOARD_BASE_URL}?uploadId=${uploadId}`;
+      await whatsappSender.sendMessage(
+        phoneNumber,
+        {
+          type: 'text',
+          text: `✅ AI read your Khata book — ${result.products.length} products found.\n\nReview and confirm:\n${dashboardUrl}`,
+        },
+        `inv-dash-link-${sellerId}`,
+        'seller',
+      );
+
+      logger.info('Dashboard upload completed (Khata)', {
+        requestId, sellerId, uploadId, productCount: result.products.length,
+      });
+      return uploadId;
+
+    } else {
+      await updateUploadStatus(uploadId, 'failed', {
+        errors: ['Unsupported file type'],
+      });
+      await whatsappSender.sendMessage(
+        phoneNumber,
+        {
+          type: 'text',
+          text: '❌ Unsupported file type. Please send a CSV file or a photo of your Khata book.',
+        },
+        `inv-dash-unsupported-${sellerId}`,
+        'seller',
+      );
+      return null;
+    }
+  } catch (error) {
+    const errMsg = error instanceof Error ? error.message : String(error);
+    logger.error('Dashboard inventory upload failed', { requestId, sellerId, uploadId, error: errMsg });
+
+    // Try to update the record as failed
+    try {
+      await updateUploadStatus(uploadId, 'failed', { errors: [errMsg] });
+    } catch { /* best effort */ }
+
+    await whatsappSender.sendMessage(
+      phoneNumber,
+      {
+        type: 'text',
+        text: `❌ Failed to process your file: ${errMsg}\n\nPlease try again or type "menu" to go back.`,
+      },
+      `inv-dash-error-${sellerId}`,
+      'seller',
+    );
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------

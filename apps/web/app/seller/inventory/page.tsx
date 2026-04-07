@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Package, Upload, FileSpreadsheet, X, AlertCircle, CheckCircle, Loader2, Camera, Sparkles, Eye, Edit3, RotateCw, ArrowLeft } from 'lucide-react';
 import MobileProductCard from '@/components/ui/MobileProductCard';
 import SearchBar from '@/components/search/SearchBar';
@@ -8,6 +9,9 @@ import { searchProducts, type SearchProductItem } from '@/lib/api-search';
 
 // Demo seller ID used for seller-scoped search
 const DEMO_SELLER_ID = 'seller-dragon-001';
+
+// API base URL for fetching WhatsApp upload data
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
 interface Product {
   id: string;
@@ -201,6 +205,7 @@ async function simulateKhataOcr(): Promise<OcrExtractedProduct[]> {
 }
 
 export default function InventoryPage() {
+  const searchParams = useSearchParams();
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -225,6 +230,10 @@ export default function InventoryPage() {
   const [ocrSelected, setOcrSelected] = useState<Set<number>>(new Set());
   const [imageRotation, setImageRotation] = useState(0);
 
+  // WhatsApp upload hydration state
+  const [uploadHydrating, setUploadHydrating] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
   // Search state
   const [searchMode, setSearchMode] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -237,6 +246,104 @@ export default function InventoryPage() {
     const timer = setTimeout(() => { setProducts(DEMO_PRODUCTS); setLoading(false); }, 500);
     return () => clearTimeout(timer);
   }, []);
+
+  // ── WhatsApp Upload Hydration ──
+  // If ?uploadId= is present, fetch pre-processed data and auto-open the appropriate modal
+  useEffect(() => {
+    const uploadId = searchParams.get('uploadId');
+    if (!uploadId) return;
+
+    let cancelled = false;
+    setUploadHydrating(true);
+    setUploadError(null);
+
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/v1/seller/uploads/${uploadId}`);
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({ message: 'Upload not found or expired' }));
+          throw new Error(err.message || `HTTP ${res.status}`);
+        }
+        const data = await res.json();
+        if (cancelled) return;
+
+        if (data.status === 'failed') {
+          setUploadError(`Upload processing failed: ${(data.errors || []).join(', ')}`);
+          setUploadHydrating(false);
+          return;
+        }
+
+        if (data.status === 'processing') {
+          setUploadError('Upload is still being processed. Please wait a moment and refresh.');
+          setUploadHydrating(false);
+          return;
+        }
+
+        // Hydrate based on media type
+        if (data.mediaType === 'csv') {
+          // Hydrate CSV modal state
+          const headers = data.headers || [];
+          const csvLinesData = data.csvLines || [];
+          const sampleRows = csvLinesData.slice(1, Math.min(4, csvLinesData.length))
+            .map((l: string) => l.split(',').map((c: string) => c.trim().replace(/^"|"$/g, '')));
+
+          const mapping: ColumnMapping = {
+            name: data.columnMapping?.name ?? null,
+            price: data.columnMapping?.price ?? null,
+            quantity: data.columnMapping?.quantity ?? null,
+            category: data.columnMapping?.category ?? null,
+            sku: data.columnMapping?.sku ?? null,
+            brand: data.columnMapping?.brand ?? null,
+            variant: data.columnMapping?.variant ?? null,
+          };
+
+          setCsvHeaders(headers);
+          setCsvLines(csvLinesData);
+          setCsvSampleRows(sampleRows);
+          setEditableMapping(mapping);
+          setAiMapping({
+            mapping,
+            confidence: data.columnMapping?.confidence ?? 0.9,
+            reasoning: data.columnMapping?.reasoning || 'Pre-processed via WhatsApp AI upload',
+          });
+
+          // If high confidence and products extracted, go to preview
+          const confidence = data.columnMapping?.confidence ?? 0.9;
+          if (confidence >= 0.75 && data.products?.length > 0) {
+            const parsed = parseWithMapping(csvLinesData, mapping);
+            setCsvResult(parsed);
+            setCsvStep('preview');
+          } else {
+            setCsvStep('mapping');
+          }
+
+          setShowCsvModal(true);
+
+        } else if (data.mediaType === 'image') {
+          // Hydrate Khata OCR modal state
+          const extracted: OcrExtractedProduct[] = (data.products || []).map((p: any) => ({
+            name: p.name,
+            quantity: p.quantity,
+            price: p.price,
+            confidence: p.confidence ?? 0.85,
+          }));
+
+          setOcrProducts(extracted);
+          setOcrSelected(new Set(extracted.map((_: any, i: number) => i)));
+          setImageStep('review');
+          setShowImageModal(true);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setUploadError(err instanceof Error ? err.message : 'Failed to load upload data');
+        }
+      } finally {
+        if (!cancelled) setUploadHydrating(false);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [searchParams]);
 
   const handleSearch = useCallback(async (query: string) => {
     setSearchQuery(query);
@@ -416,6 +523,20 @@ export default function InventoryPage() {
           </button>
         </div>
       </div>
+
+      {/* WhatsApp Upload Hydration Status */}
+      {uploadHydrating && (
+        <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-4 flex items-center gap-3">
+          <Loader2 className="h-5 w-5 animate-spin text-indigo-600" />
+          <p className="text-sm text-indigo-800">Loading your WhatsApp upload...</p>
+        </div>
+      )}
+      {uploadError && (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-4 flex items-center gap-3">
+          <AlertCircle className="h-5 w-5 text-red-500" />
+          <p className="text-sm text-red-700">{uploadError}</p>
+        </div>
+      )}
 
       {/* Search Bar */}
       <div className="w-full">
