@@ -139,7 +139,7 @@ function ChatContent() {
       try {
         const { fetchAuthSession } = await import('aws-amplify/auth');
         const session = await fetchAuthSession();
-        const token = session.tokens?.idToken?.toString() ?? null;
+        const token = session.tokens?.accessToken?.toString() ?? null;
         if (!cancelled) setAuthToken(token);
       } catch {
         // No auth session — WebSocket will stay disconnected, bridge/polling still works

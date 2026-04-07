@@ -495,7 +495,7 @@ export default function SellerOrdersPage() {
       try {
         const { fetchAuthSession } = await import('aws-amplify/auth');
         const session = await fetchAuthSession();
-        const token = session.tokens?.idToken?.toString();
+        const token = session.tokens?.accessToken?.toString();
         if (!token || cancelled) return;
 
         const wsUrl = process.env.NEXT_PUBLIC_WEBSOCKET_URL;

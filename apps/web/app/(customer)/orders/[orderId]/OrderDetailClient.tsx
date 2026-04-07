@@ -179,7 +179,7 @@ export default function OrderDetailClient() {
       try {
         const { fetchAuthSession } = await import('aws-amplify/auth');
         const session = await fetchAuthSession();
-        const token = session.tokens?.idToken?.toString();
+        const token = session.tokens?.accessToken?.toString();
         if (!token) return;
 
         client = new WebSocketClient();
