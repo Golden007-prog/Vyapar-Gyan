@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { Suspense, useEffect, useState, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Package, Upload, FileSpreadsheet, X, AlertCircle, CheckCircle, Loader2, Camera, Sparkles, Eye, Edit3, RotateCw, ArrowLeft } from 'lucide-react';
 import MobileProductCard from '@/components/ui/MobileProductCard';
@@ -205,6 +205,14 @@ async function simulateKhataOcr(): Promise<OcrExtractedProduct[]> {
 }
 
 export default function InventoryPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-screen"><Loader2 className="w-8 h-8 animate-spin text-blue-500" /></div>}>
+      <InventoryPageContent />
+    </Suspense>
+  );
+}
+
+function InventoryPageContent() {
   const searchParams = useSearchParams();
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
